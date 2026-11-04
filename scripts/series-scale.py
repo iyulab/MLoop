@@ -18,16 +18,33 @@ STEP_TIMEOUT = 1800
 HEAD = 500
 
 
-def write_series(path, n, spikes, seed):
+WEEKDAYS = (0.0, 0.0, 0.0, 0.0, 0.0, -4.0, -6.0)
+HORIZON = 10
+
+
+def write_series(path, n, spikes, seed, shape='monthly'):
+    """Writes one series and returns the mean absolute noise over its last HORIZON points: what a forecaster that knew the signal exactly would still miss.
+
+    'monthly' is a season of 12; 'daily' is a daily series with a yearly season of 365 (two harmonics) and a weekly pattern, the shape on which a
+    window shorter than the season is in question."""
     rng = random.Random(seed)
+    tail = []
     with open(path, 'w', newline='') as f:
         w = csv.writer(f)
         w.writerow(['value'])
         for t in range(n):
-            v = 100.0 + 0.00005 * t + 10.0 * math.sin(2 * math.pi * t / 12) + rng.gauss(0, 1.0)
+            noise = rng.gauss(0, 1.0)
+            if shape == 'daily':
+                signal = (100.0 + 0.01 * t + 40.0 * math.sin(2 * math.pi * t / 365) + 10.0 * math.sin(4 * math.pi * t / 365 + 1.0) + WEEKDAYS[t % 7])
+            else:
+                signal = 100.0 + 0.00005 * t + 10.0 * math.sin(2 * math.pi * t / 12)
+            v = signal + noise
             if spikes and t % 1000 == 500:
                 v += 40.0
+            if t >= n - HORIZON:
+                tail.append(abs(noise))
             w.writerow([round(v, 4)])
+    return round(sum(tail) / len(tail), 3)
 
 
 def step(mloop, name, args, cwd, log, timeout=None):
@@ -46,12 +63,12 @@ def step(mloop, name, args, cwd, log, timeout=None):
     return info
 
 
-def walk(mloop, task, n, time_budget, window=None, timeout=None, seed=1):
+def walk(mloop, task, n, time_budget, window=None, timeout=None, seed=1, shape='monthly'):
     base = tempfile.mkdtemp(prefix=f'series-scale-{task}-')
     log = []
     spikes = task == 'anomaly'
-    write_series(os.path.join(base, 'train.csv'), n, spikes, seed * 2 - 1)
-    write_series(os.path.join(base, 'test.csv'), n, spikes, seed * 2)
+    oracle = write_series(os.path.join(base, 'train.csv'), n, spikes, seed * 2 - 1, shape)
+    write_series(os.path.join(base, 'test.csv'), n, spikes, seed * 2, shape)
     flag = 'forecasting' if task == 'forecast' else 'time-series-anomaly'
     print(f'== {task} n={n:,} window={window or "default"} seed={seed}  ({base})', flush=True)
     step(mloop, 'init', ['init', 'proj', '--task', flag, '--label', 'value', '--json'], base, log)
@@ -67,7 +84,7 @@ def walk(mloop, task, n, time_budget, window=None, timeout=None, seed=1):
         else:
             step(mloop, 'predict', ['predict', os.path.join(base, 'test.csv'), '--json'], proj, log)
         step(mloop, 'evaluate', ['evaluate', 'exp-001', os.path.join(base, 'test.csv'), '--json'], proj, log)
-    return {'task': task, 'rows': n, 'window': window, 'seed': seed, 'steps': log}
+    return {'task': task, 'rows': n, 'window': window, 'seed': seed, 'shape': shape, 'oracle_mae': oracle, 'steps': log}
 
 
 def main():
@@ -79,13 +96,14 @@ def main():
     ap.add_argument('--windows', default='', help='forecast only: comma-separated SSA window sizes to try at every length (window_size in mloop.yaml); empty = the default')
     ap.add_argument('--seeds', default='1', help='comma-separated series seeds (the noise differs)')
     ap.add_argument('--step-timeout', type=int, default=0, help='seconds per step (0 = 1800)')
+    ap.add_argument('--shape', default='monthly', choices=['monthly', 'daily'], help='monthly = a season of 12; daily = a yearly season of 365 and a weekly pattern')
     ap.add_argument('--out', default='series-scale-results.json')
     a = ap.parse_args()
     windows = [int(w) for w in a.windows.split(',') if w] or [None]
-    results = [walk(a.mloop, t, int(n), a.time, w if t == 'forecast' else None, a.step_timeout or None, int(sd))
+    results = [walk(a.mloop, t, int(n), a.time, w if t == 'forecast' else None, a.step_timeout or None, int(sd), a.shape)
                for t in a.tasks.split(',') for n in a.rows.split(',') for w in (windows if t == 'forecast' else [None]) for sd in a.seeds.split(',')]
     json.dump(results, open(a.out, 'w'), indent=1)
-    print('\n| task | rows | window | seed | step | rc | wall s | peak MB | mae |\n|---|---|---|---|---|---|---|---|---|')
+    print('\n| task | rows | window | seed | step | rc | wall s | peak MB | mae | oracle mae |\n|---|---|---|---|---|---|---|---|---|---|')
     for r in results:
         for s in r['steps']:
             mae = ''
@@ -96,7 +114,7 @@ def main():
                     mae = ((m.get('metrics') or m.get('testMetrics')) or {}).get('mae', '')
                 except Exception:
                     mae = '?'
-            print(f"| {r['task']} | {r['rows']:,} | {r.get('window') or 'default'} | {r.get('seed', 1)} | {s['step']} | {s['rc']} | {s['wall_s']} | {s['peak_mb']:.0f} | {mae} |")
+            print(f"| {r['task']} | {r['rows']:,} | {r.get('window') or 'default'} | {r.get('seed', 1)} | {s['step']} | {s['rc']} | {s['wall_s']} | {s['peak_mb']:.0f} | {mae} | {r.get('oracle_mae', '')} |")
     return 0 if all(s['rc'] == 0 for r in results for s in r['steps']) else 1
 
 
