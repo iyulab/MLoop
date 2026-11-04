@@ -28,6 +28,9 @@ on:
       series_windows:
         description: 'Forecast SSA window sizes to try at every length (comma-separated, empty = the default)'
         default: ''
+      series_seeds:
+        description: 'Series seeds for that walk (comma-separated; the noise differs)'
+        default: '1'
       series_timeout:
         description: 'Seconds allowed to each step of the series walk (0 = 1800)'
         default: '0'
@@ -90,8 +93,9 @@ jobs:
         TASKS: ${{ inputs.series_tasks }}
         WINDOWS: ${{ inputs.series_windows }}
         STEP_TIMEOUT: ${{ inputs.series_timeout }}
+        SEEDS: ${{ inputs.series_seeds }}
       run: |
-        python3 scripts/series-scale.py --mloop "dotnet $PWD/tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" --rows "$ROWS" --tasks "$TASKS" --windows "$WINDOWS" --step-timeout "$STEP_TIMEOUT" --out series-scale-results.json | tee series-scale.log
+        python3 scripts/series-scale.py --mloop "dotnet $PWD/tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" --rows "$ROWS" --tasks "$TASKS" --windows "$WINDOWS" --step-timeout "$STEP_TIMEOUT" --seeds "$SEEDS" --out series-scale-results.json | tee series-scale.log
         echo '```' >> "$GITHUB_STEP_SUMMARY"; tail -n 60 series-scale.log >> "$GITHUB_STEP_SUMMARY"; echo '```' >> "$GITHUB_STEP_SUMMARY"
 
     - name: Upload the results
