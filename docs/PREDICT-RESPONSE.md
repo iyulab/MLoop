@@ -152,7 +152,9 @@ and 0.98 (32 series of 10,000 and 100,000 points, wider than needed because the 
 windows, not the whole series). Read `intervalConfidence` as a target the band is fitted to, not a guarantee: the factor
 is one number for the whole horizon, so a series whose error grows faster or slower with the step than the native band
 shape says is covered on average and not at every step, and a series whose behaviour changes after its end is covered by
-nothing. A model trained before this, and a model whose series was too short to score twenty forecasts, keep the native
+nothing. Over 180 generated series that have a level, a season or a trend, forecast 10 points ahead, the bands held 0.97 of the
+points that followed (0.96 to 0.98 at lengths of 500, 2,000 and 5,000); a random walk, whose future is as wide as the walk,
+held 0.87 to 0.92, and any one such series can miss entirely. A model trained before this, and a model whose series was too short to score twenty forecasts, keep the native
 band — the one that holds less than it says; retrain to have the calibrated one. The bands of a regression model (above)
 are calibrated on held-out rows.
 
