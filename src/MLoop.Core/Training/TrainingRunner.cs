@@ -1870,7 +1870,7 @@ public partial class TrainingRunner
 
             var horizon = config.Horizon;
             var seriesLength = config.SeriesLength > 0 ? config.SeriesLength : totalRows;
-            var windowSize = config.WindowSize > 0 ? config.WindowSize : Math.Max(2, seriesLength / 4);
+            var windowSize = config.WindowSize > 0 ? config.WindowSize : ForecastingWindow.Default(seriesLength);
             var trainSize = totalRows - horizon; // Hold out last `horizon` points for evaluation
 
             if (trainSize <= windowSize)

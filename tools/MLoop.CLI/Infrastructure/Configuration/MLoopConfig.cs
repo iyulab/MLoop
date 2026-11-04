@@ -128,7 +128,7 @@ public class ModelDefinition
     public int? Horizon { get; set; }
 
     /// <summary>
-    /// SSA window size (0 or null = auto: series_length / 4).
+    /// SSA window size (0 or null = auto: a quarter of series_length, at most <c>ForecastingWindow.MaximumDefault</c>).
     /// </summary>
     public int? WindowSize { get; set; }
 
