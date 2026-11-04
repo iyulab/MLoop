@@ -1885,6 +1885,8 @@ public partial class TrainingRunner
             var rankSpec = fullSpec[0].Split(':');
             var stabilize = !fullSpec.Contains("nostab");
             var lenFlag = fullSpec.FirstOrDefault(f => f.StartsWith("len:", StringComparison.Ordinal));
+            var confFlag = fullSpec.FirstOrDefault(f => f.StartsWith("conf:", StringComparison.Ordinal));
+            var confidence = confFlag is null ? (float)ForecastOutput.ConfidenceLevel : float.Parse(confFlag[5..], System.Globalization.CultureInfo.InvariantCulture);
             var bufferLength = lenFlag is null ? seriesLength : Math.Min(seriesLength, int.Parse(lenFlag[4..]) * windowSize);
             var rankMethod = rankSpec[0] switch
             {
@@ -1907,7 +1909,7 @@ public partial class TrainingRunner
                 maxRank: maxRank,
                 confidenceLowerBoundColumn: ForecastOutput.LowerBoundColumnName,
                 confidenceUpperBoundColumn: ForecastOutput.UpperBoundColumnName,
-                confidenceLevel: (float)ForecastOutput.ConfidenceLevel);
+                confidenceLevel: confidence);
 
             // One descriptor for the trial and the result: the same fit, named by the window and
             // horizon that identify it.
