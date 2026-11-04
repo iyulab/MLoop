@@ -1,0 +1,65 @@
+name: Branch check (unpublished FilePrepper)
+
+# TEMPORARY - lives on feat/csvhelper-34 only and is deleted with the merge into main.
+# This branch builds against a FilePrepper that is not on nuget.org yet (it moves CSV reading to CsvHelper 34 and
+# is published first), so the ordinary CI cannot restore it. Run on request: it packs FilePrepper from its main branch
+# as the version this branch pins, and runs the CI test set on all three operating systems.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: branch-check-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  FILEPREPPER_VERSION: '0.13.3'
+
+jobs:
+  build-and-test:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+      fail-fast: false
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Checkout FilePrepper
+      uses: actions/checkout@v4
+      with:
+        repository: iyulab/FilePrepper
+        path: _filepreper
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Pack the unpublished FilePrepper
+      shell: bash
+      run: dotnet pack _filepreper/src/FilePrepper -c Release -p:Version=${FILEPREPPER_VERSION} -o "${GITHUB_WORKSPACE}/_feed"
+
+    - name: Time-series prerequisite (Linux)
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        sudo apt-get install -y libomp5
+        omp=$(find /usr/lib -name 'libomp.so.5' | head -n 1)
+        sudo ln -sf "$omp" "$(dirname "$omp")/libiomp5.so"
+        sudo ldconfig
+
+    - name: Restore dependencies
+      shell: bash
+      run: dotnet restore MLoop.slnx -p:RestoreAdditionalProjectSources="${GITHUB_WORKSPACE}/_feed"
+
+    - name: Build
+      run: dotnet build MLoop.slnx --configuration Release --no-restore
+
+    - name: Run tests (the CI set)
+      run: dotnet test MLoop.slnx --configuration Release --no-build --verbosity normal --max-parallel-test-modules 1 --filter "Category!=LLM&Category!=Slow&Category!=E2E&Category!=Database"
