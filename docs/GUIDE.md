@@ -187,14 +187,18 @@ mloop train datasets/images --task image-classification --balance 3   # oversamp
 mloop train data.csv --label risk --task binary-classification --weight inv_pi
 ```
 
-**The time limit and large tables.** `--time` is the budget of the trainer search. A search always finishes
-its first trial so that it returns a model, and then fits the chosen settings once more on every training
-row, so on a large table a run lasts longer than its limit by about a trial and a fit. On generated tables
-(Linux, 20 numeric columns, `--time 60`) training took 61–63 s at 10,000 rows, 68–99 s at 100,000 and
-91–130 s at 1,000,000 rows. The exception is a one-versus-all trainer, whose cost grows with rows × classes:
-at 1,000,000 rows and 100 classes the first trial alone took 400 s, the run 884 s and its peak memory 8 GB.
-The run says so after the first trial; to avoid the wait, train on a sample of the rows
-(`mloop sample create`) or with fewer classes.
+**The time limit and large tables.** `--time` is the budget of the trainer search, the final fit included. A run lasts
+longer than its limit by the time to read the file and to score the held-out rows (a fifth of it by default). A search
+always finishes its first trial so that it returns a model, and a trial costs more the more rows it fits — and, for a
+one-versus-all trainer, the more classes: the smallest forest took 7.9 s on 100 classes and 4,000 rows, where
+maximum-entropy L-BFGS took 0.9 s. So a multiclass search opens with a trainer that fits one model when the label has
+five classes or more, and from 50,000 training rows the search times its own first trial on a sample of 10,000 rows
+first: when that trial on all the rows would take more than a tenth of `--time`, the trials run on the largest sample
+of 10,000 × 2^k rows for which it would not, and the chosen settings are fitted on all the rows — or, when that fit
+would take more than half of `--time`, on the sample (a warning says which; a longer `--time` buys more rows). On generated tables
+(Linux x64 runner with four cores, 20 numeric columns, `--time 60`) training took 66–71 s at 100,000 rows and
+84–108 s at 1,000,000. The worst case, 1,000,000 rows and 100 classes, took 884 s and 8 GB before the search
+learned to size itself, and takes 108 s and 0.9 GB now.
 
 **Weighted training** (`--weight <column>`, or `weight: <column>` under the model in `mloop.yaml`):
 each row counts by its weight — the relative frequency it should have, such as 1/π for a row drawn
