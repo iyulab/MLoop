@@ -1880,6 +1880,11 @@ public partial class TrainingRunner
             _logger.Info($"Forecasting: series='{valueColumn}', {totalRows} rows, horizon={horizon}, window={windowSize}, seriesLength={seriesLength}");
 
             // Build SSA forecasting pipeline
+            // EXPERIMENT (not for main): rank selection named by MLOOP_SSA_RANK = auto | exact:<maxRank> | fast:<maxRank> | fixed:<r>
+            var rankSpec = (Environment.GetEnvironmentVariable("MLOOP_SSA_RANK") ?? "auto").Split(':');
+            var rankMethod = rankSpec[0] == "fast" ? Microsoft.ML.Transforms.TimeSeries.RankSelectionMethod.Fast : Microsoft.ML.Transforms.TimeSeries.RankSelectionMethod.Exact;
+            int? fixedRank = rankSpec[0] == "fixed" ? int.Parse(rankSpec[1]) : null;
+            int? maxRank = rankSpec[0] is "exact" or "fast" ? int.Parse(rankSpec[1]) : null;
             var pipeline = _mlContext.Forecasting.ForecastBySsa(
                 outputColumnName: ForecastOutput.ForecastColumnName,
                 inputColumnName: valueColumn,
@@ -1887,6 +1892,9 @@ public partial class TrainingRunner
                 seriesLength: seriesLength,
                 trainSize: trainSize,
                 horizon: horizon,
+                rankSelectionMethod: rankMethod,
+                rank: fixedRank,
+                maxRank: maxRank,
                 confidenceLowerBoundColumn: ForecastOutput.LowerBoundColumnName,
                 confidenceUpperBoundColumn: ForecastOutput.UpperBoundColumnName,
                 confidenceLevel: (float)ForecastOutput.ConfidenceLevel);

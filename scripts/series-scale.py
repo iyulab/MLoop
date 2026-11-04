@@ -97,11 +97,22 @@ def main():
     ap.add_argument('--seeds', default='1', help='comma-separated series seeds (the noise differs)')
     ap.add_argument('--step-timeout', type=int, default=0, help='seconds per step (0 = 1800)')
     ap.add_argument('--shape', default='monthly', choices=['monthly', 'daily'], help='monthly = a season of 12; daily = a yearly season of 365 and a weekly pattern')
+    ap.add_argument('--vary', default='', help='NAME=v1,v2,...: runs every cell once per value with that environment variable set (recorded as variant)')
     ap.add_argument('--out', default='series-scale-results.json')
     a = ap.parse_args()
     windows = [int(w) for w in a.windows.split(',') if w] or [None]
-    results = [walk(a.mloop, t, int(n), a.time, w if t == 'forecast' else None, a.step_timeout or None, int(sd), a.shape)
-               for t in a.tasks.split(',') for n in a.rows.split(',') for w in (windows if t == 'forecast' else [None]) for sd in a.seeds.split(',')]
+    var_name, _, var_values = a.vary.partition('=')
+    variants = var_values.split(',') if var_name else [None]
+
+    def cell(v, t, n, w, sd):
+        if var_name:
+            os.environ[var_name] = v
+        r = walk(a.mloop, t, int(n), a.time, w if t == 'forecast' else None, a.step_timeout or None, int(sd), a.shape)
+        r['variant'] = v
+        return r
+
+    results = [cell(v, t, n, w, sd)
+               for v in variants for t in a.tasks.split(',') for n in a.rows.split(',') for w in (windows if t == 'forecast' else [None]) for sd in a.seeds.split(',')]
     json.dump(results, open(a.out, 'w'), indent=1)
     print('\n| task | rows | window | seed | step | rc | wall s | peak MB | mae | oracle mae |\n|---|---|---|---|---|---|---|---|---|---|')
     for r in results:
