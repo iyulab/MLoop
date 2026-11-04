@@ -1881,7 +1881,11 @@ public partial class TrainingRunner
 
             // Build SSA forecasting pipeline
             // EXPERIMENT (not for main): rank selection named by MLOOP_SSA_RANK = auto | exact:<maxRank> | fast:<maxRank> | fixed:<r>
-            var rankSpec = (Environment.GetEnvironmentVariable("MLOOP_SSA_RANK") ?? "auto").Split(':');
+            var fullSpec = (Environment.GetEnvironmentVariable("MLOOP_SSA_RANK") ?? "auto").Split('+');
+            var rankSpec = fullSpec[0].Split(':');
+            var stabilize = !fullSpec.Contains("nostab");
+            var lenFlag = fullSpec.FirstOrDefault(f => f.StartsWith("len:", StringComparison.Ordinal));
+            var bufferLength = lenFlag is null ? seriesLength : Math.Min(seriesLength, int.Parse(lenFlag[4..]) * windowSize);
             var rankMethod = rankSpec[0] switch
             {
                 "fast" => Microsoft.ML.Transforms.TimeSeries.RankSelectionMethod.Fast,
@@ -1894,9 +1898,10 @@ public partial class TrainingRunner
                 outputColumnName: ForecastOutput.ForecastColumnName,
                 inputColumnName: valueColumn,
                 windowSize: windowSize,
-                seriesLength: seriesLength,
+                seriesLength: bufferLength,
                 trainSize: trainSize,
                 horizon: horizon,
+                shouldStabilize: stabilize,
                 rankSelectionMethod: rankMethod,
                 rank: fixedRank,
                 maxRank: maxRank,
