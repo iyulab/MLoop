@@ -188,7 +188,7 @@ public static class ForecastReplayService
     /// <summary>
     /// Maps a horizon forecast onto the shared structured-prediction row schema (the same
     /// PredictionRow the /predict API and tabular --json emit): Score = forecasted value,
-    /// ScoreLowerBound/Upper = SSA native band, IntervalConfidence = its coverage level.
+    /// ScoreLowerBound/Upper = the band (SSA's, scaled by the model's fitted width when it has one), IntervalConfidence = the level it is fitted to.
     /// Row order is the step order — step = index + 1, matching the CSV output's Step column.
     /// </summary>
     public static List<PredictionRow> BuildForecastRows(ForecastOutput forecast)

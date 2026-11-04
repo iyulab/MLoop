@@ -2021,6 +2021,12 @@ public partial class TrainingRunner
                 {
                     forecastBand = TimeSeriesNativeSupport.Guard(() => ForecastBandBacktest.Calibrate(
                         _mlContext, actualValues, trainSize, horizon, windowSize, config.SeriesLength, ownForecast, cancellationToken));
+                    if (forecastBand is not null)
+                    {
+                        // Recorded with the run's metrics, so a model's list entry and report say whether its band is calibrated.
+                        metricsDict["band_scale"] = forecastBand.Scale;
+                        metricsDict["band_scores"] = forecastBand.Scores;
+                    }
                     _logger.Info(forecastBand is null
                         ? "Forecast band: too few scored points to calibrate; the native band stands."
                         : $"Forecast band: scaled by {forecastBand.Scale:F3} to hold {forecastBand.Level:P0} ({forecastBand.Scores} forecasts of {forecastBand.Origins} origins).");
@@ -2557,7 +2563,10 @@ public class ForecastOutput
     public const string ForecastColumnName = "ForecastedValues";
     public const string LowerBoundColumnName = "LowerBound";
     public const string UpperBoundColumnName = "UpperBound";
-    /// <summary>Coverage level of the SSA native prediction interval (confidenceLevel at train time).</summary>
+    /// <summary>
+    /// The level the prediction band is asked for at train time, and the level its width is fitted to
+    /// (<see cref="MLoop.Core.Models.ForecastBandCalibration"/> scales the native band to hold it).
+    /// </summary>
     public const double ConfidenceLevel = 0.95;
 
     public float[] ForecastedValues { get; set; } = [];

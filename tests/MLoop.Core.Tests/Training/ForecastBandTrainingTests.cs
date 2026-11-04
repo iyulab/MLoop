@@ -59,6 +59,8 @@ public sealed class ForecastBandTrainingTests : IDisposable
         Assert.Equal(1 + ForecastBandBacktest.Origins(12), band.Origins);   // the held-out stretch and sixteen before it
         Assert.Equal(band.Origins * 12, band.Scores);
         Assert.True(double.IsFinite(band.Scale) && band.Scale > 0, $"scale {band.Scale}");
+        Assert.Equal(band.Scale, result.Metrics["band_scale"]);
+        Assert.Equal(band.Scores, result.Metrics["band_scores"]);
     }
 
     [TimeSeriesNativeFact]
@@ -68,6 +70,7 @@ public sealed class ForecastBandTrainingTests : IDisposable
         var result = await TrainAsync(WriteSeries(30, seed: 2), horizon: 3, windowSize: 5);
 
         Assert.Null(result.ForecastBand);
+        Assert.False(result.Metrics.ContainsKey("band_scale"), "an uncalibrated band is not reported as calibrated");
         Assert.True(result.Metrics.ContainsKey("mae"), "the model itself is trained");
     }
 
