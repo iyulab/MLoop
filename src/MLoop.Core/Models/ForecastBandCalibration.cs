@@ -97,6 +97,18 @@ public sealed record ForecastBandCalibration(
         return ((float)(forecast - Scale * (forecast - lower)), (float)(forecast + Scale * (upper - forecast)));
     }
 
+    /// <summary><paramref name="forecast"/> with each step's band scaled; the forecast itself is unchanged.</summary>
+    public Training.ForecastOutput Apply(Training.ForecastOutput forecast)
+    {
+        ArgumentNullException.ThrowIfNull(forecast);
+        var steps = Math.Min(forecast.ForecastedValues.Length, Math.Min(forecast.LowerBound.Length, forecast.UpperBound.Length));
+        var lower = (float[])forecast.LowerBound.Clone();
+        var upper = (float[])forecast.UpperBound.Clone();
+        for (var i = 0; i < steps; i++)
+            (lower[i], upper[i]) = Apply(forecast.ForecastedValues[i], lower[i], upper[i]);
+        return new Training.ForecastOutput { ForecastedValues = forecast.ForecastedValues, LowerBound = lower, UpperBound = upper };
+    }
+
     /// <summary>The calibration beside <paramref name="modelPath"/>, or null when there is none.</summary>
     public static ForecastBandCalibration? ReadBeside(string modelPath)
     {
