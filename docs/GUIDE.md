@@ -187,6 +187,15 @@ mloop train datasets/images --task image-classification --balance 3   # oversamp
 mloop train data.csv --label risk --task binary-classification --weight inv_pi
 ```
 
+**The time limit and large tables.** `--time` is the budget of the trainer search. A search always finishes
+its first trial so that it returns a model, and then fits the chosen settings once more on every training
+row, so on a large table a run lasts longer than its limit by about a trial and a fit. On generated tables
+(Linux, 20 numeric columns, `--time 60`) training took 61–63 s at 10,000 rows, 68–99 s at 100,000 and
+91–130 s at 1,000,000 rows. The exception is a one-versus-all trainer, whose cost grows with rows × classes:
+at 1,000,000 rows and 100 classes the first trial alone took 400 s, the run 884 s and its peak memory 8 GB.
+The run says so after the first trial; to avoid the wait, train on a sample of the rows
+(`mloop sample create`) or with fewer classes.
+
 **Weighted training** (`--weight <column>`, or `weight: <column>` under the model in `mloop.yaml`):
 each row counts by its weight — the relative frequency it should have, such as 1/π for a row drawn
 with probability π, or a lower weight for a less reliable label source. AutoML takes a weight
