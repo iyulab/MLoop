@@ -13,7 +13,7 @@ Linux and macOS (peak memory comes from getrusage of a wrapper's child: kilobyte
 import argparse, csv, json, math, os, platform, random, shlex, subprocess, sys, tempfile, time
 
 WRAPPER = ("import json,resource,subprocess,sys;p=subprocess.run(sys.argv[1:],capture_output=True,text=True);"
-           "print(json.dumps({'rc':p.returncode,'maxrss':resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss,'out':p.stdout[-60000:],'err':p.stderr[-2000:]}))")
+           "print(json.dumps({'rc':p.returncode,'maxrss':resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss,'out':p.stdout[-4000000:],'err':p.stderr[-2000:]}))")
 STEP_TIMEOUT = 1800
 HEAD = 500
 
