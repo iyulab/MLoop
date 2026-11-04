@@ -44,4 +44,24 @@ public class ForecastingWindowTests
             previous = window;
         }
     }
+
+    [Theory]
+    [InlineData(256, 10, 523)]
+    [InlineData(2, 1, 6)]
+    [InlineData(730, 10, 1471)]
+    public void TheRowsAWindowNeedsAreTwiceTheWindowPlusTheHorizonPlusOne(int window, int horizon, int expected)
+        => Assert.Equal(expected, ForecastingWindow.MinimumRows(window, horizon));
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(4)]
+    [InlineData(1_000)]
+    [InlineData(10_000)]
+    public void TheDefaultWindowAlwaysLeavesTheRowsItNeeds(int length)
+    {
+        // a quarter of the series (or the ceiling) is under half of what is left after a horizon of ten
+        var window = ForecastingWindow.Default(length);
+        if (length >= ForecastingWindow.MinimumRows(ForecastingWindow.Minimum, 10))
+            Assert.True(length >= ForecastingWindow.MinimumRows(window, 10), $"a series of {length} rows with the default window {window}");
+    }
 }

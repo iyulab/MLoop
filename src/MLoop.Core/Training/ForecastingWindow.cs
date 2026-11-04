@@ -24,6 +24,12 @@ public static class ForecastingWindow
     /// <summary>The smallest window SSA accepts.</summary>
     public const int Minimum = 2;
 
+    /// <summary>
+    /// The fewest rows a series needs to train a window and hold out the horizon: ML.NET wants the training rows (all
+    /// but the held-out horizon) to be more than twice the window.
+    /// </summary>
+    public static int MinimumRows(int windowSize, int horizon) => 2 * windowSize + horizon + 1;
+
     /// <summary>The window for a series of <paramref name="seriesLength"/> points when the project names none.</summary>
     public static int Default(int seriesLength)
         => Math.Clamp(seriesLength / 4, Minimum, MaximumDefault);
