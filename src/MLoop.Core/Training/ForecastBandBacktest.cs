@@ -14,14 +14,14 @@ namespace MLoop.Core.Training;
 internal static class ForecastBandBacktest
 {
     /// <summary>Origins before the model's own held-out stretch. The stretches do not overlap: each is one horizon before the next.</summary>
-    internal const int Origins = 8;
+    internal static int Origins => int.TryParse(Environment.GetEnvironmentVariable("MLOOP_BAND_ORIGINS"), out var o) ? o : 8;
 
     /// <summary>
     /// The most points a backtest fit reads: the ones just before its origin. A fit costs time in proportion to its length
     /// (a million points took minutes), and eight of them on the full series would multiply the run; the recent points are
     /// the ones the forecast is made from.
     /// </summary>
-    internal const int SeriesCap = 20_000;
+    internal static int SeriesCap => int.TryParse(Environment.GetEnvironmentVariable("MLOOP_BAND_CAP"), out var c) ? c : 20_000;
 
     private sealed class Point
     {
