@@ -1,8 +1,6 @@
 using System.CommandLine;
 using System.Globalization;
 using System.Text.Json;
-using CsvHelper;
-using CsvHelper.Configuration;
 using Microsoft.ML;
 using Microsoft.ML.Data;
 using Microsoft.ML.Transforms.TimeSeries;

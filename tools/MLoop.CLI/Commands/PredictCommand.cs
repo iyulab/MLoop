@@ -2,7 +2,6 @@ using System.CommandLine;
 using System.Globalization;
 using System.Text.Json;
 using CsvHelper;
-using CsvHelper.Configuration;
 using Microsoft.ML;
 using Microsoft.ML.Data;
 using Microsoft.ML.Transforms.TimeSeries;
@@ -461,32 +460,18 @@ public static partial class PredictCommand
 
         // Read input data
         var inputRecords = new List<Dictionary<string, object>>();
-        using (var inputReader = new StreamReader(inputFile))
-        using (var inputCsv = new CsvReader(inputReader, new CsvConfiguration(CultureInfo.InvariantCulture)))
+        await foreach (var record in ReadRecordsAsync(inputFile))
         {
-            await foreach (var record in inputCsv.GetRecordsAsync<dynamic>())
-            {
-                var dict = new Dictionary<string, object>();
-                foreach (var property in (IDictionary<string, object>)record)
-                {
-                    dict[property.Key] = property.Value;
-                }
-                inputRecords.Add(dict);
-            }
+            inputRecords.Add(record);
         }
 
         // Read output data (predictions)
         var predictions = new List<object>();
         var confidences = new List<double?>();
-        using (var outputReader = new StreamReader(outputFile))
-        using (var outputCsv = new CsvReader(outputReader, new CsvConfiguration(CultureInfo.InvariantCulture)))
+        await foreach (var dict in ReadRecordsAsync(outputFile))
         {
-            await foreach (var record in outputCsv.GetRecordsAsync<dynamic>())
-            {
-                var dict = (IDictionary<string, object>)record;
-                predictions.Add(SelectPredictionValue(dict));
-                confidences.Add(SelectConfidence(dict));
-            }
+            predictions.Add(SelectPredictionValue(dict));
+            confidences.Add(SelectConfidence(dict));
         }
 
         // Log each prediction
@@ -521,6 +506,27 @@ public static partial class PredictCommand
     /// confidence the prediction logs hold beside the answer (the log of a served prediction already does; this one logged null
     /// whatever the file said). Read as invariant text: the file is written that way.
     /// </summary>
+    /// <summary>
+    /// The records of a comma-separated file with a header, each as its cells (text) by column name. This reads the file again only
+    /// to log what was predicted, so a malformed quote is recovered, not refused: the prediction has already been made.
+    /// </summary>
+    private static async IAsyncEnumerable<Dictionary<string, object>> ReadRecordsAsync(string path)
+    {
+        using var reader = new StreamReader(path);
+        using var csv = CsvReader.Create(reader, CsvDialect.Reader());
+        await csv.ReadHeaderAsync().ConfigureAwait(false);
+        var headers = csv.Headers;
+        while (await csv.ReadAsync().ConfigureAwait(false))
+        {
+            var record = new Dictionary<string, object>(headers.Count);
+            for (var i = 0; i < headers.Count; i++)
+            {
+                record[headers[i]] = csv.GetString(i);
+            }
+            yield return record;
+        }
+    }
+
     internal static double? SelectConfidence(IDictionary<string, object> row)
         => row.TryGetValue("Confidence", out var value)
            && double.TryParse(Convert.ToString(value, CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out var confidence)

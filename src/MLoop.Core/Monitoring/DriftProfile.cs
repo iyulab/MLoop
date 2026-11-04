@@ -1,7 +1,6 @@
 using System.Globalization;
 using System.Text.Json.Serialization;
 using CsvHelper;
-using CsvHelper.Configuration;
 using MLoop.Core.Data;
 using MLoop.Core.Models;
 
@@ -128,19 +127,12 @@ public sealed record DriftProfile
         var (readPath, detection) = EncodingDetector.ConvertToUtf8WithBom(path);
         try
         {
-            var config = new CsvConfiguration(CultureInfo.InvariantCulture)
-            {
-                HasHeaderRecord = true,
-                MissingFieldFound = null,
-                BadDataFound = null,
-                TrimOptions = TrimOptions.Trim,
-            };
             using var reader = new StreamReader(readPath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-            using var csv = new CsvReader(reader, config);
-            if (!await csv.ReadAsync().ConfigureAwait(false))
+            using var csv = CsvReader.Create(reader, Data.CsvDialect.Reader(trim: true));
+            await csv.ReadHeaderAsync().ConfigureAwait(false);
+            string[] header = [.. csv.Headers];
+            if (header.Length == 0)
                 return new CsvSample([], []);
-            csv.ReadHeader();
-            var header = csv.HeaderRecord ?? [];
 
             var random = new Random(20261021);
             var reservoir = new List<string?[]>();
@@ -150,7 +142,7 @@ public sealed record DriftProfile
                 cancellationToken.ThrowIfCancellationRequested();
                 var row = new string?[header.Length];
                 for (var i = 0; i < header.Length; i++)
-                    row[i] = csv.TryGetField<string>(i, out var field) ? field : null;
+                    row[i] = i < csv.FieldCount ? csv.GetString(i) : null;
                 seen++;
                 if (reservoir.Count < sampleSize)
                     reservoir.Add(row);

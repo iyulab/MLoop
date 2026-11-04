@@ -274,9 +274,11 @@ public class ImageDirectoryLoaderTests : IDisposable
         try
         {
             Assert.Equal(".csv", Path.GetExtension(table));
-            using var reader = new CsvHelper.CsvReader(new StreamReader(table),
-                System.Globalization.CultureInfo.InvariantCulture);
-            var rows = reader.GetRecords<dynamic>().Select(r => (string)((IDictionary<string, object>)r)[ImageDirectoryLoader.ImagePathColumn]).ToList();
+            using var reader = CsvHelper.CsvReader.Create(new StreamReader(table), MLoop.Core.Data.CsvDialect.Reader(refuseMalformedQuotes: true));
+            var column = reader.GetFieldIndex(ImageDirectoryLoader.ImagePathColumn);
+            var rows = new List<string>();
+            while (reader.Read())
+                rows.Add(reader.GetString(column));
             Assert.Equal([odd, "/plain.jpg"], rows);
         }
         finally

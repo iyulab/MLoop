@@ -1,6 +1,5 @@
 using System.CommandLine;
 using CsvHelper;
-using CsvHelper.Configuration;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.FileSystem;
@@ -573,20 +572,12 @@ public static class ValidateCommand
     {
         try
         {
-            var csvConfig = new CsvConfiguration(System.Globalization.CultureInfo.InvariantCulture)
-            {
-                HasHeaderRecord = true,
-                MissingFieldFound = null,
-                BadDataFound = null
-            };
-
             using var reader = EncodingDetector.OpenReader(csvPath);
-            using var csv = new CsvReader(reader, csvConfig);
-            csv.Read();
+            using var csv = CsvReader.Create(reader, CsvDialect.Reader());
             csv.ReadHeader();
-            var headers = csv.HeaderRecord;
+            string[] headers = [.. csv.Headers];
 
-            if (headers == null || headers.Length == 0)
+            if (headers.Length == 0)
             {
                 warnings.Add(new ValidationWarning("data.train", "Training CSV has no header row"));
                 return;

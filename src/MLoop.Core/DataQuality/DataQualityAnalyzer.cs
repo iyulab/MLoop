@@ -1,6 +1,5 @@
 using System.Text;
 using CsvHelper;
-using CsvHelper.Configuration;
 using Microsoft.ML;
 using Microsoft.ML.Data;
 using MLoop.Extensibility.Preprocessing;
@@ -13,7 +12,7 @@ namespace MLoop.Core.DataQuality;
 public class DataQualityAnalyzer
 {
     private readonly ILogger _logger;
-    private readonly CsvConfiguration _csvConfig;
+    private readonly CsvReaderOptions _csvOptions;
 
     /// <summary>
     /// Initializes a new instance of DataQualityAnalyzer.
@@ -22,12 +21,7 @@ public class DataQualityAnalyzer
     public DataQualityAnalyzer(ILogger logger)
     {
         _logger = logger;
-        _csvConfig = new CsvConfiguration(System.Globalization.CultureInfo.InvariantCulture)
-        {
-            HasHeaderRecord = true,
-            MissingFieldFound = null,
-            BadDataFound = null
-        };
+        _csvOptions = Data.CsvDialect.Reader();
     }
 
     /// <summary>
@@ -59,11 +53,10 @@ public class DataQualityAnalyzer
             // Read header first to get column names
             string[] headers;
             using (var reader = new StreamReader(csvPath))
-            using (var csv = new CsvReader(reader, _csvConfig))
+            using (var csv = CsvReader.Create(reader, _csvOptions))
             {
-                await csv.ReadAsync().ConfigureAwait(false);
-                csv.ReadHeader();
-                headers = csv.HeaderRecord ?? Array.Empty<string>();
+                await csv.ReadHeaderAsync().ConfigureAwait(false);
+                headers = [.. csv.Headers];
             }
 
             if (headers.Length == 0)
@@ -245,16 +238,15 @@ public class DataQualityAnalyzer
         int duplicateCount = 0;
 
         using var reader = new StreamReader(csvPath);
-        using var csv = new CsvReader(reader, _csvConfig);
+        using var csv = CsvReader.Create(reader, _csvOptions);
 
         // Skip header
-        await csv.ReadAsync().ConfigureAwait(false);
-        csv.ReadHeader();
+        await csv.ReadHeaderAsync().ConfigureAwait(false);
 
         // Sample first 1000 rows for performance
         while (await csv.ReadAsync().ConfigureAwait(false) && totalRows < 1000)
         {
-            var rowData = string.Join(",", csv.Parser.Record ?? Array.Empty<string>());
+            var rowData = string.Join(",", Data.CsvDialect.Record(csv));
             totalRows++;
 
             if (!lineHashes.Add(rowData))

@@ -1,6 +1,5 @@
 using System.Globalization;
 using CsvHelper;
-using CsvHelper.Configuration;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.Data;
 using MLoop.Core.Evaluation;
@@ -167,17 +166,17 @@ public static class ModelExplanation
         var (readPath, detection) = EncodingDetector.ConvertToUtf8WithBom(csvPath);
         try
         {
-            var config = new CsvConfiguration(CultureInfo.InvariantCulture) { HasHeaderRecord = true, MissingFieldFound = null, BadDataFound = null };
             using var reader = new StreamReader(readPath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-            using var csv = new CsvReader(reader, config);
-            if (!await csv.ReadAsync().ConfigureAwait(false) || !csv.ReadHeader() || csv.HeaderRecord is null)
+            using var csv = CsvReader.Create(reader, CsvDialect.Reader());
+            await csv.ReadHeaderAsync().ConfigureAwait(false);
+            if (csv.Headers.Count == 0)
                 throw new ArgumentException($"'{csvPath}' has no header row.");
-            var header = csv.HeaderRecord;
+            string[] header = [.. csv.Headers];
             var rows = new List<string[]>();
             while (await csv.ReadAsync().ConfigureAwait(false))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var record = csv.Parser.Record ?? [];
+                var record = CsvDialect.Record(csv);
                 var row = new string[header.Length];
                 for (var i = 0; i < header.Length; i++)
                     row[i] = i < record.Length ? record[i] : "";
@@ -195,16 +194,16 @@ public static class ModelExplanation
     private static async Task WriteAsync(string path, IReadOnlyList<string> header, IReadOnlyList<string[]> rows, CancellationToken cancellationToken)
     {
         await using var writer = new StreamWriter(path, false, new System.Text.UTF8Encoding(false));
-        await using var output = new CsvWriter(writer, CultureInfo.InvariantCulture);
+        await using var output = CsvWriter.Create(writer, CsvDialect.Writer());
         foreach (var h in header)
             output.WriteField(h);
-        await output.NextRecordAsync().ConfigureAwait(false);
+        await output.EndRecordAsync().ConfigureAwait(false);
         foreach (var row in rows)
         {
             cancellationToken.ThrowIfCancellationRequested();
             foreach (var field in row)
                 output.WriteField(field);
-            await output.NextRecordAsync().ConfigureAwait(false);
+            await output.EndRecordAsync().ConfigureAwait(false);
         }
     }
 }

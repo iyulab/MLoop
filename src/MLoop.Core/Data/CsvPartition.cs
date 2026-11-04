@@ -1,6 +1,5 @@
 using System.Globalization;
 using CsvHelper;
-using CsvHelper.Configuration;
 
 namespace MLoop.Core.Data;
 
@@ -28,20 +27,14 @@ public static class CsvPartition
         var (readPath, detection) = EncodingDetector.ConvertToUtf8WithBom(csvPath);
         try
         {
-            var config = new CsvConfiguration(CultureInfo.InvariantCulture)
-            {
-                HasHeaderRecord = true,
-                MissingFieldFound = null,
-                BadDataFound = null,
-            };
-
             using var reader = new StreamReader(readPath, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-            using var csv = new CsvReader(reader, config);
+            using var csv = CsvReader.Create(reader, CsvDialect.Reader());
 
-            if (!await csv.ReadAsync().ConfigureAwait(false) || !csv.ReadHeader() || csv.HeaderRecord is null)
+            await csv.ReadHeaderAsync().ConfigureAwait(false);
+            if (csv.Headers.Count == 0)
                 throw new ArgumentException($"'{csvPath}' has no header row.");
 
-            var header = csv.HeaderRecord;
+            string[] header = [.. csv.Headers];
             var index = Array.FindIndex(header, h => h.Trim().Equals(column, StringComparison.OrdinalIgnoreCase));
             if (index < 0)
                 throw new ArgumentException(
@@ -51,7 +44,7 @@ public static class CsvPartition
             while (await csv.ReadAsync().ConfigureAwait(false))
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var record = csv.Parser.Record ?? [];
+                var record = CsvDialect.Record(csv);
                 var value = index < record.Length ? record[index].Trim() : "";
                 if (value.Length == 0)
                     value = "(empty)";
@@ -73,16 +66,16 @@ public static class CsvPartition
             {
                 var path = Path.Combine(directory, $"slice-{n++:D3}.csv");
                 await using (var writer = new StreamWriter(path, false, new System.Text.UTF8Encoding(false)))
-                await using (var output = new CsvWriter(writer, CultureInfo.InvariantCulture))
+                await using (var output = CsvWriter.Create(writer, CsvDialect.Writer()))
                 {
                     foreach (var h in header)
                         output.WriteField(h);
-                    await output.NextRecordAsync().ConfigureAwait(false);
+                    await output.EndRecordAsync().ConfigureAwait(false);
                     foreach (var row in rows)
                     {
                         foreach (var field in row)
                             output.WriteField(field);
-                        await output.NextRecordAsync().ConfigureAwait(false);
+                        await output.EndRecordAsync().ConfigureAwait(false);
                     }
                 }
                 slices.Add(new CsvSlice(value, path, rows.Count));

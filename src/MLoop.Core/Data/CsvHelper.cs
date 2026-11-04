@@ -1,6 +1,5 @@
 using System.Globalization;
 using CsvHelper;
-using CsvHelper.Configuration;
 using MLoop.Extensibility;
 using MLoop.Extensibility.Preprocessing;
 
@@ -64,21 +63,11 @@ public class CsvHelperImpl : ICsvHelper
         {
             var targetEncoding = encoding ?? System.Text.Encoding.UTF8;
 
-            var config = new CsvConfiguration(CultureInfo.InvariantCulture)
-            {
-                HasHeaderRecord = true,
-                MissingFieldFound = null, // Ignore missing fields
-                BadDataFound = null, // Ignore bad data
-                TrimOptions = TrimOptions.Trim,
-                Encoding = targetEncoding
-            };
-
             using var reader = new StreamReader(readPath, targetEncoding, detectEncodingFromByteOrderMarks: true);
-            using var csv = new CsvReader(reader, config);
+            using var csv = CsvReader.Create(reader, CsvDialect.Reader(trim: true)); // short rows read empty, bad quotes recovered
 
-            await csv.ReadAsync().ConfigureAwait(false);
-            csv.ReadHeader();
-            var headers = csv.HeaderRecord ?? throw new InvalidOperationException("No headers found in CSV");
+            await csv.ReadHeaderAsync().ConfigureAwait(false);
+            var headers = csv.Headers.Count > 0 ? csv.Headers.ToArray() : throw new InvalidOperationException("No headers found in CSV");
             onHeaders?.Invoke(headers);
 
             while (await csv.ReadAsync().ConfigureAwait(false))
@@ -91,7 +80,7 @@ public class CsvHelperImpl : ICsvHelper
                     // a reader that cleaned some of them only when a step happened to rewrite the file made the same data train or be
                     // refused by what else it held, turned the decimal comma of 3,14 into 314, and left every file that was not
                     // rewritten (what `predict` and `evaluate` read) unread. FormattedNumbers names them; the file says its numbers plainly.
-                    values[i] = csv.GetField(headers[i]) ?? string.Empty;
+                    values[i] = csv.GetString(i);
                 }
                 yield return values;
             }
@@ -130,14 +119,8 @@ public class CsvHelperImpl : ICsvHelper
             Directory.CreateDirectory(directory);
         }
 
-        var config = new CsvConfiguration(CultureInfo.InvariantCulture)
-        {
-            Delimiter = ",",
-            HasHeaderRecord = true
-        };
-
         using var writer = new StreamWriter(path, false, targetEncoding);
-        using var csv = new CsvWriter(writer, config);
+        using var csv = CsvWriter.Create(writer, CsvDialect.Writer());
 
         // Get headers from first record
         var headers = data[0].Keys.ToList();
@@ -147,7 +130,7 @@ public class CsvHelperImpl : ICsvHelper
         {
             csv.WriteField(header);
         }
-        await csv.NextRecordAsync().ConfigureAwait(false);
+        await csv.EndRecordAsync().ConfigureAwait(false);
 
         // Write records
         foreach (var record in data)
@@ -156,7 +139,7 @@ public class CsvHelperImpl : ICsvHelper
             {
                 csv.WriteField(record.TryGetValue(header, out var value) ? value : string.Empty);
             }
-            await csv.NextRecordAsync().ConfigureAwait(false);
+            await csv.EndRecordAsync().ConfigureAwait(false);
         }
 
         // Return absolute path
@@ -199,20 +182,14 @@ public class CsvHelperImpl : ICsvHelper
             Directory.CreateDirectory(directory);
         }
 
-        var config = new CsvConfiguration(CultureInfo.InvariantCulture)
-        {
-            Delimiter = ",",
-            HasHeaderRecord = true
-        };
-
         using var writer = new StreamWriter(path, false, System.Text.Encoding.UTF8);
-        using var csv = new CsvWriter(writer, config);
+        using var csv = CsvWriter.Create(writer, CsvDialect.Writer());
 
         foreach (var header in headers)
         {
             csv.WriteField(header);
         }
-        await csv.NextRecordAsync().ConfigureAwait(false);
+        await csv.EndRecordAsync().ConfigureAwait(false);
 
         await foreach (var row in rows.WithCancellation(cancellationToken).ConfigureAwait(false))
         {
@@ -220,7 +197,7 @@ public class CsvHelperImpl : ICsvHelper
             {
                 csv.WriteField(value);
             }
-            await csv.NextRecordAsync().ConfigureAwait(false);
+            await csv.EndRecordAsync().ConfigureAwait(false);
         }
 
         return Path.GetFullPath(path);
@@ -259,22 +236,12 @@ public class CsvHelperImpl : ICsvHelper
         {
             var targetEncoding = encoding ?? System.Text.Encoding.UTF8;
 
-            var config = new CsvConfiguration(CultureInfo.InvariantCulture)
-            {
-                HasHeaderRecord = true,
-                MissingFieldFound = null,
-                BadDataFound = null,
-                TrimOptions = TrimOptions.Trim,
-                Encoding = targetEncoding
-            };
-
             using var reader = new StreamReader(readPath, targetEncoding, detectEncodingFromByteOrderMarks: true);
-            using var csv = new CsvReader(reader, config);
+            using var csv = CsvReader.Create(reader, CsvDialect.Reader(trim: true));
 
-            await csv.ReadAsync().ConfigureAwait(false);
-            csv.ReadHeader();
+            await csv.ReadHeaderAsync().ConfigureAwait(false);
 
-            return csv.HeaderRecord?.ToList() ?? new List<string>();
+            return csv.Headers.Count > 0 ? csv.Headers.ToList() : throw new InvalidOperationException("No headers found in CSV");
         }
         finally
         {

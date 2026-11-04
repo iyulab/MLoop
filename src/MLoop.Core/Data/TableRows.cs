@@ -1,6 +1,5 @@
 using System.Globalization;
 using CsvHelper;
-using CsvHelper.Configuration;
 
 namespace MLoop.Core.Data;
 
@@ -29,20 +28,13 @@ public static class TableRows
     {
         ArgumentNullException.ThrowIfNull(path);
         using var reader = new StreamReader(path, System.Text.Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
-        var configuration = new CsvConfiguration(CultureInfo.InvariantCulture)
-        {
-            HasHeaderRecord = false,
-            MissingFieldFound = null,
-            BadDataFound = null,
-            TrimOptions = TrimOptions.Trim,
-        };
-        using var csv = new CsvReader(reader, configuration);
+        using var csv = CsvReader.Create(reader, CsvDialect.Reader(hasHeader: false, trim: true));
         if (!csv.Read())
             yield break; // no header
         if (includeHeader)
-            yield return [.. csv.Parser.Record!];
+            yield return CsvDialect.Record(csv);
         for (var taken = 0; taken < maxRecords && csv.Read(); taken++)
-            yield return [.. csv.Parser.Record!];
+            yield return CsvDialect.Record(csv);
     }
 
     /// <summary>

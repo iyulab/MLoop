@@ -101,18 +101,12 @@ public static class TrainingInput
         try
         {
             using var reader = EncodingDetector.OpenReader(dataFile);
-            using var csv = new CsvHelper.CsvReader(reader, new CsvHelper.Configuration.CsvConfiguration(System.Globalization.CultureInfo.InvariantCulture)
-            {
-                Delimiter = delimiter,
-                HasHeaderRecord = false,
-                BadDataFound = null,
-                MissingFieldFound = null,
-            });
-            return csv.Read() && csv.Parser.Record is { } record
-                ? [.. record.Select(name => System.Text.RegularExpressions.Regex.Replace(name.TrimStart('\uFEFF'), @"\r\n|\r|\n", " "))]
+            using var csv = CsvHelper.CsvReader.Create(reader, MLoop.Core.Data.CsvDialect.Reader(hasHeader: false, separator: delimiter[0]));
+            return csv.Read()
+                ? [.. MLoop.Core.Data.CsvDialect.Record(csv).Select(name => System.Text.RegularExpressions.Regex.Replace(name.TrimStart('\uFEFF'), @"\r\n|\r|\n", " "))]
                 : null;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CsvHelper.CsvHelperException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException)
         {
             return null;
         }
