@@ -2,6 +2,7 @@ using Microsoft.ML;
 using Microsoft.ML.Data;
 using MLoop.Core.Data;
 using MLoop.Core.Detection;
+using MLoop.Core.Models;
 using MLoop.Core.Storage;
 using MLoop.Core.Training;
 
@@ -167,6 +168,11 @@ public static class ForecastReplayService
         {
             return (null, "Forecast produced 0 values.");
         }
+
+        // The band SSA gives is narrower than the error on points past the series; the width this model was fitted to is
+        // beside it. A model trained before it, or on a series too short to fit one, keeps the native band.
+        if (ForecastBandCalibration.ReadBeside(modelPath) is { } band)
+            forecast = band.Apply(forecast);
 
         if (requestedHorizon.HasValue && requestedHorizon.Value != forecast.ForecastedValues.Length)
         {

@@ -95,7 +95,10 @@ def score_future(out, ahead):
         upper = [get(r, 'scoreupperbound') for r in rows]
         k = min(len(forecast), len(ahead))
         inside = [lower[i] <= ahead[i] <= upper[i] for i in range(k)]
+        # the share inside by third of the horizon: a band that is right near and wrong far shows here, in a mean it does not
+        thirds = [round(sum(inside[a * k // 3:(a + 1) * k // 3]) / max(1, (a + 1) * k // 3 - a * k // 3), 3) for a in range(3)]
         return {'future_mae': round(sum(abs(forecast[i] - ahead[i]) for i in range(k)) / k, 3), 'interval_coverage': round(sum(inside) / k, 3),
+                'interval_coverage_thirds': thirds,
                 'interval_halfwidth': round(sum((upper[i] - lower[i]) / 2 for i in range(k)) / k, 3)}
     except Exception as e:  # a missing or unparsable forecast is a result too
         return {'future_error': repr(e)[:120]}

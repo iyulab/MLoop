@@ -138,14 +138,23 @@ Both bounds are absent for a model trained before conformal bands, or for any no
 
 ### Forecast bands
 
-A forecasting model's `scoreLowerBound`/`scoreUpperBound` come from ML.NET's singular spectrum analysis, which sets
-the band from the spread of the model's own fit at the requested level (`intervalConfidence`, 0.95). That spread is
-smaller than the model's error on points it has not seen, so **the band covers fewer of the points that follow the
-series than it says**. On generated series (a constant level, a season of 12 and a straight line, each with noise of
-standard deviation 1, forecast 100 points ahead, 48 series) a band asked for at 0.90, 0.95, 0.975 and 0.99 held
-0.80, 0.88, 0.92 and 0.96 of the points that followed; its half-width was 0.88 of what a normal band for the
-noise would be at the stated level. Read the band as a guide to how the spread grows with the horizon, not as a
-guarantee of the level; the bands of a regression model (above) are the ones calibrated on held-out rows.
+A forecasting model's `scoreLowerBound`/`scoreUpperBound` start from ML.NET's singular spectrum analysis, which sets the
+band from the spread of the model's own fit at the requested level (`intervalConfidence`, 0.95). That spread is smaller
+than the model's error on points it has not seen — on generated series a band asked for at 0.95 held about 0.78 of the
+points that followed it (0.88 for a constant level, a season and a straight line; 0.49 for a random walk) — so training
+also measures how wide the band has to be. The same recipe is fitted again on the points before each of several earlier
+origins, each fit forecasts what followed, and the distance every point missed by, in half-widths of the native band, gives
+a factor (the conformal quantile at 0.95) that is kept as `forecast-band.json` beside the model. The forecast is replayed
+with the band scaled about it by that factor; the forecast itself is unchanged.
+
+On generated series the scaled bands held 0.96 of the points that followed (48 series of 1,000 points, 100 points ahead)
+and 0.98 (32 series of 10,000 and 100,000 points, wider than needed because the fits behind the factor read the last ten
+windows, not the whole series). Read `intervalConfidence` as a target the band is fitted to, not a guarantee: the factor
+is one number for the whole horizon, so a series whose error grows faster or slower with the step than the native band
+shape says is covered on average and not at every step, and a series whose behaviour changes after its end is covered by
+nothing. A model trained before this, and a model whose series was too short to score twenty forecasts, keep the native
+band — the one that holds less than it says; retrain to have the calibrated one. The bands of a regression model (above)
+are calibrated on held-out rows.
 
 ### Object detection — boxes per image
 

@@ -108,6 +108,7 @@ public class ModelRegistry : IModelRegistry
         {
             ExperimentLayout.DecisionThresholdFileName, ExperimentLayout.CalibrationFileName, ExperimentLayout.TextEncodersFileName,
             ExperimentLayout.ImageAnomalyFileName, ExperimentLayout.PatchBankFileName, ExperimentLayout.SeriesFileName,
+            ExperimentLayout.ForecastBandFileName,
         })
         {
             var sourceLayerPath = _fileSystem.CombinePath(experimentPath, layer);

@@ -1906,6 +1906,7 @@ public partial class TrainingRunner
 
             // Evaluate: extract actual holdout values and compare with forecasts
             var metricsDict = new Dictionary<string, double>();
+            ForecastBandBacktest.Forecast? ownForecast = null;
 
             // Get the actual values from the series (last `horizon` values are holdout)
             var actualValues = new List<float>();
@@ -1929,8 +1930,15 @@ public partial class TrainingRunner
                 if (forecastCol.HasValue)
                 {
                     // ForecastedValues is a VBuffer<float> containing the horizon-length forecast
-                    using var forecastCursor = predictions.GetRowCursor(new[] { forecastCol.Value });
+                    var lowerBoundCol = predictions.Schema.GetColumnOrNull(ForecastOutput.LowerBoundColumnName);
+                    var upperBoundCol = predictions.Schema.GetColumnOrNull(ForecastOutput.UpperBoundColumnName);
+                    var readColumns = new List<DataViewSchema.Column> { forecastCol.Value };
+                    if (lowerBoundCol.HasValue) readColumns.Add(lowerBoundCol.Value);
+                    if (upperBoundCol.HasValue) readColumns.Add(upperBoundCol.Value);
+                    using var forecastCursor = predictions.GetRowCursor(readColumns);
                     var forecastGetter = forecastCursor.GetGetter<VBuffer<float>>(forecastCol.Value);
+                    var lowerGetter = lowerBoundCol.HasValue ? forecastCursor.GetGetter<VBuffer<float>>(lowerBoundCol.Value) : null;
+                    var upperGetter = upperBoundCol.HasValue ? forecastCursor.GetGetter<VBuffer<float>>(upperBoundCol.Value) : null;
 
                     // The forecast made at the last training row is the one that looks at the held-out points. The forecast
                     // of the file's last row is of the points beyond the file — scored against the held-out points it reported a phase error as a model error (a noiseless
@@ -1942,14 +1950,25 @@ public partial class TrainingRunner
                     // Stopping at the held-out stretch moved a saved model's forecast by the rows left unread.
                     VBuffer<float> forecastBuffer = default;
                     VBuffer<float> heldOutForecast = default;
+                    VBuffer<float> lowerBuffer = default, upperBuffer = default;
+                    VBuffer<float> heldOutLower = default, heldOutUpper = default;
                     var forecastRow = 0;
                     while (forecastCursor.MoveNext())
                     {
                         forecastGetter(ref forecastBuffer);
+                        lowerGetter?.Invoke(ref lowerBuffer);
+                        upperGetter?.Invoke(ref upperBuffer);
                         if (++forecastRow == trainSize)
+                        {
                             forecastBuffer.CopyTo(ref heldOutForecast);
+                            lowerBuffer.CopyTo(ref heldOutLower);
+                            upperBuffer.CopyTo(ref heldOutUpper);
+                        }
                     }
                     forecastBuffer = heldOutForecast;
+                    if (lowerGetter != null && upperGetter != null)
+                        ownForecast = new ForecastBandBacktest.Forecast(
+                            heldOutForecast.DenseValues().ToArray(), heldOutLower.DenseValues().ToArray(), heldOutUpper.DenseValues().ToArray());
 
                     var forecastedValues = forecastBuffer.DenseValues().ToArray();
                     var holdoutActual = actualValues.Skip(trainSize).Take(horizon).ToArray();
@@ -1993,6 +2012,25 @@ public partial class TrainingRunner
             metricsDict["series_length"] = seriesLength;
             metricsDict["train_size"] = trainSize;
 
+            // The band SSA gives is narrower than the error on points it has not seen: fit its width on forecasts of such points.
+            // A failure here costs the model its calibrated band, never the model.
+            ForecastBandCalibration? forecastBand = null;
+            try
+            {
+                if (actualValues.Count >= trainSize + horizon)
+                {
+                    forecastBand = TimeSeriesNativeSupport.Guard(() => ForecastBandBacktest.Calibrate(
+                        _mlContext, actualValues, trainSize, horizon, windowSize, config.SeriesLength, ownForecast, cancellationToken));
+                    _logger.Info(forecastBand is null
+                        ? "Forecast band: too few scored points to calibrate; the native band stands."
+                        : $"Forecast band: scaled by {forecastBand.Scale:F3} to hold {forecastBand.Level:P0} ({forecastBand.Scores} forecasts of {forecastBand.Origins} origins).");
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.Info($"Forecast band not calibrated: {ex.Message}");
+            }
+
             return new TrainedModel
             {
                 Trainer = forecastTrainer,
@@ -2000,7 +2038,8 @@ public partial class TrainingRunner
                 Metrics = metricsDict,
                 RowCount = totalRows,
                 Trials = trialChannel.Records,
-                RankingMetric = trialChannel.RankingMetric
+                RankingMetric = trialChannel.RankingMetric,
+                ForecastBand = forecastBand
             };
         }, cancellationToken).ConfigureAwait(false);
     }
@@ -2580,6 +2619,13 @@ public record TrainedModel
     /// where none was fitted. <see cref="Metrics"/> are the calibrated model's.
     /// </summary>
     public ProbabilityCalibration? Calibration { get; init; }
+
+    /// <summary>
+    /// A forecasting model's band width, fitted on forecasts of points the recipe had not seen — saved beside the model
+    /// (<see cref="ForecastBandCalibration.WriteBeside"/>), where the one place that replays a forecast applies it. Null where
+    /// the series was too short to score enough points (the native band stands) and for every other task.
+    /// </summary>
+    public ForecastBandCalibration? ForecastBand { get; init; }
 
     /// <summary>
     /// What a run asked for a blend (<see cref="TrainingConfig.Ensemble"/>) came to — the blend it answers with, or why the single
