@@ -187,6 +187,15 @@ public partial class TrainingRunner
         return Models.TaskTypes.Canonical(task) is "forecasting" or "time-series-anomaly";
     }
 
+    /// <summary>The score above which a time-series anomaly model flags a point when the definition names none (ML.NET's default for the spectral-residual detector).</summary>
+    public const double DefaultAnomalyThreshold = 0.3;
+
+    /// <summary>Whether <paramref name="task"/> has a detector score a threshold can be set on: only <c>time-series-anomaly</c> does.</summary>
+    public static bool SupportsAnomalyThreshold(string? task) => Models.TaskTypes.Canonical(task) is "time-series-anomaly";
+
+    /// <summary>Whether <paramref name="threshold"/> can be a spectral-residual score threshold: the score lies between 0 and 1, so a value outside flags every point or none.</summary>
+    public static bool IsValidAnomalyThreshold(double threshold) => threshold is > 0 and < 1;
+
     /// <summary>
     /// Whether <paramref name="task"/>'s model reads the table's other columns as features. A series model
     /// reads its one series column, matrix factorization its user and item, and a deep-learning trainer the
@@ -2105,6 +2114,9 @@ public partial class TrainingRunner
                 throw new InvalidOperationException($"Time series anomaly detection requires at least 12 data points (got {totalRows}).");
 
             _logger.Info($"Time series anomaly: series='{valueColumn}', {totalRows} rows");
+            if (config.AnomalyThreshold is { } requested && !IsValidAnomalyThreshold(requested))
+                throw new InvalidOperationException(string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"Anomaly threshold {requested} is not a score threshold: it must be above 0 and below 1."));
 
             // A fallback chain, not a search: SR-CNN, and the SSA spike detector only where SR-CNN could not be fitted. There is no
             // label to rank detectors by, and a detector's alert rate says how often it fires, not how well — so the first one that
@@ -2124,7 +2136,7 @@ public partial class TrainingRunner
                     lookaheadWindowSize: srCnn.LookaheadWindowSize,
                     averagingWindowSize: srCnn.AveragingWindowSize,
                     judgementWindowSize: srCnn.JudgementWindowSize,
-                    threshold: 0.3)));
+                    threshold: config.AnomalyThreshold ?? DefaultAnomalyThreshold)));
 
             // SSA Spike Detector — trainingWindowSize must be > 2 * seasonalityWindowSize
             var ssaWindowSize = Math.Max(2, Math.Min(totalRows / 8, 50));

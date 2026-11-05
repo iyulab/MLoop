@@ -89,6 +89,7 @@ public class ConfigMerger
             Horizon = baseDefinition?.Horizon,
             WindowSize = baseDefinition?.WindowSize,
             SeriesLength = baseDefinition?.SeriesLength,
+            AnomalyThreshold = baseDefinition?.AnomalyThreshold,
             UserColumn = baseDefinition?.UserColumn,
             ItemColumn = baseDefinition?.ItemColumn
         };

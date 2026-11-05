@@ -104,6 +104,8 @@ internal static class TrainPresenter
             table.AddRow("Max Trials", maxTrials.ToString(System.Globalization.CultureInfo.InvariantCulture));
         if (definition.Training?.Epochs is { } epochs)
             table.AddRow("Epochs", epochs.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        if (definition.AnomalyThreshold is { } anomalyThreshold)
+            table.AddRow("Anomaly Threshold", anomalyThreshold.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture));
         table.AddRow("Metric", definition.Training?.Metric ?? ConfigDefaults.DefaultMetric);
 
         if (TrainingRunner.IsTimeSeriesTask(definition.Task))

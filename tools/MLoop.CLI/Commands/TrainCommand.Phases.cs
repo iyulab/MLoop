@@ -115,6 +115,7 @@ public static partial class TrainCommand
         if ((ModelTrainingConfig.MaxTrialsConflict(effectiveDefinition)
              ?? ModelTrainingConfig.TestSplitConflict(effectiveDefinition)
              ?? ModelTrainingConfig.EpochsConflict(effectiveDefinition)
+             ?? ModelTrainingConfig.AnomalyThresholdConflict(effectiveDefinition)
              ?? TrainingInput.BalanceConflict(effectiveDefinition, balance)
              ?? ModelTrainingConfig.WeightConflict(effectiveDefinition, balance)) is { } weightError)
         {

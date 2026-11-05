@@ -1129,7 +1129,18 @@ series (noise of standard deviation 1, a spike every 100 points, three seeds eac
 0 % of the time on the monthly season and 0.3 – 0.7 % on the others. A series with strong structure therefore hides spikes of a few times
 its noise. A lower threshold finds more of them and flags ordinary points as well — on the monthly season, 0.2 flagged 56 % of the 5-times
 spikes with 0.5 % of ordinary points, 0.1 flagged 97 % with 9 %, and no threshold tried found 80 % of the 5-times spikes with at most 1 % of ordinary points flagged on any of the four shapes.
-Use `mloop detect`, whose `--threshold` is yours to set, when small spikes matter.
+The threshold is yours to set: `anomaly_threshold` under the model in `mloop.yaml` (above 0 and below 1; unset, it is 0.3). It is part of
+the trained detector, so retrain to change it, and `mloop validate` refuses a value that is no score or a task that has no detector score.
+
+```yaml
+models:
+  default:
+    task: time-series-anomaly
+    label: value
+    anomaly_threshold: 0.2
+```
+
+`mloop detect`, whose `--threshold` is set on every call, scores a file without training a model when that suits the work better.
 
 ### Image anomaly
 

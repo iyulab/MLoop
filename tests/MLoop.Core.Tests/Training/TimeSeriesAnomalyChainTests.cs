@@ -49,4 +49,47 @@ public sealed class TimeSeriesAnomalyChainTests : IDisposable
         var trial = Assert.Single(result.Trials);
         Assert.Equal("SrCnnAnomaly", trial.Trainer.Name);
     }
+
+    [TimeSeriesNativeFact]
+    public async Task ALowerThreshold_FlagsMorePointsThanTheDefault()
+    {
+        var path = WriteSeries(1_000);
+        var ctx = new MLContext(seed: 7);
+        async Task<double> Flagged(double? threshold) => (await new TrainingRunner(ctx, new CsvDataLoader(ctx)).RunAsync(new TrainingConfig
+        {
+            ModelName = "series",
+            DataFile = path,
+            LabelColumn = "value",
+            Task = "time-series-anomaly",
+            TimeLimitSeconds = 30,
+            AnomalyThreshold = threshold,
+        })).Metrics["anomaly_count"];
+
+        var byDefault = await Flagged(null);
+        var lowered = await Flagged(0.05);
+
+        Assert.True(lowered > byDefault, $"threshold 0.05 flagged {lowered} points, the default {TrainingRunner.DefaultAnomalyThreshold} flagged {byDefault}");
+    }
+
+    [Theory]
+    [InlineData(0.0)]
+    [InlineData(1.0)]
+    [InlineData(-0.2)]
+    [InlineData(double.NaN)]
+    public async Task AThresholdOutsideTheScore_IsRefusedBeforeAnythingIsFitted(double threshold)
+    {
+        var ctx = new MLContext(seed: 7);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => new TrainingRunner(ctx, new CsvDataLoader(ctx)).RunAsync(new TrainingConfig
+        {
+            ModelName = "series",
+            DataFile = WriteSeries(200),
+            LabelColumn = "value",
+            Task = "time-series-anomaly",
+            TimeLimitSeconds = 30,
+            AnomalyThreshold = threshold,
+        }));
+
+        Assert.Contains("not a score threshold", ex.Message, StringComparison.Ordinal);
+    }
 }

@@ -138,6 +138,12 @@ public class ModelDefinition
     public int? SeriesLength { get; set; }
 
     /// <summary>
+    /// The score above which a <c>time-series-anomaly</c> model flags a point (spectral-residual score, above 0 and below 1).
+    /// Unset: 0.3, ML.NET's default. A lower value finds smaller spikes and flags more ordinary points; the guide tabulates the trade.
+    /// </summary>
+    public double? AnomalyThreshold { get; set; }
+
+    /// <summary>
     /// User column for recommendation task.
     /// </summary>
     public string? UserColumn { get; set; }

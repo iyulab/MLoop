@@ -71,7 +71,7 @@ public static class TrainingDefinition
         // The request's ensemble in --ensemble's place: it asks for a blend; leaving it out leaves the choice to mloop.yaml.
         if (ensemble)
             definition.Ensemble = true;
-        if ((ModelTrainingConfig.MaxTrialsConflict(definition) ?? ModelTrainingConfig.TestSplitConflict(definition) ?? ModelTrainingConfig.EpochsConflict(definition)) is { } maxTrialsError)
+        if ((ModelTrainingConfig.MaxTrialsConflict(definition) ?? ModelTrainingConfig.TestSplitConflict(definition) ?? ModelTrainingConfig.EpochsConflict(definition) ?? ModelTrainingConfig.AnomalyThresholdConflict(definition)) is { } maxTrialsError)
             return (null, maxTrialsError);
         if (ModelTrainingConfig.WeightConflict(definition) is { } weightError)
             return (null, weightError);
