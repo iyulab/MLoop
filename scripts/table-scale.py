@@ -22,20 +22,31 @@ PREDICT_ROWS = 10_000
 TASKS = {'binary': 'binary-classification', 'multiclass': 'multiclass-classification', 'regression': 'regression'}
 
 
-def write_table(path, n, features, classes, task, seed):
+def write_table(path, n, features, classes, task, seed, signal='linear'):
     """Writes n rows: `features` numeric columns f0.. and a label y. The label follows s = sum(a_i f_i) + 0.5 * f0 * f1 + noise, standardized: a
     regression's y is s itself; a classification's y is the class its quantile falls in (cut points at the normal quantiles, so the classes are
-    balanced). A third of the columns carry no signal."""
+    balanced). A third of the columns carry no signal.
+
+    `signal='interactions'` replaces the linear projection with a sum of products of column pairs, s = sum(a_k f_2k f_2k+1): no column predicts the
+    label alone and a linear model learns nothing, so the score keeps rising with the rows a tree-based model sees - a table on which fitting the
+    model on a sample of the rows costs something, which the linear signal (saturated by tens of thousands of rows) cannot show."""
     rng = random.Random(seed)
     useful = max(2, features * 2 // 3)
     weights = [rng.uniform(-1, 1) for _ in range(useful)]
-    spread = math.sqrt(sum(w * w for w in weights) + 0.25 + 0.3 ** 2)
+    pairs = max(1, useful // 2)
+    if signal == 'interactions':
+        spread = math.sqrt(sum(w * w for w in weights[:pairs]) + 0.3 ** 2)
+    else:
+        spread = math.sqrt(sum(w * w for w in weights) + 0.25 + 0.3 ** 2)
     with open(path, 'w', newline='') as fh:
         w = csv.writer(fh)
         w.writerow([f'f{i}' for i in range(features)] + ['y'])
         for _ in range(n):
             x = [rng.gauss(0, 1) for _ in range(features)]
-            s = sum(weights[i] * x[i] for i in range(useful)) + 0.5 * x[0] * x[1] + rng.gauss(0, 0.3)
+            if signal == 'interactions':
+                s = sum(weights[k] * x[2 * k] * x[2 * k + 1] for k in range(pairs)) + rng.gauss(0, 0.3)
+            else:
+                s = sum(weights[i] * x[i] for i in range(useful)) + 0.5 * x[0] * x[1] + rng.gauss(0, 0.3)
             z = s / spread
             if task == 'regression':
                 y = round(z, 5)
@@ -76,13 +87,13 @@ def result_of(out):
         return {'result_error': repr(e)[:120]}
 
 
-def walk(mloop, task, n, classes, features, time_budget, seed, timeout=None):
+def walk(mloop, task, n, classes, features, time_budget, seed, timeout=None, signal='linear'):
     base = tempfile.mkdtemp(prefix=f'table-scale-{task}-')
     log = []
     print(f'== {task} rows={n:,} classes={classes if task != "regression" else "-"} features={features} time={time_budget}s seed={seed}  ({base})', flush=True)
     t0 = time.monotonic()
-    write_table(os.path.join(base, 'train.csv'), n, features, classes, task, seed * 2 - 1)
-    write_table(os.path.join(base, 'test.csv'), min(n, PREDICT_ROWS), features, classes, task, seed * 2)
+    write_table(os.path.join(base, 'train.csv'), n, features, classes, task, seed * 2 - 1, signal)
+    write_table(os.path.join(base, 'test.csv'), min(n, PREDICT_ROWS), features, classes, task, seed * 2, signal)
     gen_s = round(time.monotonic() - t0, 1)
     step(mloop, 'init', ['init', 'proj', '--task', TASKS[task], '--label', 'y', '--json'], base, log)
     proj = os.path.join(base, 'proj')
@@ -93,7 +104,7 @@ def walk(mloop, task, n, classes, features, time_budget, seed, timeout=None):
         step(mloop, 'predict', ['predict', os.path.join(base, 'test.csv'), '--json'], proj, log)
         step(mloop, 'evaluate', ['evaluate', 'exp-001', os.path.join(base, 'test.csv'), '--json'], proj, log)
     train_wall = next((s['wall_s'] for s in log if s['step'] == 'train'), None)
-    return {'task': task, 'rows': n, 'classes': classes if task != 'regression' else None, 'features': features, 'time_budget': time_budget, 'seed': seed,
+    return {'task': task, 'signal': signal, 'rows': n, 'classes': classes if task != 'regression' else None, 'features': features, 'time_budget': time_budget, 'seed': seed,
             'generate_s': gen_s, 'train_over_budget_s': round(train_wall - time_budget, 1) if train_wall is not None else None, **result, 'steps': log}
 
 
@@ -106,6 +117,7 @@ def main():
     ap.add_argument('--tasks', default='binary,multiclass,regression')
     ap.add_argument('--time', type=int, default=60)
     ap.add_argument('--seeds', default='1')
+    ap.add_argument('--signal', default='linear', choices=['linear', 'interactions'], help='the label function: a linear projection (default) or a sum of products of column pairs')
     ap.add_argument('--step-timeout', type=int, default=0, help='seconds per step (0 = 3600)')
     ap.add_argument('--out', default='table-scale-results.json')
     a = ap.parse_args()
@@ -118,7 +130,7 @@ def main():
             for f in a.features.split(','):
                 for n in a.rows.split(','):
                     for sd in a.seeds.split(','):
-                        results.append(walk(a.mloop, task, int(n), k, int(f), a.time, int(sd), a.step_timeout or None))
+                        results.append(walk(a.mloop, task, int(n), k, int(f), a.time, int(sd), a.step_timeout or None, a.signal))
                         json.dump(results, open(a.out, 'w'), indent=1)   # a long walk keeps what it has measured
     print('\n| task | rows | classes | cols | step | rc | wall s | peak MB | over budget s | trainer |\n|---|---|---|---|---|---|---|---|---|---|')
     for r in results:

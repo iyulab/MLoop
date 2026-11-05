@@ -64,6 +64,9 @@ on:
       table_seeds:
         description: 'Table seeds for that walk (comma-separated)'
         default: '1'
+      table_signal:
+        description: "The tables' label function for that walk: linear, or interactions (sums of products of column pairs, a score that keeps rising with the rows)"
+        default: 'linear'
 
 concurrency:
   group: lifecycle-check-${{ github.ref }}
@@ -141,8 +144,9 @@ jobs:
         FEATURES: ${{ inputs.table_features }}
         TIME: ${{ inputs.table_time }}
         SEEDS: ${{ inputs.table_seeds }}
+        SIGNAL: ${{ inputs.table_signal }}
       run: |
-        python3 scripts/table-scale.py --mloop "dotnet $PWD/tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" --rows "$ROWS" --tasks "$TASKS" --classes "$CLASSES" --features "$FEATURES" --time "$TIME" --seeds "$SEEDS" --out table-scale-results.json | tee table-scale.log
+        python3 scripts/table-scale.py --mloop "dotnet $PWD/tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" --rows "$ROWS" --tasks "$TASKS" --classes "$CLASSES" --features "$FEATURES" --time "$TIME" --seeds "$SEEDS" --signal "$SIGNAL" --out table-scale-results.json | tee table-scale.log
         echo '```' >> "$GITHUB_STEP_SUMMARY"; tail -n 60 table-scale.log >> "$GITHUB_STEP_SUMMARY"; echo '```' >> "$GITHUB_STEP_SUMMARY"
 
     - name: Upload the results
