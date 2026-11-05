@@ -188,7 +188,8 @@ mloop train data.csv --label risk --task binary-classification --weight inv_pi
 ```
 
 **The time limit and large tables.** `--time` is the budget of the trainer search, the final fit included. A run lasts
-longer than its limit by the time to read the file and to score the held-out rows (a fifth of it by default). A search
+longer than its limit by the time to read the file and to score the held-out rows (a fifth of it by default) — and that
+time grows with the model the search finds: a forest of thousands of trees scores slowly. A search
 always finishes its first trial so that it returns a model, and a trial costs more the more rows it fits — and, for a
 one-versus-all trainer, the more classes: the smallest forest took 7.9 s on 100 classes and 4,000 rows, where
 maximum-entropy L-BFGS took 0.9 s. So a multiclass search opens with a trainer that fits one model when the label has
@@ -197,7 +198,7 @@ first: when that trial on all the rows would take more than a tenth of `--time`,
 of 10,000 × 2^k rows for which it would not, and the chosen settings are fitted on all the rows — or, when that fit
 would take more than half of `--time`, on the sample (a warning says which; a longer `--time` buys more rows). On generated tables
 (Linux x64 runner with four cores, 20 numeric columns, `--time 60`) training took 66–71 s at 100,000 rows and
-84–108 s at 1,000,000. The worst case, 1,000,000 rows and 100 classes, took 884 s and 8 GB before the search
+84–131 s at 1,000,000 (the longest where the search found a forest of thousands of trees). The worst case, 1,000,000 rows and 100 classes, took 884 s and 8 GB before the search
 learned to size itself, and takes 108 s and 0.9 GB now.
 
 **Weighted training** (`--weight <column>`, or `weight: <column>` under the model in `mloop.yaml`):
