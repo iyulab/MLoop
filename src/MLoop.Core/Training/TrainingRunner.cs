@@ -2100,7 +2100,9 @@ public partial class TrainingRunner
 
             _logger.Info($"Time series anomaly: series='{valueColumn}', {totalRows} rows");
 
-            // Try multiple detectors: SrCnn (best), then SSA Spike, then SSA ChangePoint
+            // A fallback chain, not a search: SR-CNN, and the SSA spike detector only where SR-CNN could not be fitted. There is no
+            // label to rank detectors by, and a detector's alert rate says how often it fires, not how well — so the first one that
+            // fits is the model, and the later ones are not fitted (nor recorded as trials of a search that never compared them).
             var detectors = new List<(string Name, Func<IEstimator<ITransformer>> Factory)>();
 
             // SR-CNN: Spectral Residual based — best general-purpose detector
@@ -2134,7 +2136,6 @@ public partial class TrainingRunner
             ITransformer? bestModel = null;
             string bestDetectorName = "";
             Dictionary<string, double>? bestMetrics = null;
-            long bestAnomalyCount = -1;
             Exception? missingNative = null;
             var trialChannel = CreateTrialChannel(progress);
 
@@ -2182,14 +2183,10 @@ public partial class TrainingRunner
                     trialChannel.ReportCompleted(
                         TrainerDescriptor.Of(name), "detection_rate", detectionRate, metricsDict);
 
-                    // Pick the first detector that produces reasonable results
-                    if (bestModel == null)
-                    {
-                        bestModel = model;
-                        bestDetectorName = name;
-                        bestMetrics = metricsDict;
-                        bestAnomalyCount = anomalyCount;
-                    }
+                    bestModel = model;
+                    bestDetectorName = name;
+                    bestMetrics = metricsDict;
+                    break;
                 }
                 catch (Exception ex)
                 {
