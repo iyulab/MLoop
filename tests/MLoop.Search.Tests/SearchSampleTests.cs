@@ -73,9 +73,41 @@ public sealed class SearchSampleTests
         var keys = Enumerable.Range(0, 100_000).Select(i => (i % 10) switch { < 6 => "a", < 9 => "b", _ => "c" }).ToArray();   // 60 / 30 / 10 %
         var keep = SearchSample.Stratified(keys, stratify: true, 10_000, seed: 3);
         Assert.Equal(10_000, keep.Count(k => k));
-        Assert.Equal(6_000, keys.Where((_, i) => keep[i]).Count(k => k == "a"));
-        Assert.Equal(3_000, keys.Where((_, i) => keep[i]).Count(k => k == "b"));
-        Assert.Equal(1_000, keys.Where((_, i) => keep[i]).Count(k => k == "c"));
+        // the shares, to within the floor each class is given first
+        Assert.InRange(keys.Where((_, i) => keep[i]).Count(k => k == "a"), 5_990, 6_010);
+        Assert.InRange(keys.Where((_, i) => keep[i]).Count(k => k == "b"), 2_990, 3_010);
+        Assert.InRange(keys.Where((_, i) => keep[i]).Count(k => k == "c"), 990, 1_010);
+    }
+
+    [Fact]
+    public void ARareClass_IsNeverLeftOutOfTheSample()
+    {
+        // 8 rows of 300,000 would be 0.3 of a row in a sample of 10,000: a model fitted on that sample would never know the class
+        var keys = Enumerable.Range(0, 300_000).Select(i => i < 8 ? "rare" : (i % 2 == 0 ? "a" : "b")).ToArray();
+        foreach (var seed in Enumerable.Range(0, 20))
+        {
+            var keep = SearchSample.Stratified(keys, true, 10_000, seed);
+            Assert.Equal(10_000, keep.Count(k => k));
+            Assert.Equal(SearchSample.MinPerClass, keys.Where((_, i) => keep[i]).Count(k => k == "rare"));
+        }
+    }
+
+    [Fact]
+    public void AClassWithFewerRowsThanTheFloor_KeepsAllOfThem()
+    {
+        var keys = Enumerable.Range(0, 50_000).Select(i => i < 3 ? "tiny" : "big").ToArray();
+        var keep = SearchSample.Stratified(keys, true, 1_000, 1);
+        Assert.Equal(3, keys.Where((_, i) => keep[i]).Count(k => k == "tiny"));
+        Assert.Equal(1_000, keep.Count(k => k));
+    }
+
+    [Fact]
+    public void MoreClassesThanTheFloorsFit_FallBackToPlainProportions()
+    {
+        // 400 classes × 5 rows = 2,000 > 1,000: the floors cannot all be given
+        var keys = Enumerable.Range(0, 80_000).Select(i => (i % 400).ToString()).ToArray();
+        var keep = SearchSample.Stratified(keys, true, 1_000, 1);
+        Assert.Equal(1_000, keep.Count(k => k));
     }
 
     [Fact]

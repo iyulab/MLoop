@@ -34,6 +34,9 @@ public static class SearchSample
     /// </summary>
     public const double ProbeCutShare = 1.5;
 
+    /// <summary>Rows each class keeps in a sample at least (all its rows when it has fewer), so a model fitted on the sample knows every class.</summary>
+    internal const int MinPerClass = 5;
+
     /// <summary>The share of the time budget a refit on all the rows may take; a larger refit is made on the sample instead.</summary>
     public const double RefitShare = 0.5;
 
@@ -103,11 +106,19 @@ public static class SearchSample
         var groups = (stratify
             ? keys.Select((k, i) => (k, i)).GroupBy(x => x.k, StringComparer.Ordinal).OrderBy(g => g.Key, StringComparer.Ordinal).Select(g => g.Select(x => x.i).ToArray())
             : [Enumerable.Range(0, keys.Count).ToArray()]).ToList();
-        // The shares by largest remainder: every class keeps its proportion, and the sizes sum to size.
-        var exact = groups.Select(g => (double)size * g.Length / keys.Count).ToArray();
-        var take = exact.Select(e => (int)Math.Floor(e)).ToArray();
+        // Every class keeps at least MinPerClass rows (all of them when it has fewer) while the floors fit in the sample: a class the sample
+        // misses is a class a model fitted on the sample never predicts. The rest is shared by largest remainder in proportion to
+        // the rows each class has above its floor, so the sizes sum to size.
+        var floor = groups.Select(g => Math.Min(g.Length, MinPerClass)).ToArray();
+        if (floor.Sum() > size)
+            floor = new int[groups.Count];   // more classes than the sample can hold at the floor: plain proportions
+        var spare = size - floor.Sum();
+        var above = groups.Select((g, i) => g.Length - floor[i]).ToArray();
+        var aboveTotal = above.Sum(a => (long)a);
+        var exact = above.Select(a => (double)spare * a / aboveTotal).ToArray();
+        var take = exact.Select((e, i) => floor[i] + (int)Math.Floor(e)).ToArray();
         var left = size - take.Sum();
-        foreach (var i in Enumerable.Range(0, groups.Count).OrderByDescending(i => exact[i] - take[i]).ThenBy(i => i).Take(left))
+        foreach (var i in Enumerable.Range(0, groups.Count).OrderByDescending(i => exact[i] - Math.Floor(exact[i])).ThenBy(i => i).Take(left))
             take[i]++;
         var random = new Random(unchecked(seed + 7919));
         for (var g = 0; g < groups.Count; g++)
