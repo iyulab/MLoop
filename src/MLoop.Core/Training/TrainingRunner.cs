@@ -2121,13 +2121,15 @@ public partial class TrainingRunner
             // A fallback chain, not a search: SR-CNN, and the SSA spike detector only where SR-CNN could not be fitted. There is no
             // label to rank detectors by, and a detector's alert rate says how often it fires, not how well — so the first one that
             // fits is the model, and the later ones are not fitted (nor recorded as trials of a search that never compared them).
-            var detectors = new List<(string Name, Func<IEstimator<ITransformer>> Factory)>();
+            var detectors = new List<(TrainerDescriptor Detector, Func<IEstimator<ITransformer>> Factory)>();
 
             // SR-CNN: Spectral Residual based — best general-purpose detector
             // Every window derives from the row count together — see
             // SrCnnWindowSizes for why the judgement window cannot be a literal.
             var srCnn = SrCnnWindowSizes.ForSeries(totalRows);
-            detectors.Add(("SrCnnAnomaly", () =>
+            // The descriptor carries the threshold the model was fitted with, so the trial record says which one an experiment used.
+            var threshold = config.AnomalyThreshold ?? DefaultAnomalyThreshold;
+            detectors.Add((TrainerDescriptor.Of("SrCnnAnomaly", ("threshold", threshold)), () =>
                 _mlContext.Transforms.DetectAnomalyBySrCnn(
                     outputColumnName: TimeSeriesAnomalyOutput.PredictionColumnName,
                     inputColumnName: valueColumn,
@@ -2136,13 +2138,13 @@ public partial class TrainingRunner
                     lookaheadWindowSize: srCnn.LookaheadWindowSize,
                     averagingWindowSize: srCnn.AveragingWindowSize,
                     judgementWindowSize: srCnn.JudgementWindowSize,
-                    threshold: config.AnomalyThreshold ?? DefaultAnomalyThreshold)));
+                    threshold: threshold)));
 
             // SSA Spike Detector — trainingWindowSize must be > 2 * seasonalityWindowSize
             var ssaWindowSize = Math.Max(2, Math.Min(totalRows / 8, 50));
             var ssaPValueSize = Math.Max(2, ssaWindowSize / 2);
             var ssaTrainingSize = Math.Max(ssaWindowSize * 2 + 1, Math.Min(totalRows, 100));
-            detectors.Add(("SsaSpikeDetector", () =>
+            detectors.Add((TrainerDescriptor.Of("SsaSpikeDetector", ("confidence", 95.0)), () =>
                 _mlContext.Transforms.DetectSpikeBySsa(
                     outputColumnName: TimeSeriesAnomalyOutput.PredictionColumnName,
                     inputColumnName: valueColumn,
@@ -2152,7 +2154,7 @@ public partial class TrainingRunner
                     seasonalityWindowSize: ssaWindowSize)));
 
             ITransformer? bestModel = null;
-            string bestDetectorName = "";
+            TrainerDescriptor? bestDetector = null;
             Dictionary<string, double>? bestMetrics = null;
             Exception? missingNative = null;
             var trialChannel = CreateTrialChannel(progress);
@@ -2160,7 +2162,8 @@ public partial class TrainingRunner
             for (int i = 0; i < detectors.Count; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var (name, factory) = detectors[i];
+                var (detector, factory) = detectors[i];
+                var name = detector.Name;
 
                 try
                 {
@@ -2199,10 +2202,10 @@ public partial class TrainingRunner
                     };
 
                     trialChannel.ReportCompleted(
-                        TrainerDescriptor.Of(name), "detection_rate", detectionRate, metricsDict);
+                        detector, "detection_rate", detectionRate, metricsDict);
 
                     bestModel = model;
-                    bestDetectorName = name;
+                    bestDetector = detector;
                     bestMetrics = metricsDict;
                     break;
                 }
@@ -2229,7 +2232,7 @@ public partial class TrainingRunner
 
             return new TrainedModel
             {
-                Trainer = TrainerDescriptor.Of(bestDetectorName),
+                Trainer = bestDetector!,
                 Model = bestModel,
                 Metrics = bestMetrics ?? new Dictionary<string, double>(),
                 RowCount = totalRows,

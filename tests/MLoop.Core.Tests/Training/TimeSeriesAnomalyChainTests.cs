@@ -51,11 +51,11 @@ public sealed class TimeSeriesAnomalyChainTests : IDisposable
     }
 
     [TimeSeriesNativeFact]
-    public async Task ALowerThreshold_FlagsMorePointsThanTheDefault()
+    public async Task ALowerThreshold_FlagsMorePointsThanTheDefault_AndTheTrialSaysWhichOneItUsed()
     {
         var path = WriteSeries(1_000);
         var ctx = new MLContext(seed: 7);
-        async Task<double> Flagged(double? threshold) => (await new TrainingRunner(ctx, new CsvDataLoader(ctx)).RunAsync(new TrainingConfig
+        async Task<TrainedModel> Train(double? threshold) => await new TrainingRunner(ctx, new CsvDataLoader(ctx)).RunAsync(new TrainingConfig
         {
             ModelName = "series",
             DataFile = path,
@@ -63,12 +63,15 @@ public sealed class TimeSeriesAnomalyChainTests : IDisposable
             Task = "time-series-anomaly",
             TimeLimitSeconds = 30,
             AnomalyThreshold = threshold,
-        })).Metrics["anomaly_count"];
+        });
 
-        var byDefault = await Flagged(null);
-        var lowered = await Flagged(0.05);
+        var byDefault = await Train(null);
+        var lowered = await Train(0.05);
 
-        Assert.True(lowered > byDefault, $"threshold 0.05 flagged {lowered} points, the default {TrainingRunner.DefaultAnomalyThreshold} flagged {byDefault}");
+        Assert.True(lowered.Metrics["anomaly_count"] > byDefault.Metrics["anomaly_count"],
+            $"threshold 0.05 flagged {lowered.Metrics["anomaly_count"]} points, the default {TrainingRunner.DefaultAnomalyThreshold} flagged {byDefault.Metrics["anomaly_count"]}");
+        Assert.Equal("0.3", Assert.Single(byDefault.Trials).Trainer.Parameters!.Single(p => p.Key == "threshold").Value);
+        Assert.Equal("0.05", Assert.Single(lowered.Trials).Trainer.Parameters!.Single(p => p.Key == "threshold").Value);
     }
 
     [Theory]
