@@ -964,6 +964,29 @@ def anomaly_scenario(mloop, budget, keep, expected):
         run.check('explicit_promote', (pr or {}).get('status') in ('promoted', 'already-production'), f'rc={rc} status={(pr or {}).get("status")}')
         rc, rb = run.json_of('rollback', '--json', cwd=proj)
         run.check('rollback', (rb or {}).get('status') == 'rolled-back' and (rb or {}).get('experimentId') == 'exp-001', f'status={(rb or {}).get("status")} to={(rb or {}).get("experimentId")}')
+
+        # The score above which a point is flagged is the model's own, stated in mloop.yaml: it must reach the detector, and the trial
+        # record of the experiment says which one was used. A value that is not a score is refused, not fitted.
+        config_path = os.path.join(proj, 'mloop.yaml')
+        text = open(config_path).read()
+        marker = '    description: '
+        eol = text.index('\n', text.index(marker)) + 1
+        open(config_path, 'w').write(text[:eol] + '    anomaly_threshold: 0.2\n' + text[eol:])
+        rc, evs = run.events('train', os.path.join(base, 'train_a.csv'), '--label', 'value', *run.budget_args(), '--json', cwd=proj)
+        stated = next((e for e in evs if e.get('event') == 'result'), {}).get('experimentId')
+        used = []
+        try:
+            with open(os.path.join(proj, 'models', 'default', 'staging', stated or 'exp-003', 'trials.ndjson')) as trials:
+                for line in trials:
+                    trial = json.loads(line)
+                    if (trial.get('trainer') or {}).get('name') == 'SrCnnAnomaly':
+                        used.append(float(trial['trainer']['params']['threshold']))
+        except (OSError, ValueError, KeyError):
+            pass
+        run.check('yaml_anomaly_threshold_reaches_the_detector', rc == 0 and used == [0.2], f'rc={rc} {stated} detector thresholds in the trial record={used}')
+        open(config_path, 'w').write(text[:eol] + '    anomaly_threshold: 1.5\n' + text[eol:])
+        rc, out, err = run.cli('train', os.path.join(base, 'train_a.csv'), '--label', 'value', *run.budget_args(), cwd=proj)
+        run.check('yaml_anomaly_threshold_that_is_no_score_is_refused', rc != 0 and 'score threshold' in out + err, f'rc={rc} {(out + err).strip()[-140:]}')
     except Exception as ex:
         run.check('scenario', False, f'{type(ex).__name__}: {ex}')
     finally:
