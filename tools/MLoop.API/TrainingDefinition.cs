@@ -9,11 +9,38 @@ using MLoop.CLI.Infrastructure.ML;
 /// </summary>
 public static class TrainingDefinition
 {
+    /// <summary>
+    /// What a <c>POST /train</c> job asks of its model's definition: the command line's place. Named, not positional —
+    /// two string fields (task, label) and three integers (time, trials, epochs) sit side by side, and a new field
+    /// is one line here and one at each call.
+    /// </summary>
+    /// <param name="ModelName">The model whose mloop.yaml definition is read.</param>
+    /// <param name="Task">The task (<c>--task</c>); null leaves it to mloop.yaml.</param>
+    /// <param name="Label">The label column (<c>--label</c>); null leaves it to mloop.yaml.</param>
+    /// <param name="TimeLimitSeconds">The training budget (<c>--time</c>); null leaves it to mloop.yaml.</param>
+    /// <param name="Metric">The metric to optimize; <c>auto</c> leaves it to mloop.yaml, then the task.</param>
+    /// <param name="TestSplit">The held-out share (<c>--test-split</c>); null leaves it to mloop.yaml.</param>
+    /// <param name="Weight">The weight column (<c>--weight</c>).</param>
+    /// <param name="MaxTrials">At most this many trials (<c>--max-trials</c>).</param>
+    /// <param name="Epochs">Epochs of a deep-learning task (<c>--epochs</c>).</param>
+    /// <param name="Ensemble"><c>true</c> asks for a blend (<c>--ensemble</c>); false leaves it to mloop.yaml.</param>
+    public sealed record Request(
+        string ModelName,
+        string? Task,
+        string? Label,
+        int? TimeLimitSeconds,
+        string Metric,
+        double? TestSplit,
+        string? Weight = null,
+        int? MaxTrials = null,
+        int? Epochs = null,
+        bool Ensemble = false);
+
     /// <summary>The definition, or why the request cannot be trained as asked.</summary>
     public static async Task<(ModelDefinition? Definition, string? Error)> ResolveAsync(
-        ConfigLoader configLoader, string modelName, string? task, string? label, int? timeLimitSeconds,
-        string metric, double? testSplit, string? weight = null, int? maxTrials = null, int? epochs = null, bool ensemble = false, CancellationToken cancellationToken = default)
+        ConfigLoader configLoader, Request request, CancellationToken cancellationToken = default)
     {
+        var (modelName, task, label, timeLimitSeconds, metric, testSplit, weight, maxTrials, epochs, ensemble) = request;
         var config = await configLoader.LoadUserConfigAsync(cancellationToken);
         ModelDefinition definition;
         try

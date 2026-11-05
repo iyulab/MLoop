@@ -43,8 +43,10 @@ public static class TrainingEndpoints
             // request may leave the task and the label to mloop.yaml. Refused now, not inside the job: what the
             // project's mloop.yaml asks for that this run could not honour (a weight on a task it does not reach,
             // prep steps the API does not run), and what no task could train (an unknown task, a missing label).
-            var (trainDefinition, definitionError) = await TrainingDefinition.ResolveAsync(configLoader, request.ModelName, request.Task,
-                request.LabelColumn, request.TimeLimitSeconds, request.Metric, request.TestSplit, request.Weight, request.MaxTrials, request.Epochs, request.Ensemble);
+            var (trainDefinition, definitionError) = await TrainingDefinition.ResolveAsync(configLoader,
+                new TrainingDefinition.Request(
+                    ModelName: request.ModelName, Task: request.Task, Label: request.LabelColumn, TimeLimitSeconds: request.TimeLimitSeconds, Metric: request.Metric,
+                    TestSplit: request.TestSplit, Weight: request.Weight, MaxTrials: request.MaxTrials, Epochs: request.Epochs, Ensemble: request.Ensemble));
             if (definitionError != null)
                 return Results.BadRequest(new { error = definitionError });
             if (TrainingInput.BalanceConflict(trainDefinition!, request.Balance) is { } balanceError)

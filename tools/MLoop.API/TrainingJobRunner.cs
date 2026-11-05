@@ -99,7 +99,10 @@ public class TrainingJobRunner : BackgroundService
             // ranking/recommendation/time-series columns — with the request in the command line's place.
             var (definition, refusal) = await TrainingDefinition.ResolveAsync(
                 scope.ServiceProvider.GetRequiredService<ConfigLoader>(),
-                job.ModelName, job.Task, job.LabelColumn, job.TimeLimitSeconds, job.Metric, job.TestSplit, job.Weight, job.MaxTrials, job.Epochs, job.Ensemble, stoppingToken);
+                new TrainingDefinition.Request(
+                    ModelName: job.ModelName, Task: job.Task, Label: job.LabelColumn, TimeLimitSeconds: job.TimeLimitSeconds, Metric: job.Metric,
+                    TestSplit: job.TestSplit, Weight: job.Weight, MaxTrials: job.MaxTrials, Epochs: job.Epochs, Ensemble: job.Ensemble),
+                stoppingToken);
             if (definition is null)
                 throw new InvalidOperationException(refusal);
             var projectRoot = scope.ServiceProvider.GetRequiredService<ProjectRootPath>().Value;
