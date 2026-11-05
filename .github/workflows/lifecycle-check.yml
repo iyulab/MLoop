@@ -46,6 +46,9 @@ on:
       series_level:
         description: 'The value the monthly, trend and noise series sit around (noise standard deviation stays 1)'
         default: '100'
+      series_scores:
+        description: 'Anomaly series: keep every test row score and verdict in the results (true/false)'
+        default: 'false'
       series_shape:
         description: 'Comma-separated shapes of the walked series (monthly, daily, trend, walk, growth, noise; see scripts/series-scale.py)'
         default: 'monthly'
@@ -138,9 +141,10 @@ jobs:
         SPIKE_EVERY: ${{ inputs.series_spike_every }}
         SPIKE_SIZE: ${{ inputs.series_spike_size }}
         LEVEL: ${{ inputs.series_level }}
+        SCORES: ${{ inputs.series_scores }}
         VARY: ${{ inputs.series_vary }}
       run: |
-        python3 scripts/series-scale.py --mloop "dotnet $PWD/tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" --rows "$ROWS" --tasks "$TASKS" --windows "$WINDOWS" --step-timeout "$STEP_TIMEOUT" --seeds "$SEEDS" --shape "$SHAPE" --horizon "$HORIZON" --spike-every "$SPIKE_EVERY" --spike-size "$SPIKE_SIZE" --level "$LEVEL" --vary "$VARY" --out series-scale-results.json | tee series-scale.log
+        python3 scripts/series-scale.py --mloop "dotnet $PWD/tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" --rows "$ROWS" --tasks "$TASKS" --windows "$WINDOWS" --step-timeout "$STEP_TIMEOUT" --seeds "$SEEDS" --shape "$SHAPE" --horizon "$HORIZON" --spike-every "$SPIKE_EVERY" --spike-size "$SPIKE_SIZE" --level "$LEVEL" $([ "$SCORES" = true ] && echo --scores) --vary "$VARY" --out series-scale-results.json | tee series-scale.log
         echo '```' >> "$GITHUB_STEP_SUMMARY"; tail -n 60 series-scale.log >> "$GITHUB_STEP_SUMMARY"; echo '```' >> "$GITHUB_STEP_SUMMARY"
 
     - name: Walk the tabular tasks over growing tables

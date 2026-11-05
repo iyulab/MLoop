@@ -106,7 +106,7 @@ def score_future(out, ahead):
         return {'future_error': repr(e)[:120]}
 
 
-def score_anomaly(out, n, spike_every):
+def score_anomaly(out, n, spike_every, keep_scores=False):
     """The judgements `predict --json` printed for the test series against the spikes written into it (one every `spike_every` points): the share of
     spikes flagged (a flag within one point of a spike counts) and the share of the other judged points flagged. None where the output does not parse."""
     try:
@@ -117,14 +117,19 @@ def score_anomaly(out, n, spike_every):
         flagged = {i for i, f in enumerate(flags) if f}
         judged = [i for i, f in enumerate(flags) if f is not None]
         others = [i for i in judged if i not in near]
-        return {'anomaly_rows': len(flags), 'anomaly_judged': len(judged), 'anomaly_spikes': len(spikes),
+        extra = {}
+        if keep_scores:
+            # every row's score and verdict, so a threshold other than the model's can be replayed offline (None = not judged)
+            extra = {'anomaly_scores': [next((v for key, v in r.items() if key.lower() == 'anomalyscore'), None) for r in doc['predictions']],
+                     'anomaly_flags': flags}
+        return {**extra, 'anomaly_rows': len(flags), 'anomaly_judged': len(judged), 'anomaly_spikes': len(spikes),
                 'anomaly_recall': round(sum(1 for s in spikes if flagged & {s - 1, s, s + 1}) / max(1, len(spikes)), 3),
                 'anomaly_false_rate': round(sum(1 for i in others if i in flagged) / max(1, len(others)), 4)}
     except Exception as e:
         return {'anomaly_error': repr(e)[:120]}
 
 
-def walk(mloop, task, n, time_budget, window=None, timeout=None, seed=1, shape='monthly', horizon=HORIZON, spike_every=1000, spike_size=40.0, level=100.0):
+def walk(mloop, task, n, time_budget, window=None, timeout=None, seed=1, shape='monthly', horizon=HORIZON, spike_every=1000, spike_size=40.0, level=100.0, keep_scores=False):
     base = tempfile.mkdtemp(prefix=f'series-scale-{task}-')
     log = []
     spikes = task == 'anomaly'
@@ -146,7 +151,7 @@ def walk(mloop, task, n, time_budget, window=None, timeout=None, seed=1, shape='
             future = score_future(pr.get('out', ''), ahead)
         else:
             pr = step(mloop, 'predict', ['predict', os.path.join(base, 'test.csv'), '--json'], proj, log)
-            future = score_anomaly(pr.get('out', ''), n, spike_every)
+            future = score_anomaly(pr.get('out', ''), n, spike_every, keep_scores)
         step(mloop, 'evaluate', ['evaluate', 'exp-001', os.path.join(base, 'test.csv'), '--json'], proj, log)
     return {'task': task, 'rows': n, 'window': window, 'seed': seed, 'shape': shape, 'level': level, 'horizon': horizon, 'oracle_mae': oracle, 'naive_mae': naive, **future, 'steps': log}
 
@@ -165,6 +170,7 @@ def main():
     ap.add_argument('--spike-every', type=int, default=1000, help='anomaly series: one spike every this many points')
     ap.add_argument('--spike-size', type=float, default=40.0, help='anomaly series: the spike height, in units of the noise (standard deviation 1)')
     ap.add_argument('--level', type=float, default=100.0, help='the value the monthly, trend and noise shapes sit around (noise standard deviation stays 1)')
+    ap.add_argument('--scores', action='store_true', help='anomaly: keep every test row\'s score and verdict in the results (for replaying other thresholds offline)')
     ap.add_argument('--vary', default='', help='NAME=v1,v2,...: runs every cell once per value with that environment variable set (recorded as variant)')
     ap.add_argument('--out', default='series-scale-results.json')
     a = ap.parse_args()
@@ -175,7 +181,7 @@ def main():
     def cell(v, t, n, w, sd, shape, h):
         if var_name:
             os.environ[var_name] = v
-        r = walk(a.mloop, t, int(n), a.time, w if t == 'forecast' else None, a.step_timeout or None, int(sd), shape, int(h), a.spike_every, a.spike_size, a.level)
+        r = walk(a.mloop, t, int(n), a.time, w if t == 'forecast' else None, a.step_timeout or None, int(sd), shape, int(h), a.spike_every, a.spike_size, a.level, a.scores)
         r['variant'] = v
         return r
 
