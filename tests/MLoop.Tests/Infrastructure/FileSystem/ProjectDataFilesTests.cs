@@ -21,7 +21,8 @@ public sealed class ProjectDataFilesTests : IDisposable
 
     private string Write(string relative)
     {
-        var path = Path.Combine(_root, relative);
+        // Full-path form: the resolver answers GetFullPath, which on Windows turns the forward slashes of "datasets/test.csv" into backslashes.
+        var path = Path.GetFullPath(Path.Combine(_root, relative));
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
         File.WriteAllText(path, "a,b\n1,2\n");
         return path;
