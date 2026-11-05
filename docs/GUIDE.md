@@ -1117,10 +1117,14 @@ the `PredictedLabel` and `Score` cells are empty in the prediction file, and a w
 at least that many earlier rows in front of the ones you ask about.
 
 How small a spike it finds: the detector flags a point when its spectral-residual score passes a fixed threshold (0.3, ML.NET's default).
-On a generated monthly series (level 100, season of amplitude 10, noise of standard deviation 1, a spike every 100 points) the share of
-spikes flagged was 98 % at 40 times the noise, 44 % at 8 times, 8 % at 5 times and none at 3 times, with no false alarms at any height.
-A series whose spikes are a few times its noise is therefore mostly passed over; use `mloop detect`, whose `--threshold` is yours to set,
-when small spikes matter. (One series, one seed.)
+What that catches depends on the shape of the series, not on its level (a series around 10, 100 or 1,000 behaves the same). On generated
+series (noise of standard deviation 1, a spike every 100 points, three seeds each) the share of spikes flagged at 5 times the noise was
+9 % on a monthly season of amplitude 10, 13 % on a yearly season, 76 % on a constant level and 79 % on a straight trend; at 8 times the noise,
+47 % on the monthly season and 97 % on a constant level; at 40 times, 98 % (one series, one seed). Points that were not spikes were flagged
+0 % of the time on the monthly season and 0.3 – 0.7 % on the others. A series with strong structure therefore hides spikes of a few times
+its noise. A lower threshold finds more of them and flags ordinary points as well — on the monthly season, 0.2 flagged 56 % of the 5-times
+spikes with 0.5 % of ordinary points, 0.1 flagged 97 % with 9 %, and no threshold tried found 80 % of the 5-times spikes with at most 1 % of ordinary points flagged on any of the four shapes.
+Use `mloop detect`, whose `--threshold` is yours to set, when small spikes matter.
 
 ### Image anomaly
 
