@@ -345,9 +345,13 @@ public static partial class TrainCommand
         }
         if (resolvedDataFile == null)
         {
+            // The sentence every default data file says (evaluate · predict · preprocess already do): it names what mloop.yaml declared.
+            var found = ProjectDataFiles.Resolve(DatasetRole.Train, userConfig, projectRoot, datasetDiscovery);
             ErrorConsole.Error(
-                "No data file specified and datasets/train.csv not found.",
-                "Create datasets/train.csv or specify a file: mloop train <data-file>");
+                Markup.Escape(found.NotFoundMessage(DatasetRole.Train, "data file")),
+                found.DeclaredMissing is null
+                    ? "Create datasets/train.csv or specify a file: mloop train <data-file>"
+                    : "Fix data.train in mloop.yaml, create datasets/train.csv, or specify a file: mloop train <data-file>");
             return null;
         }
 

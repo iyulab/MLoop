@@ -94,7 +94,15 @@ public static class AnalyzeCommand
 
         if (resolved == null || !TabularDataFile.Exists(resolved))
         {
-            if (string.IsNullOrEmpty(dataFile))
+            if (string.IsNullOrEmpty(dataFile) && projectRoot != null)
+            {
+                // The sentence every default data file says: it names what mloop.yaml declared, when it declared one.
+                var found = ProjectDataFiles.Resolve(DatasetRole.Train, config, projectRoot, new DatasetDiscovery(fileSystem));
+                ErrorConsole.Error(
+                    Markup.Escape(found.NotFoundMessage(DatasetRole.Train, "data file")),
+                    "Pass a file, set data.train in mloop.yaml, or create datasets/train.csv");
+            }
+            else if (string.IsNullOrEmpty(dataFile))
                 AnsiConsole.MarkupLine(
                     "[red]Error:[/] No data file specified and none found. Pass [blue]<data-file>[/] or set [blue]data.train[/] in mloop.yaml.");
             else

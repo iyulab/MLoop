@@ -123,4 +123,51 @@ public sealed class DeclaredDataFilesTests : IDisposable
         Assert.Contains("data.predict", predictOut + predictErr, StringComparison.Ordinal);
         Assert.Contains("nowhere.csv", predictOut + predictErr, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public async Task Train_NamesTheDeclaredTrainFileThatIsMissing_NotOnlyTheConventionalOne()
+    {
+        // evaluate and predict said what mloop.yaml declared; train alone named datasets/train.csv — a file the user never asked for.
+        Assert.Equal(0, (await CliRunner.RunAsync("init", "p", "--task", "binary-classification")).ExitCode);
+        Directory.SetCurrentDirectory(Path.Combine(_workspace, "p"));
+        Declare("train", "fitt.csv");
+
+        var (exit, stdout, stderr) = await CliRunner.RunAsync("train");
+
+        Assert.NotEqual(0, exit);
+        var said = stdout + stderr;
+        Assert.Contains("data.train", said, StringComparison.Ordinal);
+        Assert.Contains("fitt.csv", said, StringComparison.Ordinal);
+        Assert.Contains("datasets/train.csv", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Analyze_NamesTheDeclaredTrainFileThatIsMissing_AsTrainDoes()
+    {
+        Assert.Equal(0, (await CliRunner.RunAsync("init", "p", "--task", "binary-classification")).ExitCode);
+        Directory.SetCurrentDirectory(Path.Combine(_workspace, "p"));
+        Declare("train", "fitt.csv");
+
+        var (exit, stdout, stderr) = await CliRunner.RunAsync("analyze", "profile");
+
+        Assert.NotEqual(0, exit);
+        var said = stdout + stderr;
+        Assert.Contains("data.train", said, StringComparison.Ordinal);
+        Assert.Contains("fitt.csv", said, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Train_WithNothingDeclared_StillSaysTheConventionalSentence()
+    {
+        Assert.Equal(0, (await CliRunner.RunAsync("init", "p", "--task", "binary-classification")).ExitCode);
+        Directory.SetCurrentDirectory(Path.Combine(_workspace, "p"));
+        var lines = File.ReadAllLines("mloop.yaml").Where(l => !l.StartsWith("  train:", StringComparison.Ordinal)).ToArray();
+        File.WriteAllLines("mloop.yaml", lines);
+
+        var (exit, stdout, stderr) = await CliRunner.RunAsync("train");
+
+        Assert.NotEqual(0, exit);
+        Assert.Contains("No data file specified and datasets/train.csv not found.", stdout + stderr, StringComparison.Ordinal);
+        Assert.DoesNotContain("data.train", stdout + stderr, StringComparison.Ordinal);
+    }
 }
