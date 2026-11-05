@@ -2873,6 +2873,24 @@ mloop train data.csv --label label --time 600  # 10 minutes
 mloop train data.csv --label label --time 1800
 ```
 
+### Escape Codes in Captured Output (Colour and Bold)
+
+**Problem**: A log or a captured output of `mloop` holds sequences such as `ESC[1m` or `ESC[38;5;2m`
+
+**What `mloop` does**: output that is redirected to a file or a pipe, a terminal that declares itself dumb
+(`TERM=dumb`) and a missing `TERM` all give plain text. `NO_COLOR=1` removes the colour and keeps bold.
+`--json` writes the JSON document alone to stdout.
+
+**In CI**: a runner that is known to render colour (`GITHUB_ACTIONS`, `TF_BUILD`) is treated as a colour terminal
+even when the output is piped, so the human-readable output carries escape codes there — and so does the stderr
+of a `--json` command. `NO_COLOR` and `TERM=dumb` do not remove them in that case. For plain text, unset the
+variables for that one command; for a program to read, use `--json` and read stdout:
+
+```bash
+env -u GITHUB_ACTIONS -u TF_BUILD mloop validate > validate.txt
+mloop status --json > status.json
+```
+
 ### API Server Won't Start
 
 **Problem**: `mloop serve` fails or can't connect
