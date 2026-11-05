@@ -174,6 +174,11 @@ mloop train datasets/train.csv --label price --time 120
 mloop train data/sales.csv --label revenue --time 300 --metric r_squared
 mloop train data/fraud.csv --label is_fraud --time 180 --test-split 0.3
 
+# Ranking: the held-out share is held out by query. A query's rows are all in training or all in the test,
+# and the test NDCG is that of queries the model has not seen. `mloop evaluate` on a file of new queries
+# scores that file's own queries, whatever ids the model was trained on.
+mloop train rank.train --label label --group-column qid --test-split 0.2
+
 # Multi-file training (v0.4.0+)
 mloop train --data normal.csv outlier.csv --label Target --task regression
 mloop train --auto-merge --label Status --task binary-classification

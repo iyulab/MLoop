@@ -647,10 +647,9 @@ public class EvaluationEngine
 
         try
         {
-            // GroupId is the mapped Key column created during training pipeline
-            var groupIdCol = "GroupId";
-            if (predictions.Schema.GetColumnOrNull(groupIdCol) == null && !string.IsNullOrEmpty(groupColumn))
-                groupIdCol = groupColumn;
+            // The queries are the test file's own (see RankingQueries): the model's "GroupId" key knows only the queries it trained on.
+            var (queryScored, groupIdCol) = MLoop.Core.Evaluation.RankingQueries.Of(_mlContext, predictions, groupColumn);
+            predictions = queryScored;
 
             var metrics = _mlContext.Ranking.Evaluate(predictions,
                 labelColumnName: labelColumn,

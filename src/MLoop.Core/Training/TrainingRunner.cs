@@ -314,7 +314,11 @@ public partial class TrainingRunner
             // featurization by construction. The exclusion set still flows through so the saved
             // schema predict replays describes exactly what was fitted.
             var dataView = loader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve, config.FeatureExclusions, config.LabelKind);
-            (trainSet, testSet) = loader.SplitData(dataView, config.TestSplit);
+            // A ranking is judged per query, so a query is held out whole: a split by row leaves the held-out documents of a
+            // query whose other documents were trained on, and the reported ranking score is for queries the model has seen.
+            (trainSet, testSet) = GroupedSplit.Applies(config.Task, config.GroupColumn, dataView)
+                ? GroupedSplit.Of(_mlContext, dataView, config.GroupColumn!, config.TestSplit)
+                : loader.SplitData(dataView, config.TestSplit);
             mergedColumnGroups = loader.GetMergedColumnGroups();
         }
 
@@ -1801,9 +1805,11 @@ public partial class TrainingRunner
                     var model = fullPipeline.Fit(trainSet);
                     var predictions = model.Transform(testSet);
 
-                    var rankMetrics = _mlContext.Ranking.Evaluate(predictions,
+                    // The test partition is made of held-out queries; the fitted "GroupId" key does not know them (RankingQueries).
+                    var (queryScored, queryKey) = RankingQueries.Of(_mlContext, predictions, config.GroupColumn);
+                    var rankMetrics = _mlContext.Ranking.Evaluate(queryScored,
                         labelColumnName: config.LabelColumn,
-                        rowGroupColumnName: "GroupId");
+                        rowGroupColumnName: queryKey);
 
                     var ndcg = rankMetrics.NormalizedDiscountedCumulativeGains;
                     var dcg = rankMetrics.DiscountedCumulativeGains;
