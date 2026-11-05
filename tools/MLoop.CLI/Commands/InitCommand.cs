@@ -686,6 +686,7 @@ See the Extensibility section of the MLoop guide (docs/GUIDE.md).
             "ranking" => "\n    group_column: query_id",
             "recommendation" => "\n    user_column: user_id\n    item_column: item_id",
             "clustering" => "\n    # num_clusters: auto",
+            "time-series-anomaly" => "\n    # anomaly_threshold: 0.3   # flag a point whose score passes this (above 0, below 1); lower finds smaller spikes and flags more ordinary points",
             _ => ""
         };
 

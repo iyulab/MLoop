@@ -96,4 +96,13 @@ public class InitCommandTests
         Assert.Contains("revenue:", yaml);
         Assert.Contains("label: Revenue", yaml);
     }
+
+    [Fact]
+    public void GetYamlTemplate_ForATimeSeriesAnomalyModel_ShowsTheThresholdAsAComment()
+    {
+        var yaml = InitCommand.GetYamlTemplate("p", "time-series-anomaly", "default", "value");
+
+        Assert.Contains("# anomaly_threshold:", yaml, StringComparison.Ordinal);
+        Assert.DoesNotContain("# anomaly_threshold:", InitCommand.GetYamlTemplate("p", "regression", "default", "y"), StringComparison.Ordinal);
+    }
 }
