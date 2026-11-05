@@ -1116,6 +1116,12 @@ rows of any file or request have no verdict: `isAnomaly` and `anomalyScore` are 
 the `PredictedLabel` and `Score` cells are empty in the prediction file, and a warning says how many. Send the series with
 at least that many earlier rows in front of the ones you ask about.
 
+How small a spike it finds: the detector flags a point when its spectral-residual score passes a fixed threshold (0.3, ML.NET's default).
+On a generated monthly series (level 100, season of amplitude 10, noise of standard deviation 1, a spike every 100 points) the share of
+spikes flagged was 98 % at 40 times the noise, 44 % at 8 times, 8 % at 5 times and none at 3 times, with no false alarms at any height.
+A series whose spikes are a few times its noise is therefore mostly passed over; use `mloop detect`, whose `--threshold` is yours to set,
+when small spikes matter. (One series, one seed.)
+
 ### Image anomaly
 
 `image-anomaly` is for the case where only normal pictures are plentiful: a surface, a part, a screen that is normal
