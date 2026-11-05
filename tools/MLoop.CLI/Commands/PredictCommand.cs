@@ -263,7 +263,11 @@ public static partial class PredictCommand
                     projectRoot, resolvedModelPath, experimentId, dataFile, output, resolvedModelName, json, fileSystem);
 
             // Resolve data file path (Convention: datasets/predict.csv)
-            var resolvedDataFile = ResolveDataFile(dataFile, projectRoot, taskType, fileSystem);
+            // Read mloop.yaml only when it can matter: no file was named, so data.predict may name one.
+            var userConfig = string.IsNullOrEmpty(dataFile)
+                ? await new ConfigLoader(fileSystem, projectDiscovery).LoadUserConfigAsync()
+                : null;
+            var resolvedDataFile = ResolveDataFile(dataFile, projectRoot, taskType, fileSystem, userConfig);
             if (resolvedDataFile is null)
                 return 1;
 

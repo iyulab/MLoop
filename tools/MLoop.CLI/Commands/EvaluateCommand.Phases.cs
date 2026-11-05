@@ -90,7 +90,7 @@ public static partial class EvaluateCommand
 
     /// <summary>The test data: the argument, or the project's test set; a directory for directory-based tasks. Null after an error was shown.</summary>
     private static string? ResolveTestData(
-        string? testDataFile, ExperimentData? experimentData, string projectRoot, FileSystemManager fileSystem)
+        string? testDataFile, ExperimentData? experimentData, string projectRoot, FileSystemManager fileSystem, MLoopConfig? userConfig)
     {
         bool isDirectoryBased = DataLoaderFactory.IsDirectoryBased(experimentData?.Task);
 
@@ -114,19 +114,18 @@ public static partial class EvaluateCommand
             }
             else
             {
-                // Auto-discover datasets/test.csv
-                var datasetDiscovery = new DatasetDiscovery(fileSystem);
-                var datasets = datasetDiscovery.FindDatasets(projectRoot);
+                // data.test of mloop.yaml, else datasets/test.csv
+                var found = ProjectDataFiles.Resolve(DatasetRole.Test, userConfig, projectRoot, new DatasetDiscovery(fileSystem));
 
-                if (datasets?.TestPath == null)
+                if (found.Path == null)
                 {
                     ErrorConsole.Error(
-                        "No test data specified and datasets/test.csv not found.",
-                        "Create datasets/test.csv or specify a file: mloop evaluate <experiment-id> <test-file>");
+                        Markup.Escape(found.NotFoundMessage(DatasetRole.Test, "test data")),
+                        "Create datasets/test.csv, set data.test in mloop.yaml, or specify a file: mloop evaluate <experiment-id> <test-file>");
                     return null;
                 }
 
-                resolvedTestDataFile = datasets.TestPath;
+                resolvedTestDataFile = found.Path;
                 ValueLine.Write("[green]>[/] Auto-detected: ", Path.GetRelativePath(projectRoot, resolvedTestDataFile));
             }
         }

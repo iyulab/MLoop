@@ -206,7 +206,11 @@ public static partial class EvaluateCommand
             // — so they bypass the CSV-file test-data resolution and CSV schema validation below.
             bool isDirectoryBased = DataLoaderFactory.IsDirectoryBased(experimentData?.Task);
 
-            var resolvedTestDataFile = ResolveTestData(testDataFile, experimentData, projectRoot, fileSystem);
+            // Read mloop.yaml only when it can matter: no file was named, so data.test may name one.
+            var userConfig = string.IsNullOrEmpty(testDataFile) && !isDirectoryBased
+                ? await new ConfigLoader(fileSystem, projectDiscovery).LoadUserConfigAsync()
+                : null;
+            var resolvedTestDataFile = ResolveTestData(testDataFile, experimentData, projectRoot, fileSystem, userConfig);
             if (resolvedTestDataFile is null)
                 return 1;
             // What the output names is the file the user gave; validation may hand back a composed or converted copy to read instead.

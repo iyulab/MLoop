@@ -85,20 +85,8 @@ internal static class TrainDataValidator
                 : Task.FromResult<string?>(null);
         }
 
-        // Try config data path
-        if (!string.IsNullOrEmpty(userConfig.Data?.Train))
-        {
-            var configPath = ProjectPaths.Resolve(userConfig.Data.Train, projectRoot);
-
-            if (File.Exists(configPath))
-            {
-                return Task.FromResult<string?>(configPath);
-            }
-        }
-
-        // Auto-discover datasets/train.csv
-        var datasets = datasetDiscovery.FindDatasets(projectRoot);
-        return Task.FromResult(datasets?.TrainPath);
+        // data.train of mloop.yaml, else datasets/train.csv — the order every default data file follows
+        return Task.FromResult(ProjectDataFiles.Resolve(DatasetRole.Train, userConfig, projectRoot, datasetDiscovery).Path);
     }
 
     /// <summary>

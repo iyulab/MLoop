@@ -124,12 +124,13 @@ public static class ExplainCommand
                 reportedDataPath = dataPath;
                 dataPath = await TabularDataFile.AsCsvAsync(dataPath, records);
             }
-            else if (new DatasetDiscovery(fileSystem).FindDatasets(projectRoot)?.TestPath is { } discovered)
+            else if (ProjectDataFiles.Resolve(
+                         DatasetRole.Test, await new ConfigLoader(fileSystem, discovery).LoadUserConfigAsync(), projectRoot, new DatasetDiscovery(fileSystem)).Path is { } discovered)
             {
                 dataPath = reportedDataPath = discovered;
             }
             if (dataPath is null)
-                return Fail("Give the labeled file to score the model on with --data (or keep one as datasets/test.csv).");
+                return Fail("Give the labeled file to score the model on with --data (or keep one as datasets/test.csv, or name it as data.test in mloop.yaml).");
 
             var (weightColumn, weightWarning) = ModelComparison.ResolveWeight(weight, experiment, dataPath);
             if (weightWarning is not null)

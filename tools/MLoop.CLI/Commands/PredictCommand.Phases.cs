@@ -181,26 +181,25 @@ public static partial class PredictCommand
     }
 
     /// <summary>The file to predict over: the argument, or datasets/predict.csv; a folder of images becomes its table. Null after an error was shown.</summary>
-    private static string? ResolveDataFile(string? dataFile, string projectRoot, string? taskType, FileSystemManager fileSystem)
+    private static string? ResolveDataFile(string? dataFile, string projectRoot, string? taskType, FileSystemManager fileSystem, MLoopConfig? userConfig)
     {
         // Resolve data file path (Convention: datasets/predict.csv)
         string resolvedDataFile;
 
         if (string.IsNullOrEmpty(dataFile))
         {
-            // Auto-discover datasets/predict.csv
-            var datasetDiscovery = new DatasetDiscovery(fileSystem);
-            var datasets = datasetDiscovery.FindDatasets(projectRoot);
+            // data.predict of mloop.yaml, else datasets/predict.csv
+            var found = ProjectDataFiles.Resolve(DatasetRole.Predict, userConfig, projectRoot, new DatasetDiscovery(fileSystem));
 
-            if (datasets?.PredictPath == null)
+            if (found.Path == null)
             {
                 ErrorConsole.Error(
-                    "No data file specified and datasets/predict.csv not found.",
-                    "Create datasets/predict.csv or specify a file: mloop predict <data-file>");
+                    Markup.Escape(found.NotFoundMessage(DatasetRole.Predict, "data file")),
+                    "Create datasets/predict.csv, set data.predict in mloop.yaml, or specify a file: mloop predict <data-file>");
                 return null;
             }
 
-            resolvedDataFile = datasets.PredictPath;
+            resolvedDataFile = found.Path;
             ValueLine.Write("[green]>[/] Auto-detected: ", Path.GetRelativePath(projectRoot, resolvedDataFile));
         }
         else

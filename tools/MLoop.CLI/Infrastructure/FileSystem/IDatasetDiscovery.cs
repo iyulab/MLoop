@@ -13,6 +13,13 @@ public interface IDatasetDiscovery
     DatasetPaths? FindDatasets(string projectRoot);
 
     /// <summary>
+    /// Finds the one conventional file a <paramref name="role"/> reads under <c>datasets/</c> (<c>train.csv</c>, <c>test.csv</c>,
+    /// <c>predict.csv</c>), whichever of the others exist — unlike <see cref="FindDatasets"/>, which is for training and answers
+    /// nothing without <c>train.csv</c>. A project that only scores or predicts (its training data lives elsewhere) has no train.csv.
+    /// </summary>
+    string? FindFile(string projectRoot, DatasetRole role);
+
+    /// <summary>
     /// Checks if datasets directory exists
     /// </summary>
     bool HasDatasetsDirectory(string projectRoot);

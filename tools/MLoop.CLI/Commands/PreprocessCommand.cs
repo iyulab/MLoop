@@ -118,19 +118,19 @@ public static class PreprocessCommand
 
         if (string.IsNullOrEmpty(inputFile))
         {
-            // Auto-discover datasets/train.csv
-            var datasetDiscovery = new DatasetDiscovery(fileSystem);
-            var datasets = datasetDiscovery.FindDatasets(projectRoot);
+            // data.train of mloop.yaml, else datasets/train.csv
+            var found = ProjectDataFiles.Resolve(
+                DatasetRole.Train, await new ConfigLoader(fileSystem, new ProjectDiscovery(fileSystem)).LoadUserConfigAsync(), projectRoot, new DatasetDiscovery(fileSystem));
 
-            if (datasets?.TrainPath == null)
+            if (found.Path == null)
             {
                 ErrorConsole.Error(
-                    "No input file specified and datasets/train.csv not found.",
-                    "Create datasets/train.csv or specify a file: mloop preprocess <input-file>");
+                    Markup.Escape(found.NotFoundMessage(DatasetRole.Train, "input file")),
+                    "Create datasets/train.csv, set data.train in mloop.yaml, or specify a file: mloop preprocess <input-file>");
                 return 1;
             }
 
-            resolvedInputFile = datasets.TrainPath;
+            resolvedInputFile = found.Path;
             ValueLine.Write("[green]✓[/] Auto-detected: ", Path.GetRelativePath(projectRoot, resolvedInputFile));
         }
         else

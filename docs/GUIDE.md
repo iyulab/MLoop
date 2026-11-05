@@ -544,8 +544,13 @@ answer `서울` — and a word-level F1 would score that zero.
 
 Run predictions with trained models.
 
+With no data file named, the commands read the project's default: `train` and `analyze` the file `data.train` of `mloop.yaml`
+names, `evaluate` and `explain` `data.test`, `predict` `data.predict` - and, where `mloop.yaml` names none (or names a file that is not
+there), `datasets/train.csv`, `datasets/test.csv` and `datasets/predict.csv`. Each is found on its own: a project kept for
+scoring and predicting does not need `datasets/train.csv`. When neither exists the message names the key and the file it looked for.
+
 ```bash
-# Auto-discovery mode (uses production model + datasets/predict.csv)
+# Auto-discovery mode (uses production model + datasets/predict.csv, or data.predict)
 mloop predict
 
 # Custom paths
