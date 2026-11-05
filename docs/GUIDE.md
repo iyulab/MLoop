@@ -1367,6 +1367,14 @@ mloop validate --verbose
 # ❌ models.default.task: Invalid task type 'regressoin'. Valid values: binary-classification, ...
 ```
 
+A valid configuration can still carry warnings: a key `mloop` does not know (usually a typo), a key written twice in
+one mapping (the last one is read), a data file that is not there yet. The exit code is non-zero for errors and 0 for
+warnings. To fail a CI job on warnings too, read the structured result (`valid`, `errors`, `warnings`):
+
+```bash
+mloop validate --json | jq -e '.valid and (.warnings | length == 0)'
+```
+
 ---
 
 ## Deployment Commands
