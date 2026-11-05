@@ -7,13 +7,19 @@ using YamlDotNet.Serialization.NamingConventions;
 
 namespace MLoop.CLI.Infrastructure.Configuration;
 
-/// <summary>A key in <c>mloop.yaml</c> that nothing reads, where it stands, and the nearest key that something does.</summary>
-public sealed record UnknownConfigKey(string Path, string? Suggestion)
+/// <summary>
+/// A key in <c>mloop.yaml</c> that does not take effect as written: one nothing reads (where it stands, and the nearest key that
+/// something does), or one written twice under the same mapping (<paramref name="Repeated"/>, which of the two is read is not
+/// what the file says).
+/// </summary>
+public sealed record UnknownConfigKey(string Path, string? Suggestion, bool Repeated = false)
 {
     /// <summary>The sentence <c>validate</c> and the commands that load the file say.</summary>
-    public string Describe() => Suggestion is null
-        ? $"'{Path}' is not a setting mloop reads — it is ignored"
-        : $"'{Path}' is not a setting mloop reads — it is ignored. Did you mean '{Suggestion}'?";
+    public string Describe() => Repeated
+        ? $"'{Path}' is written twice in the same place — only the last is read; remove the other"
+        : Suggestion is null
+            ? $"'{Path}' is not a setting mloop reads — it is ignored"
+            : $"'{Path}' is not a setting mloop reads — it is ignored. Did you mean '{Suggestion}'?";
 }
 
 /// <summary>
@@ -48,6 +54,12 @@ public static class ConfigKeyAudit
         {
             stream.Load(new StringReader(yaml));
         }
+        catch (YamlDotNet.Core.YamlException ex) when (RepeatedKeyOf(ex) is { } repeated)
+        {
+            // The deserializer that reads the file lets the later of two equal keys win without a word; the tree this audit
+            // walks cannot be built from one, so say it here (the tree's first refusal: any other key problem waits for this one).
+            return [new UnknownConfigKey($"{repeated} (line {ex.Start.Line})", null, Repeated: true)];
+        }
         catch (YamlDotNet.Core.YamlException)
         {
             return [];   // a file that does not parse is reported where it is parsed
@@ -57,6 +69,15 @@ public static class ConfigKeyAudit
         if (stream.Documents.Count > 0)
             Walk(stream.Documents[0].RootNode, root, "", found);
         return found;
+    }
+
+    private const string RepeatedKeyMessage = "Duplicate key";
+
+    /// <summary>The key a YAML tree refused because it stands twice in one mapping, or <c>null</c> for any other parse error.</summary>
+    private static string? RepeatedKeyOf(YamlDotNet.Core.YamlException ex)
+    {
+        var at = ex.Message.IndexOf(RepeatedKeyMessage, StringComparison.Ordinal);
+        return at < 0 ? null : ex.Message[(at + RepeatedKeyMessage.Length)..].Trim();
     }
 
     private static void Walk(YamlNode node, Type type, string path, List<UnknownConfigKey> found)
