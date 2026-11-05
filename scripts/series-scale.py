@@ -25,7 +25,7 @@ HORIZON = 10
 SHAPES = ('monthly', 'daily', 'trend', 'walk', 'growth', 'noise')
 
 
-def write_series(path, n, spikes, seed, shape='monthly', horizon=HORIZON, future=0, spike_every=1000):
+def write_series(path, n, spikes, seed, shape='monthly', horizon=HORIZON, future=0, spike_every=1000, spike_size=40.0):
     """Writes one series of n points and returns (reference, naive, ahead): the mean absolute error over the last `horizon` points of a forecaster
     that knew the signal exactly (the noise it still misses), of one that repeats the last value before them, and the `future` points that follow
     the n written (the truth a forecast of the series is held to).
@@ -52,7 +52,7 @@ def write_series(path, n, spikes, seed, shape='monthly', horizon=HORIZON, future
             signal = 100.0 + 0.00005 * t + 10.0 * math.sin(2 * math.pi * t / 12)
         v = signal + noise
         if spikes and t % spike_every == spike_every // 2:
-            v += 40.0
+            v += spike_size
         if n - horizon <= t < n:
             tail.append(abs(noise))
         values.append(round(v, 4))
@@ -122,12 +122,12 @@ def score_anomaly(out, n, spike_every):
         return {'anomaly_error': repr(e)[:120]}
 
 
-def walk(mloop, task, n, time_budget, window=None, timeout=None, seed=1, shape='monthly', horizon=HORIZON, spike_every=1000):
+def walk(mloop, task, n, time_budget, window=None, timeout=None, seed=1, shape='monthly', horizon=HORIZON, spike_every=1000, spike_size=40.0):
     base = tempfile.mkdtemp(prefix=f'series-scale-{task}-')
     log = []
     spikes = task == 'anomaly'
-    oracle, naive, ahead = write_series(os.path.join(base, 'train.csv'), n, spikes, seed * 2 - 1, shape, horizon, horizon if task == 'forecast' else 0, spike_every)
-    write_series(os.path.join(base, 'test.csv'), n, spikes, seed * 2, shape, horizon, 0, spike_every)
+    oracle, naive, ahead = write_series(os.path.join(base, 'train.csv'), n, spikes, seed * 2 - 1, shape, horizon, horizon if task == 'forecast' else 0, spike_every, spike_size)
+    write_series(os.path.join(base, 'test.csv'), n, spikes, seed * 2, shape, horizon, 0, spike_every, spike_size)
     flag = 'forecasting' if task == 'forecast' else 'time-series-anomaly'
     print(f'== {task} n={n:,} window={window or "default"} seed={seed}  ({base})', flush=True)
     step(mloop, 'init', ['init', 'proj', '--task', flag, '--label', 'value', '--json'], base, log)
@@ -160,7 +160,8 @@ def main():
     ap.add_argument('--step-timeout', type=int, default=0, help='seconds per step (0 = 1800)')
     ap.add_argument('--shape', default='monthly', help='comma-separated series shapes: ' + ', '.join(SHAPES) + ' (see write_series)')
     ap.add_argument('--horizon', default=str(HORIZON), help='comma-separated forecast horizons')
-    ap.add_argument('--spike-every', type=int, default=1000, help='anomaly series: one spike of +40 every this many points')
+    ap.add_argument('--spike-every', type=int, default=1000, help='anomaly series: one spike every this many points')
+    ap.add_argument('--spike-size', type=float, default=40.0, help='anomaly series: the spike height, in units of the noise (standard deviation 1)')
     ap.add_argument('--vary', default='', help='NAME=v1,v2,...: runs every cell once per value with that environment variable set (recorded as variant)')
     ap.add_argument('--out', default='series-scale-results.json')
     a = ap.parse_args()
@@ -171,7 +172,7 @@ def main():
     def cell(v, t, n, w, sd, shape, h):
         if var_name:
             os.environ[var_name] = v
-        r = walk(a.mloop, t, int(n), a.time, w if t == 'forecast' else None, a.step_timeout or None, int(sd), shape, int(h), a.spike_every)
+        r = walk(a.mloop, t, int(n), a.time, w if t == 'forecast' else None, a.step_timeout or None, int(sd), shape, int(h), a.spike_every, a.spike_size)
         r['variant'] = v
         return r
 
