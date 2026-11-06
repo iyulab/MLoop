@@ -100,7 +100,9 @@ public sealed class FilePromotionManager : IPromotionManager
             GetModelPath(modelName),
             ExperimentLayout.ProductionDirectory);
 
-        var metadata = await ProductionMetadata.ReadAsync(productionDir, cancellationToken).ConfigureAwait(false);
+        // The backup is made before a promotion replaces the pointer, so a pointer that cannot be read must not stop it - the
+        // backup is then labelled generically (below) - and the promotion is what writes the pointer again.
+        var (metadata, _) = await ProductionMetadata.TryReadAsync(productionDir, cancellationToken).ConfigureAwait(false);
         return metadata?.ExperimentId;
     }
 

@@ -37,30 +37,53 @@ public sealed record ProductionMetadata
 
     /// <summary>
     /// Reads the production metadata given a model's production directory
-    /// (<c>models/{name}/production</c>). Returns <c>null</c> when no model has been promoted (the file is
-    /// absent) or the file cannot be parsed — the same "no production model" signal the readers already
-    /// handle. Uses plain file IO (no CLI filesystem abstraction) so this stays a Core-owned authority.
+    /// (<c>models/{name}/production</c>). Returns <c>null</c> only when no model has been promoted - the file is
+    /// absent. A file that is there and cannot be read is not "no production model": it throws
+    /// <see cref="UnreadableStateFileException"/> with the path and the way back, so a caller cannot report damage as
+    /// absence (the old catch-all returned <c>null</c> for both, and "Train and promote a model first" followed).
+    /// Uses plain file IO (no CLI filesystem abstraction) so this stays a Core-owned authority.
     /// </summary>
+    /// <exception cref="UnreadableStateFileException">The file exists but is not valid metadata.</exception>
     public static async Task<ProductionMetadata?> ReadAsync(
+        string productionDirectory,
+        CancellationToken cancellationToken = default)
+    {
+        var (value, damage) = await TryReadAsync(productionDirectory, cancellationToken).ConfigureAwait(false);
+        return damage is null ? value : throw damage;
+    }
+
+    /// <summary>
+    /// <see cref="ReadAsync"/> for a caller that can go on without the pointer - promoting writes it anew, a listing shows
+    /// the other models: the damage comes back as a value to report instead of an exception to unwind through.
+    /// </summary>
+    public static async Task<(ProductionMetadata? Value, UnreadableStateFileException? Damage)> TryReadAsync(
         string productionDirectory,
         CancellationToken cancellationToken = default)
     {
         var path = Path.Combine(productionDirectory, ExperimentLayout.MetadataFileName);
         if (!File.Exists(path))
         {
-            return null;
+            return (null, null);
         }
 
         try
         {
             await using var stream = File.OpenRead(path);
-            return await JsonSerializer
+            var value = await JsonSerializer
                 .DeserializeAsync<ProductionMetadata>(stream, Options, cancellationToken)
                 .ConfigureAwait(false);
+            return value is null
+                ? (null, Damaged(path, "the file holds no metadata", null))
+                : (value, null);
         }
-        catch
+        catch (Exception ex) when (ex is JsonException or IOException or UnauthorizedAccessException)
         {
-            return null;
+            return (null, Damaged(path, ex is JsonException ? "not valid JSON" : ex.Message.Split('\n')[0].TrimEnd(), ex));
         }
     }
+
+    private static UnreadableStateFileException Damaged(string path, string reason, Exception? inner) =>
+        new(path, reason,
+            "The model files are probably intact: restore this file from git, or run 'mloop promote <experiment-id>' to write it again.",
+            inner);
 }

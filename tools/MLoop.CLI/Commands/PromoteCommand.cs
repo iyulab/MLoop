@@ -251,7 +251,7 @@ public static class PromoteCommand
                 ShowPromotionDetails(resolvedModelName, experiment, autoSelectionReason);
 
             // Check if replacing existing production model
-            var currentProduction = await modelRegistry.GetProductionAsync(resolvedModelName, CancellationToken.None);
+            var currentProduction = await modelRegistry.GetProductionOrNoneAsync(resolvedModelName, CancellationToken.None);
 
             // --decide-only: report the selection verdict without moving the production pointer.
             // Lets a consumer with its own system-of-record delegate mloop's direction-aware

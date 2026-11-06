@@ -55,7 +55,12 @@ public class ModelRegistry : IModelRegistry
         CancellationToken cancellationToken = default)
     {
         var resolvedName = ResolveModelName(modelName);
-        var previous = (await ProductionMetadata.ReadAsync(GetProductionPath(resolvedName), cancellationToken))?.ExperimentId;
+        // Promoting is what rewrites a pointer that cannot be read, so a damaged one is reported and not an obstacle:
+        // there is no previous experiment to record, and the files it pointed at are replaced below.
+        var (previousPointer, damagedPointer) = await ProductionMetadata.TryReadAsync(GetProductionPath(resolvedName), cancellationToken);
+        if (damagedPointer is not null)
+            Console.Error.WriteLine($"Warning: {damagedPointer.Path} cannot be read ({damagedPointer.Reason}); promoting without a previous experiment on record.");
+        var previous = previousPointer?.ExperimentId;
 
         // Verify experiment exists
         if (!_experimentStore.ExperimentExists(resolvedName, experimentId))
@@ -237,6 +242,11 @@ public class ModelRegistry : IModelRegistry
                         models.Add(model);
                     }
                 }
+                catch (UnreadableStateFileException damage)
+                {
+                    // Listed without a production entry, with the damage said: not as a model that has none.
+                    Console.Error.WriteLine($"Warning: {damage.Path} cannot be read ({damage.Reason}); '{name}' is left out of the production list.");
+                }
                 catch
                 {
                     // Skip models with invalid registry
@@ -305,7 +315,7 @@ public class ModelRegistry : IModelRegistry
         if (QualityGateRefusal(experiment, primaryMetric) is { } gateRefusal)
             return $"the quality gate refuses it: {gateRefusal}";
 
-        var production = await GetProductionAsync(resolvedName, cancellationToken);
+        var production = await this.GetProductionOrNoneAsync(resolvedName, cancellationToken);
         if (await ShouldPromoteOnMetricsAsync(resolvedName, experimentId, primaryMetric, cancellationToken))
             return await GatePolicyRefusalAsync(resolvedName, experimentId, cancellationToken) is { } policyRefusal
                 ? $"the gate policy refuses it: {policyRefusal}"
@@ -353,7 +363,7 @@ public class ModelRegistry : IModelRegistry
         var metricKey = MetricPolicy.ResolveCanonicalMetricKey(primaryMetric, experiment.Task, experiment.Metrics.Keys);
 
         // Get current production model
-        var currentProduction = await GetProductionAsync(resolvedName, cancellationToken);
+        var currentProduction = await this.GetProductionOrNoneAsync(resolvedName, cancellationToken);
 
         if (currentProduction?.Metrics == null)
         {

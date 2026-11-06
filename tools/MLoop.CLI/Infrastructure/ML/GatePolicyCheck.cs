@@ -56,7 +56,7 @@ public static class GatePolicyCheck
 
         if (policy.NoWorseThanProduction)
         {
-            var production = await registry.GetProductionAsync(modelName, cancellationToken);
+            var production = await registry.GetProductionOrNoneAsync(modelName, cancellationToken);
             if (production is not null && !production.ExperimentId.Equals(experimentId, StringComparison.OrdinalIgnoreCase))
             {
                 var baseline = await ModelComparison.ResolveBaselineAsync("production", modelName, experimentId, candidate, store, registry, cancellationToken);
