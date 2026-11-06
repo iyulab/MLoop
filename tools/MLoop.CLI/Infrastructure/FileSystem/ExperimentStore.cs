@@ -63,33 +63,24 @@ public class ExperimentStore : IExperimentStore
     {
         var resolvedName = ResolveModelName(modelName);
 
-        // Atomic ID generation with retry logic for concurrent access
-        const int maxRetries = 5;
-        const int retryDelayMs = 100;
-
-        for (int retry = 0; retry < maxRetries; retry++)
+        // The read, the increment and the write are one step under the index lock. Without it two processes (two
+        // `mloop train` on one project, a train beside a serve job) read the same NextId and both were given
+        // exp-001; one then failed on the other's model.zip, and without that collision the later writer overwrote
+        // the earlier experiment's records without a word.
+        return await WithIndexLockAsync(resolvedName, async () =>
         {
-            try
-            {
-                var index = await LoadOrCreateIndexAsync(resolvedName, cancellationToken);
-                var experimentId = $"exp-{index.NextId:D3}";
+            var index = await LoadOrCreateIndexAsync(resolvedName, cancellationToken);
 
-                // Update index
-                index.NextId++;
-                await SaveIndexAsync(resolvedName, index, cancellationToken);
+            // A folder that exists names an id that is taken, whatever the index says: an index restored from git, merged,
+            // or rebuilt may be behind the folders (a train killed mid-run leaves its folder behind too).
+            var next = Math.Max(index.NextId, 1);
+            while (_fileSystem.DirectoryExists(GetExperimentPath(resolvedName, $"exp-{next:D3}")))
+                next++;
 
-                return experimentId;
-            }
-            catch (IOException) when (retry < maxRetries - 1)
-            {
-                // Another process may have locked the file, retry
-                await Task.Delay(retryDelayMs, cancellationToken);
-            }
-        }
-
-        throw new InvalidOperationException(
-            $"Failed to generate experiment ID for model '{resolvedName}' after multiple retries. " +
-            "This may indicate high concurrent access.");
+            index.NextId = next + 1;
+            await SaveIndexAsync(resolvedName, index, cancellationToken);
+            return $"exp-{next:D3}";
+        }, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -491,7 +482,29 @@ public class ExperimentStore : IExperimentStore
         await _fileSystem.WriteJsonAsync(indexPath, index, cancellationToken);
     }
 
-    private async Task UpdateIndexWithExperimentAsync(
+    /// <summary>
+    /// Runs <paramref name="step"/> with the model's index locked against every other process: the index is read, changed
+    /// and written back, and a second writer in between would lose the first one's change.
+    /// </summary>
+    private async Task<T> WithIndexLockAsync<T>(string modelName, Func<Task<T>> step, CancellationToken cancellationToken)
+    {
+        using var held = await ExclusiveFileLock.AcquireAsync(
+            ExclusiveFileLock.PathFor(_projectRoot, $"{modelName}-{Path.GetFileNameWithoutExtension(IndexFileName)}"),
+            cancellationToken: cancellationToken);
+        return await step();
+    }
+
+    private Task UpdateIndexWithExperimentAsync(
+        string modelName,
+        ExperimentData experiment,
+        CancellationToken cancellationToken) =>
+        WithIndexLockAsync<object?>(modelName, async () =>
+        {
+            await UpdateIndexWithExperimentLockedAsync(modelName, experiment, cancellationToken);
+            return null;
+        }, cancellationToken);
+
+    private async Task UpdateIndexWithExperimentLockedAsync(
         string modelName,
         ExperimentData experiment,
         CancellationToken cancellationToken)
