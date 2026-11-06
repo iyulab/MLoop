@@ -130,6 +130,11 @@ public class TrainingJobRunner : BackgroundService
                         Path.Combine(projectRoot, ".mloop", "merged", $"{job.JobId}.csv"));
                     dataFile = merge.Path ?? throw new InvalidOperationException($"{merge.Error} {merge.Guidance}");
                 }
+                // A file with nothing to learn from is said to be that, as `mloop train` says it, before a reader reports its own state.
+                if (TrainingInput.EmptyDataFileRefusal(dataFile, definition.Task) is { } emptyRefusal)
+                    throw new InvalidOperationException($"{emptyRefusal} {TrainingInput.EmptyDataFileGuidance}");
+                if (TrainingInput.HeaderOnlyDataFileRefusal(dataFile, definition.Task) is { } headerOnlyRefusal)
+                    throw new InvalidOperationException($"{headerOnlyRefusal} {TrainingInput.HeaderOnlyDataFileGuidance}");
                 if (TrainingInput.DuplicateColumnRefusal(dataFile, definition.Task) is { } duplicateRefusal)
                     throw new InvalidOperationException($"{duplicateRefusal} {TrainingInput.DuplicateColumnGuidance}");
                 var prepared = await TrainingInput.PrepareAsync(dataFile, definition, job.MaxRows, projectRoot);
