@@ -39,7 +39,7 @@ public static class ExperimentEndpoints
             CancellationToken ct) =>
         {
             var stopwatch = Stopwatch.StartNew();
-            var modelName = string.IsNullOrWhiteSpace(name) ? null : name.Trim().ToLowerInvariant();
+            var modelName = MLoop.Core.Storage.ModelName.Filter(name);
 
             try
             {
@@ -402,7 +402,7 @@ public static class ExperimentEndpoints
 
                 // A relative path is the project's, as for POST /train.
                 var resolvedTestPath = ProjectPaths.Resolve(testDataPath, projectRootPath.Value);
-                if (!ProjectPaths.IsWithin(resolvedTestPath, projectRootPath.Value))
+                if (!ProjectPaths.IsWithinReal(resolvedTestPath, projectRootPath.Value))
                     return Results.BadRequest(new { error = "Test data file must be within the project directory." });
 
                 if (!TabularDataFile.Exists(resolvedTestPath))

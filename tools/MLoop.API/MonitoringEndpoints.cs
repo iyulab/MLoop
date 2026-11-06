@@ -41,7 +41,7 @@ public static class MonitoringEndpoints
             CancellationToken ct) =>
         {
             var stopwatch = Stopwatch.StartNew();
-            var modelName = string.IsNullOrWhiteSpace(name) ? null : name.Trim().ToLowerInvariant();
+            var modelName = MLoop.Core.Storage.ModelName.Filter(name);
 
             try
             {

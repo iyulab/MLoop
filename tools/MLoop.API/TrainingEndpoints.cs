@@ -51,7 +51,7 @@ public static class TrainingEndpoints
             foreach (var file in new[] { request.DataFile }.Concat(request.AdditionalDataFiles ?? []))
             {
                 var resolvedDataFile = InProject(file);
-                if (!ProjectPaths.IsWithin(resolvedDataFile, projectRootPath.Value))
+                if (!ProjectPaths.IsWithinReal(resolvedDataFile, projectRootPath.Value))
                     return Results.BadRequest(new { error = $"Data file must be within the project directory: {file}" });
                 if (!File.Exists(resolvedDataFile))
                     return Results.BadRequest(new { error = $"Data file not found: {file}" });

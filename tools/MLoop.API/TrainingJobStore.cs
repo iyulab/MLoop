@@ -269,7 +269,10 @@ public record TrainingJobRequest(
     int? MaxTrials = null,
     int? Epochs = null)
 {
-    public string ModelName => string.IsNullOrWhiteSpace(Name) ? "default" : Name.Trim().ToLowerInvariant();
+    /// <summary>The model the job trains into: <c>default</c> when the request names none, else the name through the
+    /// model-name gate — it becomes a directory, and a name with <c>..</c> in it used to be one the job wrote into.</summary>
+    /// <exception cref="MLoop.Core.Storage.InvalidModelNameException">The request names a model that cannot be a directory.</exception>
+    public string ModelName => string.IsNullOrWhiteSpace(Name) ? "default" : MLoop.Core.Storage.ModelName.Require(Name);
 }
 
 public enum JobStatus
