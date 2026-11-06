@@ -78,3 +78,67 @@ public class ModelNameResolveTests : IDisposable
     public void TheVariableIsNamedWhatTheGeneratedImageSets()
         => Assert.Equal("MLOOP_MODEL_NAME", ModelName.EnvironmentVariable);
 }
+
+/// <summary>
+/// A model name a caller supplies is a directory name, so <see cref="ModelName.Resolve"/> — the one door it walks through — refuses one
+/// that is not: no separator, no <c>..</c>, no reserved word. The server's read endpoints used to join the name unchecked and
+/// reached any directory shaped like a model (reproduced on the published 0.49.0).
+/// </summary>
+public class ModelNameGateTests : IDisposable
+{
+    private readonly string? _saved = Environment.GetEnvironmentVariable(ModelName.EnvironmentVariable);
+
+    public void Dispose()
+    {
+        Environment.SetEnvironmentVariable(ModelName.EnvironmentVariable, _saved);
+        GC.SuppressFinalize(this);
+    }
+
+    [Theory]
+    [InlineData("..")]
+    [InlineData("../../other")]
+    [InlineData("default/../../x")]
+    [InlineData("a/b")]
+    [InlineData("a\\b")]
+    [InlineData("/etc")]
+    [InlineData("staging")]
+    [InlineData("my_model")]
+    [InlineData("a\0b")]
+    public void AName_ThatIsNotADirectoryName_IsRefused(string name)
+    {
+        var ex = Assert.Throws<InvalidModelNameException>(() => ModelName.Resolve(name));
+
+        Assert.StartsWith("Invalid model name", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain('\0', ex.Message);
+        Assert.Throws<InvalidModelNameException>(() => ModelName.Require(name));
+    }
+
+    [Theory]
+    [InlineData("default", "default")]
+    [InlineData("  MyModel  ", "mymodel")]
+    [InlineData("churn-v2", "churn-v2")]
+    public void AValidName_PassesNormalized(string name, string expected)
+    {
+        Assert.Equal(expected, ModelName.Resolve(name));
+        Assert.Equal(expected, ModelName.Require(name));
+    }
+
+    [Fact]
+    public void ABadEnvironmentName_IsRefusedToo()
+    {
+        Environment.SetEnvironmentVariable(ModelName.EnvironmentVariable, "../elsewhere");
+
+        Assert.Throws<InvalidModelNameException>(() => ModelName.Resolve(null));
+    }
+
+    [Fact]
+    public void AFilter_IsNullWhenBlankAndOtherwiseTheSameGate()
+    {
+        Environment.SetEnvironmentVariable(ModelName.EnvironmentVariable, "churn");
+
+        Assert.Null(ModelName.Filter(null));
+        Assert.Null(ModelName.Filter("  "));
+        Assert.Equal("fraud", ModelName.Filter(" Fraud "));
+        Assert.Throws<InvalidModelNameException>(() => ModelName.Filter("../x"));
+    }
+}

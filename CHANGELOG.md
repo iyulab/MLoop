@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Security
+
+- **`mloop serve` took a model name from the request and joined it into `models/<name>/` and `.mloop/logs/<name>/` without checking it.** A name with `..` in it (`?name=../../other`) made `GET /info`, `/models`, `/experiments`, `/logs` and the other endpoints that take `name` answer from any directory beside the project that is laid out like a model, with an ordinary token; and `POST /train`, which built the name from the request body itself, created its experiment folder wherever the `..` led (this one needs the `admin` role). A model name now has to be a valid model name (`ModelName.Require`, the one gate `ModelName.Resolve` and the new `ModelName.Filter` pass through, throwing `InvalidModelNameException`) (lowercase letters, digits and single hyphens, not a reserved word) wherever a request or a configured `MLOOP_MODEL_NAME` supplies one; anything else is answered `400` with the reason, on every endpoint, before a path is built.
+- **`POST /train` and `POST /evaluate` kept their data files inside the project by comparing the spelling of the path**, so a symbolic link inside the project that points out of it passed, and the server read the file the link named. The check now follows links, and a link it cannot follow counts as outside.
+
 ### Added
 
 - **`mloop validate` and every command that loads `mloop.yaml` say when a key is written twice in one mapping.** The file is read leniently and the later of two equal keys won without a word (`test:` twice under `data:` read the second), so an edit that added a line next to the old one left the old value in the file and the new one in force - or the other way round, as the reader saw it. The warning names the key and its line; the first repeated key is reported, and any other key problem is reported once the file has none.

@@ -81,7 +81,7 @@ public static class TrainingEndpoints
                             : $" Not a directory: {request.DataFile}.";
                     return Results.BadRequest(new { error = $"{missing.Message}{named} {missing.Hint}" });
                 }
-                if (!ProjectPaths.IsWithin(directory, projectRootPath.Value))
+                if (!ProjectPaths.IsWithinReal(directory, projectRootPath.Value))
                     return Results.BadRequest(new { error = $"Data directory must be within the project directory: {request.DataFile}" });
                 dataFile = directory;
             }
@@ -92,7 +92,7 @@ public static class TrainingEndpoints
                 foreach (var file in new[] { request.DataFile }.Concat(request.AdditionalDataFiles ?? []))
                 {
                     var resolvedDataFile = InProject(file);
-                    if (!ProjectPaths.IsWithin(resolvedDataFile, projectRootPath.Value))
+                    if (!ProjectPaths.IsWithinReal(resolvedDataFile, projectRootPath.Value))
                         return Results.BadRequest(new { error = $"Data file must be within the project directory: {file}" });
                     if (Directory.Exists(resolvedDataFile))
                         return Results.BadRequest(new { error = $"Data file is a directory: {file}. '{trainDefinition.Task}' trains on a table (a file)." });
