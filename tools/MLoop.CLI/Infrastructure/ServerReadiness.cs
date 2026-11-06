@@ -19,6 +19,10 @@ internal static class ServerReadiness
     {
         foreach (var address in BindAddresses(host))
         {
+            // Binding is not the whole question: where a process holds the any-address on the same port (macOS's AirPlay Receiver holds
+            // 5000), a bind to one loopback address can succeed while a client of that address reaches the other process.
+            if (AcceptsConnections(address, port))
+                return true;
             try
             {
                 var listener = new TcpListener(address, port) { ExclusiveAddressUse = true };
@@ -35,6 +39,29 @@ internal static class ServerReadiness
             }
         }
         return false;
+    }
+
+    /// <summary>
+    /// Whether something already accepts TCP connections where a client of <paramref name="address"/> would reach a server on
+    /// <paramref name="port"/> (an any-address is reached on the loopback).
+    /// </summary>
+    internal static bool AcceptsConnections(IPAddress address, int port)
+    {
+        var target = address.Equals(IPAddress.Any) ? IPAddress.Loopback
+            : address.Equals(IPAddress.IPv6Any) ? IPAddress.IPv6Loopback
+            : address;
+        try
+        {
+            using var client = new TcpClient(target.AddressFamily);
+            using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+            client.ConnectAsync(target, port, timeout.Token).AsTask().GetAwaiter().GetResult();
+            return client.Connected;
+        }
+        catch (Exception ex) when (ex is SocketException or OperationCanceledException or ObjectDisposedException or InvalidOperationException)
+        {
+            // Nothing listening, or no such address family on this machine: not a taken port.
+            return false;
+        }
     }
 
     /// <summary>

@@ -34,6 +34,24 @@ public class ServerReadinessTests
     }
 
     [Fact]
+    public void AListenerOnTheAnyAddress_IsFoundByConnecting_OnTheLoopbackAClientReaches()
+    {
+        var listener = new TcpListener(IPAddress.Any, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+        try
+        {
+            Assert.True(ServerReadiness.AcceptsConnections(IPAddress.Loopback, port));
+            Assert.True(ServerReadiness.AcceptsConnections(IPAddress.Any, port));
+        }
+        finally
+        {
+            listener.Stop();
+        }
+        Assert.False(ServerReadiness.AcceptsConnections(IPAddress.Loopback, port));
+    }
+
+    [Fact]
     public async Task AServerThatExitsBeforeAnswering_IsNotReady()
     {
         using var exited = Process.Start(new ProcessStartInfo("dotnet", "--version") { RedirectStandardOutput = true })!;

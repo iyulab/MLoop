@@ -185,7 +185,8 @@ That's it! Your model is trained and ready to use.
 ### Serve the model over HTTP
 
 ```bash
-mloop serve --detach                       # prints the process id; stop it later with `kill <pid>` (taskkill /PID <pid> /F on Windows)
+mloop serve --detach                       # port 5000 by default (--port to change; on macOS the AirPlay Receiver holds 5000, so use e.g. --port 5001);
+                                           # prints the process id; stop it later with `kill <pid>` (taskkill /PID <pid> /F on Windows)
 export MLOOP_TOKEN=$(mloop token --quiet)  # every endpoint except /health needs this bearer token
 curl -X POST http://localhost:5000/predict \
   -H "Authorization: Bearer $MLOOP_TOKEN" -H "Content-Type: application/json" \
@@ -193,6 +194,10 @@ curl -X POST http://localhost:5000/predict \
 ```
 
 Send a JSON array of such rows to score several at once; the answer for a row is the one `mloop predict` gives for it.
+
+To watch a model once it is serving, log what it is asked and what really happened: `mloop predict --log` (and `POST /predict`) keep each answer under an id
+(see `mloop logs`), `mloop feedback add --prediction-id <id> --actual-value <value>` records the truth, then `mloop drift` (needs about 300 logged
+predictions) names the input columns that moved and `mloop trigger check` says whether retraining is due.
 
 ## Core Commands
 

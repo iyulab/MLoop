@@ -120,7 +120,10 @@ public class ServeCommand : Command
             {
                 ErrorConsole.Error(
                     $"Port {port} is already in use on {host} — another server (an earlier mloop serve?) answers there.",
-                    $"Stop it, or serve on another port: mloop serve --port {port + 1}");
+                    $"Stop it, or serve on another port: mloop serve --port {port + 1}"
+                    + (OperatingSystem.IsMacOS() && port == 5000
+                        ? " (on macOS the AirPlay Receiver holds port 5000: turn it off in System Settings > General > AirDrop & Handoff)"
+                        : ""));
                 return 1;
             }
 
