@@ -70,7 +70,17 @@ public sealed class FilePromotionManager : IPromotionManager
         var backupPath = Path.Combine(modelPath, "backups",
             $"{label}-{MLoop.Core.Storage.TimestampKeys.Stamp(DateTimeOffset.UtcNow)}");
         Directory.CreateDirectory(Path.GetDirectoryName(backupPath)!);
-        CopyDirectory(productionPath, backupPath);
+        try
+        {
+            CopyDirectory(productionPath, backupPath);
+        }
+        catch
+        {
+            // A backup that stopped half way looks like a whole one in backups/ and is not one: a full disk left
+            // such directories behind. Whatever stopped the copy is reported; the leftover is not kept.
+            try { Directory.Delete(backupPath, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            throw;
+        }
 
         return backupPath;
     }

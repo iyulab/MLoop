@@ -457,7 +457,45 @@ public class ExperimentStore : IExperimentStore
         }
         if (index.Version < ExperimentIndex.CurrentVersion)
             await UpgradeIndexAsync(modelName, index, cancellationToken);
+        await AddExperimentsMissingFromAsync(index, modelName, cancellationToken);
         return index;
+    }
+
+    /// <summary>
+    /// The index lists the experiment folders under staging/, and a folder with a readable record that it does not list is
+    /// still an experiment: a train that failed writing the index (a full disk, a kill) after its record, or the folders of
+    /// two branches that each trained joined by a merge that kept one side's index lines. They are added in memory, so every
+    /// reader sees them; a writer's next save keeps them.
+    /// </summary>
+    private async Task AddExperimentsMissingFromAsync(ExperimentIndex index, string modelName, CancellationToken cancellationToken)
+    {
+        var stagingPath = _fileSystem.CombinePath(_fileSystem.CombinePath(_modelsPath, modelName), StagingDirectory);
+        if (!_fileSystem.DirectoryExists(stagingPath))
+            return;
+
+        var known = index.Experiments.Select(e => e.ExperimentId).ToHashSet(StringComparer.Ordinal);
+        var highest = 0;
+        foreach (var directory in Directory.GetDirectories(stagingPath).OrderBy(d => d, StringComparer.Ordinal))
+        {
+            var id = Path.GetFileName(directory);
+            var number = System.Text.RegularExpressions.Regex.Match(id, @"^exp-(\d+)$");
+            if (!number.Success)
+                continue;
+            highest = Math.Max(highest, int.Parse(number.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture));
+            if (known.Contains(id))
+                continue;
+            try
+            {
+                index.Experiments.Add(SummaryOf(modelName, await LoadAsync(modelName, id, cancellationToken)));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                           or System.Text.Json.JsonException or InvalidOperationException)
+            {
+                // A folder without a readable record (a train killed before it saved) is an id taken, not an experiment.
+            }
+        }
+        // A listed id is never given again, whatever NextId says.
+        index.NextId = Math.Max(index.NextId, highest + 1);
     }
 
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> ReportedDamage = new();

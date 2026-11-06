@@ -671,6 +671,36 @@ public class ExperimentStoreTests : IDisposable
         Assert.Equal(["exp-001", "exp-002", "exp-003"], listed.OrderBy(i => i, StringComparer.Ordinal));
     }
 
+    [Fact]
+    public async Task AnExperimentFolderTheIndexLacks_IsListed()
+    {
+        await TrainTwoAsync();
+        // The record of exp-003 was written, the index update after it never ran (a full disk, a kill).
+        await _experimentStore.SaveAsync(DefaultModelName, CreateExperimentData("exp-003"), CancellationToken.None);
+        var index = await File.ReadAllTextAsync(IndexPathOf());
+        var without = System.Text.RegularExpressions.Regex.Replace(index, @"\{[^{}]*""experimentId"":\s*""exp-003""[^{}]*\},?", "");
+        Assert.NotEqual(index, without);
+        await File.WriteAllTextAsync(IndexPathOf(), without);
+
+        var listed = (await _experimentStore.ListAsync(DefaultModelName, CancellationToken.None)).Select(e => e.ExperimentId);
+
+        Assert.Equal(["exp-001", "exp-002", "exp-003"], listed.OrderBy(i => i, StringComparer.Ordinal));
+        // ... and its id is not given out again.
+        Assert.Equal("exp-004", await _experimentStore.GenerateIdAsync(DefaultModelName, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task AFolderWithoutARecord_IsNotListed_ButItsIdIsTaken()
+    {
+        await TrainTwoAsync();
+        Directory.CreateDirectory(_experimentStore.GetExperimentPath(DefaultModelName, "exp-003"));
+
+        var listed = (await _experimentStore.ListAsync(DefaultModelName, CancellationToken.None)).Select(e => e.ExperimentId);
+
+        Assert.Equal(["exp-001", "exp-002"], listed.OrderBy(i => i, StringComparer.Ordinal));
+        Assert.Equal("exp-004", await _experimentStore.GenerateIdAsync(DefaultModelName, CancellationToken.None));
+    }
+
     private ExperimentData CreateExperimentData(string experimentId, string status = "Completed", double? metric = 0.85, string? modelName = null, ExperimentResult? result = null, string? weightColumn = null)
     {
         return new ExperimentData
