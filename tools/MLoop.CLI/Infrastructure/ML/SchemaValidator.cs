@@ -231,7 +231,7 @@ public class SchemaValidator
                 else
                 {
                     result.ErrorMessage = $"Missing required columns: {string.Join(", ", missingColumns)}";
-                    result.Suggestions.Add("Check: Ensure prediction data contains all Feature columns used during training");
+                    result.Suggestions.Add("Ensure prediction data contains all Feature columns used during training");
                 }
             }
             else if (indexColumns.Any() || extraColumns.Any())
