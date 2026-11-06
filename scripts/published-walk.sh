@@ -5,7 +5,9 @@
 # "the user's own file". A reader who knows only the README follows it inside that container.
 #
 #   published-walk.sh up [--platform linux/arm64|linux/amd64]   pack the tool, generate the tables, start the container
-#   published-walk.sh smoke                                     walk the scenarios with a script (a quick check, not a judge)
+#   published-walk.sh up --published <version> [--platform ...] the same, with no packed tool: the reader installs the real
+#                                                               <version> from nuget.org (plain `dotnet tool install --global mloop`);
+#                                                               the README and guides are those of the tag v<version>
 #   published-walk.sh down                                      remove the container and the work directory
 #
 # After `up`, the reader runs commands with:   docker exec mloop-walk bash -lc '<command>'
@@ -23,12 +25,14 @@ cd "$HERE/.."
 NAME="${MLOOP_WALK_CONTAINER:-mloop-walk}"
 WORK="${HOME}/.cache/mloop-published-walk"
 PLATFORM="linux/arm64"
+PUBLISHED=""
 IMAGE="mcr.microsoft.com/dotnet/sdk:10.0"
 
 cmd="${1:-up}"; shift || true
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --platform) PLATFORM="$2"; shift 2 ;;
+    --published) PUBLISHED="$2"; shift 2 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
 done
@@ -107,17 +111,27 @@ case "$cmd" in
 
   up)
     down; rm -rf "$WORK"; mkdir -p "$WORK/feed" "$WORK/data"
-    # A version above anything on nuget.org, so that `dotnet tool install mloop --add-source /feed` takes the packed tool and
-    # not the published one. (The bundled server binds only against a tool at least as new as the tree's assemblies.)
-    TREE="$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props | head -1)"
-    VERSION="${TREE%%.*}.$(( $(echo "$TREE" | cut -d. -f2) + 1 )).0.9999"
-    echo "== pack $VERSION"
-    dotnet pack tools/MLoop.CLI -c Release -p:Version="$VERSION" -o "$WORK/feed" >/dev/null
-    generate_tables "$WORK/data"
-    # What a reader has: the README as packed with the tool, and the guides it links to (public in the repository).
-    mkdir -p "$WORK/docs"
-    unzip -p "$WORK"/feed/mloop.*.nupkg README.md > "$WORK/docs/README.md"
-    cp docs/*.md "$WORK/docs/"
+    if [[ -n "$PUBLISHED" ]]; then
+      # The real thing: nothing is packed and the feed stays empty, so a plain `dotnet tool install --global mloop` reads nuget.org.
+      VERSION="$PUBLISHED"
+      echo "== published $VERSION"
+      generate_tables "$WORK/data"
+      mkdir -p "$WORK/docs"
+      git show "v$VERSION:README.md" > "$WORK/docs/README.md"
+      for f in $(git ls-tree --name-only "v$VERSION" docs/ | grep '\.md$'); do git show "v$VERSION:$f" > "$WORK/docs/$(basename "$f")"; done
+    else
+      # A version above anything on nuget.org, so that `dotnet tool install mloop --add-source /feed` takes the packed tool and
+      # not the published one. (The bundled server binds only against a tool at least as new as the tree's assemblies.)
+      TREE="$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props | head -1)"
+      VERSION="${TREE%%.*}.$(( $(echo "$TREE" | cut -d. -f2) + 1 )).0.9999"
+      echo "== pack $VERSION"
+      dotnet pack tools/MLoop.CLI -c Release -p:Version="$VERSION" -o "$WORK/feed" >/dev/null
+      generate_tables "$WORK/data"
+      # What a reader has: the README as packed with the tool, and the guides it links to (public in the repository).
+      mkdir -p "$WORK/docs"
+      unzip -p "$WORK"/feed/mloop.*.nupkg README.md > "$WORK/docs/README.md"
+      cp docs/*.md "$WORK/docs/"
+    fi
     echo "$VERSION" > "$WORK/VERSION"
     echo "== container ($PLATFORM)"
     docker run -d --name "$NAME" --platform "$PLATFORM" \
@@ -128,10 +142,5 @@ case "$cmd" in
     echo "ready: docker exec $NAME bash -lc '<command>'   (feed /feed, tables /data, docs /docs, version $VERSION)"
     ;;
 
-  smoke)
-    [[ -f "$WORK/VERSION" ]] || { echo "run '$0 up' first" >&2; exit 2; }
-    exec "$HERE/published-walk-smoke.sh" "$NAME"
-    ;;
-
-  *) echo "usage: $0 up|smoke|down" >&2; exit 2 ;;
+  *) echo "usage: $0 up|down" >&2; exit 2 ;;
 esac
