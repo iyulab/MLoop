@@ -64,7 +64,7 @@ public static class TrainingInput
     /// Why a data file with no content cannot be trained on, or <c>null</c>. Said first and as that: an empty table has no header to
     /// name a label by, and the first reader to meet it (the parser behind the format conversion) reported its own state dump -
     /// "No header record was found" with the reader's column count and byte offsets - which names neither the file nor the cause.
-    /// A file with a header and no rows is a different case and is judged by the steps that count rows. Directory datasets have no
+    /// A file with a header and no rows is <see cref="HeaderOnlyDataFileRefusal"/>'s. Directory datasets have no
     /// single file to be empty.
     /// </summary>
     public static string? EmptyDataFileRefusal(string dataFile, string? task)
@@ -96,6 +96,49 @@ public static class TrainingInput
         catch (IOException) { return null; }
         catch (UnauthorizedAccessException) { return null; }
     }
+
+    /// <summary>
+    /// Why a table file that holds its header row and nothing under it cannot be trained on, or <c>null</c>. Said as that: left
+    /// to the steps that count rows, the file trained as a label with 0 values and ended in "Cannot train a classifier with only one
+    /// class" - advice about the label for a file that has no rows. Only comma- and tab-separated files are read here (a record is
+    /// counted as CSV, so a quoted header that spans lines is one), and a file with no header at all is
+    /// <see cref="EmptyDataFileRefusal"/>'s.
+    /// </summary>
+    public static string? HeaderOnlyDataFileRefusal(string dataFile, string? task)
+    {
+        if (DataLoaderFactory.IsDirectoryBased(task) || !File.Exists(dataFile))
+            return null;
+        if (!dataFile.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) && !dataFile.EndsWith(".tsv", StringComparison.OrdinalIgnoreCase))
+            return null;
+        try
+        {
+            // The first record is the header; a record under it is a row unless it is a blank line (TableRows.IsRow: in a table of
+            // several columns a line of white space is none, the parser reads it as one empty field).
+            string[]? header = null;
+            foreach (var record in MLoop.Core.Data.TableRows.ReadRecords(dataFile, includeHeader: true))
+            {
+                if (header is null)
+                {
+                    if (record.All(string.IsNullOrWhiteSpace))
+                        return null; // no header row at all: EmptyDataFileRefusal's
+                    header = record;
+                    continue;
+                }
+                if (header.Length == 1 || record.Length != 1 || !string.IsNullOrWhiteSpace(record[0]))
+                    return null;
+            }
+            return header is null ? null : $"{Path.GetFileName(dataFile)} has a header row and no data rows.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CsvHelper.CsvHelperException)
+        {
+            // A file that cannot be read as a table is reported by the step that reads it.
+            return null;
+        }
+    }
+
+    /// <summary>What to do when <see cref="HeaderOnlyDataFileRefusal"/> is the answer.</summary>
+    public const string HeaderOnlyDataFileGuidance =
+        "Put the data rows under the header row - or train on another file: mloop train <data-file>";
 
     /// <summary>What to do when <see cref="EmptyDataFileRefusal"/> is the answer.</summary>
     public const string EmptyDataFileGuidance =

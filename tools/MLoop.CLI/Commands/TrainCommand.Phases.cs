@@ -378,6 +378,11 @@ public static partial class TrainCommand
             ErrorConsole.Error(Markup.Escape(emptyRefusal), TrainingInput.EmptyDataFileGuidance);
             return PreparedData.Exit(1);
         }
+        if (TrainingInput.HeaderOnlyDataFileRefusal(resolvedDataFile, effectiveDefinition.Task) is { } headerOnlyRefusal)
+        {
+            ErrorConsole.Error(Markup.Escape(headerOnlyRefusal), TrainingInput.HeaderOnlyDataFileGuidance);
+            return PreparedData.Exit(1);
+        }
 
         // A data file in another format (Parquet, Excel, JSON, TSV) is read as a table from here on.
         resolvedDataFile = await TabularDataFile.AsCsvAsync(resolvedDataFile, records);

@@ -57,7 +57,7 @@ public sealed class EmptyDataFileRefusalTests : IDisposable
     }
 
     [Fact]
-    public void AFileWithAHeaderAndNoRows_IsNotThisRefusal()
+    public void AFileWithAHeaderAndNoRows_IsTheHeaderOnlyRefusalsNotThisOne()
     {
         var path = Write("header-only.csv", "a,b,label\n");
 
@@ -84,5 +84,63 @@ public sealed class EmptyDataFileRefusalTests : IDisposable
     public void AMissingFile_IsLeftToTheStepThatSaysItIsMissing()
     {
         Assert.Null(TrainingInput.EmptyDataFileRefusal(Path.Combine(_directory, "nothing.csv"), "regression"));
+    }
+    // ---- a header and nothing under it ----
+
+    [Theory]
+    [InlineData("a,b,label\n")]
+    [InlineData("a,b,label")]
+    [InlineData("\uFEFFa,b,label\r\n\r\n   \n")]
+    [InlineData("\"a\nstill the header\",b,label\n")]
+    public void AHeaderAndNoRows_IsRefused_NamingTheFileAndTheCause(string text)
+    {
+        var path = Write("header-only.csv", text);
+
+        var refusal = TrainingInput.HeaderOnlyDataFileRefusal(path, "binary-classification");
+
+        Assert.NotNull(refusal);
+        Assert.Contains("header-only.csv", refusal, StringComparison.Ordinal);
+        Assert.Contains("no data rows", refusal, StringComparison.Ordinal);
+        Assert.DoesNotContain("class", refusal, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ATabSeparatedHeaderAndNoRows_IsRefused()
+    {
+        var path = Write("header-only.tsv", "a\tb\tlabel\n");
+
+        Assert.NotNull(TrainingInput.HeaderOnlyDataFileRefusal(path, "regression"));
+    }
+
+    [Theory]
+    [InlineData("a,b,label\n1,2,yes\n")]
+    [InlineData("a,b,label\n\n1,2,yes\n")]
+    [InlineData("a,b,label\n1,2,yes")]
+    [InlineData("a,b,label\n,,\n")]
+    public void AFileWithARowUnderItsHeader_IsNotRefused(string text)
+    {
+        var path = Write("train.csv", text);
+
+        Assert.Null(TrainingInput.HeaderOnlyDataFileRefusal(path, "binary-classification"));
+    }
+
+    [Fact]
+    public void AFileWithNoHeaderAtAll_IsTheEmptyRefusalsNotThisOne()
+    {
+        var path = Write("empty.csv", "\n  \n");
+
+        Assert.Null(TrainingInput.HeaderOnlyDataFileRefusal(path, "regression"));
+        Assert.NotNull(TrainingInput.EmptyDataFileRefusal(path, "regression"));
+    }
+
+    [Fact]
+    public void AHeaderOnlyRefusal_LeavesOtherFormatsDirectoryTasksAndMissingFilesAlone()
+    {
+        var workbook = Write("book.xlsx", "not a real workbook");
+        var annotations = Write("annotations.json", "a,b,label\n");
+
+        Assert.Null(TrainingInput.HeaderOnlyDataFileRefusal(workbook, "regression"));
+        Assert.Null(TrainingInput.HeaderOnlyDataFileRefusal(annotations, "image-classification"));
+        Assert.Null(TrainingInput.HeaderOnlyDataFileRefusal(Path.Combine(_directory, "nothing.csv"), "regression"));
     }
 }
