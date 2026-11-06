@@ -405,6 +405,29 @@ public class CsvDataLoaderTests : IDisposable
     }
 
     [Fact]
+    public void FlattenMultiLineHeaders_AQuoteInsideAColumnName_IsTheNamesAndJoinsNoLines()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "inch_header.csv");
+        File.WriteAllText(csvPath, "Pipe 5\" long,B,C\n1,2,3\n4,5,6\n");
+
+        var result = CsvDataLoader.FlattenMultiLineHeaders(csvPath);
+
+        Assert.Equal(csvPath, result); // the header is the first line, as written
+    }
+
+    [Fact]
+    public void FlattenMultiLineHeaders_AQuotedNameThatNeverCloses_IsRefused()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "unclosed_header.csv");
+        File.WriteAllText(csvPath, "\"Col A,B,C\n1,2,3\n4,5,6\n");
+
+        var error = Assert.Throws<UnterminatedQuoteException>(() => CsvDataLoader.FlattenMultiLineHeaders(csvPath));
+
+        Assert.Contains("unclosed_header.csv", error.Message, StringComparison.Ordinal);
+        Assert.Contains("header row", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void FlattenMultiLineHeaders_MultiLineHeader_ReturnsFlattenedFile()
     {
         var csvPath = Path.Combine(_tempDirectory, "multi_line.csv");

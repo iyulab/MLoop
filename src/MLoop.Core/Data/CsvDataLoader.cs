@@ -1953,9 +1953,13 @@ public class CsvDataLoader : DataProviderBase
 
         if (string.IsNullOrEmpty(firstLine)) return filePath;
 
-        // Count quotes - if even number, header is single-line (no unterminated quoted field)
-        int quoteCount = firstLine.Count(c => c == '"');
-        if (quoteCount % 2 == 0)
+        // Does the first line end inside a quoted field? A quote opens one only at the start of a field (AdvanceQuoteState): a name
+        // with an inch mark (Pipe 5" long) is text, and counting its quote took the lines under it for the rest of the header.
+        var delimiter = FileDelimiter(filePath);
+        var headerInQuote = false;
+        var headerFieldStart = true;
+        AdvanceQuoteState(firstLine, delimiter, ref headerInQuote, ref headerFieldStart, true);
+        if (!headerInQuote)
         {
             // BUG-R2-07: Detect possible multi-row header pattern
             // Row1 has many duplicate values = likely category headers, not real column names
@@ -1972,22 +1976,29 @@ public class CsvDataLoader : DataProviderBase
             // Read and flatten the header (may span multiple physical lines)
             var headerBuilder = new System.Text.StringBuilder();
             bool inQuote = false;
+            bool fieldStart = true;
+            bool firstHeaderLine = true;
+            long headerLines = 0;
 
             while (true)
             {
                 var line = reader.ReadLine();
                 if (line == null) break;
+                headerLines++;
 
                 if (headerBuilder.Length > 0) headerBuilder.Append(' ');
                 headerBuilder.Append(line);
 
-                foreach (char c in line)
-                {
-                    if (c == '"') inQuote = !inQuote;
-                }
+                AdvanceQuoteState(line, delimiter, ref inQuote, ref fieldStart, firstHeaderLine);
+                firstHeaderLine = false;
 
                 if (!inQuote) break;
             }
+
+            if (inQuote)
+                throw new UnterminatedQuoteException(
+                    $"{Path.GetFileName(filePath)}: a quoted column name in the header row is never closed, so it takes in the {headerLines - 1} line(s) " +
+                    "after it, to the end of the file. Close the quote - a quote that is part of the name is written as \"\" inside a quoted name.");
 
             writer.WriteLine(headerBuilder.ToString());
 

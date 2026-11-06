@@ -179,6 +179,16 @@ public class CsvFieldParserTests
     public void Quote_IsTheOneRuleEveryWriterUses(string field, string expected)
         => Assert.Equal(expected, CsvFieldParser.Quote(field));
 
+    [Theory]
+    [InlineData("12\" pipe,11,1", new[] { "12\" pipe", "11", "1" })]               // a quote inside an unquoted field is its text
+    [InlineData("say \"hi\" now,3,1", new[] { "say \"hi\" now", "3", "1" })]
+    [InlineData("5\",3,1", new[] { "5\"", "3", "1" })]
+    [InlineData("a,\"b, c\",d", new[] { "a", "b, c", "d" })]                        // one at the start of a field still opens
+    [InlineData("a,  \"b, c\",d", new[] { "a", "b, c", "d" })]                      // after white space too
+    [InlineData("\"say \"\"hi\"\"\",x", new[] { "say \"hi\"", "x" })]               // and a doubled quote inside it is a quote
+    public void ParseFields_ReadsAQuoteAsTheReadersDo(string line, string[] expected)
+        => Assert.Equal(expected, CsvFieldParser.ParseFields(line));
+
     [Fact]
     public void FormatLine_RoundTripsThroughParseFields()
     {
