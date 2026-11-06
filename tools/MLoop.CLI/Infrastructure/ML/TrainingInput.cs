@@ -57,9 +57,27 @@ public static class TrainingInput
         if (columns.Any(column => string.Equals(column, label, StringComparison.Ordinal)))
             return null;
         var message = $"Label column '{label}' not found in {Path.GetFileName(reportedAs ?? dataFile)}. Available columns: {string.Join(", ", columns)}.";
+        if (OtherDelimiter(columns) is { } other)
+            return $"{message} The header reads as one column, and it looks separated by {other} - mloop reads a .csv file as comma-separated (a tab-separated one when it is named .tsv); save it with commas between the columns.";
         return columns.FirstOrDefault(column => string.Equals(column, label, StringComparison.OrdinalIgnoreCase)) is { } sameLetters
             ? $"{message} '{sameLetters}' differs only in case; column names are case-sensitive."
             : message;
+    }
+
+    /// <summary>
+    /// What a header that came out as one column is separated by instead - a semicolon (the spreadsheet export of a locale that writes
+    /// decimals with a comma), a tab or a bar - or <c>null</c> when it is not that: more than one column, or none of them in the name.
+    /// </summary>
+    internal static string? OtherDelimiter(IReadOnlyList<string> columns)
+    {
+        if (columns.Count != 1)
+            return null;
+        var name = columns[0];
+        var best = new[] { (Name: "a semicolon (;)", Char: ';'), (Name: "a tab", Char: '\t'), (Name: "a bar (|)", Char: '|') }
+            .Select(d => (d.Name, Count: name.Count(c => c == d.Char)))
+            .OrderByDescending(d => d.Count)
+            .First();
+        return best.Count >= 1 ? best.Name : null;
     }
 
     /// <summary>

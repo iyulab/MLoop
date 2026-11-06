@@ -143,4 +143,42 @@ public sealed class EmptyDataFileRefusalTests : IDisposable
         Assert.Null(TrainingInput.HeaderOnlyDataFileRefusal(annotations, "image-classification"));
         Assert.Null(TrainingInput.HeaderOnlyDataFileRefusal(Path.Combine(_directory, "nothing.csv"), "regression"));
     }
+
+    // ---- a header that is one column because the file is not separated by commas ----
+
+    [Theory]
+    [InlineData("x1;x2;y\n1;2;0\n", "a semicolon")]
+    [InlineData("x1\tx2\ty\n1\t2\t0\n", "a tab")]
+    [InlineData("x1|x2|y\n1|2|0\n", "a bar")]
+    public void ALabelMissingFromAFileSeparatedByAnotherDelimiter_SaysWhatSeparatesIt(string text, string expected)
+    {
+        var path = Write("other.csv", text);
+
+        var refusal = TrainingInput.LabelColumnRefusal(path, "binary-classification", "y");
+
+        Assert.NotNull(refusal);
+        Assert.Contains("looks separated by " + expected, refusal, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ALabelMissingFromACommaFile_GetsNoDelimiterHint()
+    {
+        var path = Write("commas.csv", "x1,x2,z\n1,2,0\n");
+
+        var refusal = TrainingInput.LabelColumnRefusal(path, "binary-classification", "y");
+
+        Assert.NotNull(refusal);
+        Assert.DoesNotContain("separated by", refusal, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ALabelMissingFromAOneColumnFileWithNoOtherDelimiter_GetsNoDelimiterHint()
+    {
+        var path = Write("one.csv", "value\n1\n2\n");
+
+        var refusal = TrainingInput.LabelColumnRefusal(path, "binary-classification", "y");
+
+        Assert.NotNull(refusal);
+        Assert.DoesNotContain("separated by", refusal, StringComparison.Ordinal);
+    }
 }
