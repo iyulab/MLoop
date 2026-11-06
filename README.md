@@ -526,8 +526,8 @@ With the ML.NET CLI discontinued, MLoop provides:
 
 ## Requirements
 
-- .NET 10.0+
-- ML.NET 5.0.0+
+- The .NET 10 SDK (`dotnet tool install` needs it; the tool runs on .NET 10). ML.NET comes with the tool - there is nothing else to install for the tabular tasks.
+- Time-series training on Linux also needs an OpenMP library, and the deep-learning tasks download their runtime on demand (`mloop runtime install`) - see the comparison table at the top.
 
 ## License
 

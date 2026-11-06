@@ -50,6 +50,23 @@ public class FileFeedbackCollectorTests : IDisposable
         feedback.Should().ContainSingle(f => f.PredictionId == predictionId);
     }
 
+    [Theory]
+    [InlineData("positive\r")]
+    [InlineData("positive\r\n")]
+    [InlineData("  positive ")]
+    public async Task RecordFeedbackAsync_KeepsTheLabelAndNotTheWhiteSpaceThatCameWithIt(string given)
+    {
+        // A script reading labels from a CRLF file hands over "positive\r"; stored as given it matched nothing.
+        var predictionId = await CreatePredictionLog("test-model", "positive");
+
+        await _collector.RecordFeedbackAsync(predictionId, given);
+
+        var feedback = await _collector.GetFeedbackAsync("test-model");
+        var stored = Assert.Single(feedback);
+        Assert.Equal("positive", stored.ActualValue.ToString());
+        Assert.True(MLoop.DataStore.Services.FeedbackValueComparer.ValuesMatch(stored.PredictedValue, stored.ActualValue));
+    }
+
     [Fact]
     public async Task RecordFeedbackAsync_Success_WhenPredictionExists()
     {

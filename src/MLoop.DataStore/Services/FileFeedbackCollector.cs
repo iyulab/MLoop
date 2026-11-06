@@ -42,6 +42,15 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
         ArgumentNullException.ThrowIfNull(actualValue);
         FeedbackEntry.ValidateWeight(weight);
 
+        // A label read from a file or a line comes with what ends that line: "yes\r" from a CRLF file is the label "yes", and
+        // stored as it came it matched no prediction and was a class of its own in the retraining set.
+        actualValue = actualValue switch
+        {
+            string text => text.Trim(),
+            System.Text.Json.JsonElement { ValueKind: System.Text.Json.JsonValueKind.String } element => (element.GetString() ?? "").Trim(),
+            _ => actualValue,
+        };
+
         // Find the original prediction to get modelName and predictedValue
         var prediction = await FindPredictionByIdAsync(predictionId, cancellationToken).ConfigureAwait(false);
         if (prediction == null)

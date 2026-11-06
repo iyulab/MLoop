@@ -289,8 +289,11 @@ public static class InitCommand
             else
             {
                 AnsiConsole.MarkupLine("  2. Place your training data in datasets/train.csv");
-                AnsiConsole.MarkupLine("  3. Edit mloop.yaml to set your label column");
-                AnsiConsole.MarkupLine("  4. mloop train  [cyan]# Auto-detects datasets/train.csv[/]");
+                // "Label" is what init writes when none was given - the placeholder, not a column of the user's file. `train --label`
+                // names the real one in the same command that trains.
+                AnsiConsole.MarkupLine(labelColumn == "Label"
+                    ? "  3. mloop train --label <column>  [cyan]# Auto-detects datasets/train.csv; name your label column here (or as label: in mloop.yaml)[/]"
+                    : $"  3. mloop train  [cyan]# Auto-detects datasets/train.csv; the label column is {Markup.Escape(labelColumn)}[/]");
             }
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine("[grey]Folder structure:[/]");
