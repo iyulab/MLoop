@@ -273,10 +273,12 @@ public record TrainingJobRequest(
     int? Epochs = null,
     bool Ensemble = false)
 {
-    /// <summary>The model the job trains into: <c>default</c> when the request names none, else the name through the
-    /// model-name gate — it becomes a directory, and a name with <c>..</c> in it used to be one the job wrote into.</summary>
+    /// <summary>The model the job trains into: the name through the model-name gate - it becomes a directory, and a name with
+    /// <c>..</c> in it used to be one the job wrote into - and, when the request names none, the one <c>MLOOP_MODEL_NAME</c>
+    /// names, else <c>default</c>, as every other endpoint resolves it (an image built for one model trained <c>default</c>
+    /// from a request that named nothing, and predicted from the model the variable names).</summary>
     /// <exception cref="MLoop.Core.Storage.InvalidModelNameException">The request names a model that cannot be a directory.</exception>
-    public string ModelName => string.IsNullOrWhiteSpace(Name) ? "default" : MLoop.Core.Storage.ModelName.Require(Name);
+    public string ModelName => MLoop.Core.Storage.ModelName.Resolve(Name);
 }
 
 public enum JobStatus

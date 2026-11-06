@@ -9,7 +9,7 @@ namespace MLoop.Core.Storage;
 /// <remarks>
 /// <para>The lock file is left in place after it is released. Deleting it on release would let a waiter that had already
 /// opened the old file hold a lock on a file nobody else can find while a third process creates a new one — two holders.
-/// It lives under <c>.mloop/locks/</c>, which a project does not commit.</para>
+/// It lives under <c>.mloop/temp/locks/</c>: the <c>.gitignore</c> that <c>mloop init</c> writes has ignored <c>.mloop/temp/</c> from the start, so a lock file never reaches a commit of a project made by any version.</para>
 /// <para>A process that dies releases its lock with it: the operating system closes the handle, so there is no stale lock
 /// to clean up.</para>
 /// </remarks>
@@ -22,9 +22,9 @@ public sealed class ExclusiveFileLock : IDisposable
 
     private ExclusiveFileLock(FileStream handle) => _handle = handle;
 
-    /// <summary>Where the lock for <paramref name="name"/> is kept in the project: <c>.mloop/locks/&lt;name&gt;.lock</c>.</summary>
+    /// <summary>Where the lock for <paramref name="name"/> is kept in the project: <c>.mloop/temp/locks/&lt;name&gt;.lock</c>.</summary>
     public static string PathFor(string projectRoot, string name) =>
-        Path.Combine(projectRoot, ".mloop", "locks", name + ".lock");
+        Path.Combine(projectRoot, ".mloop", "temp", "locks", name + ".lock");
 
     /// <summary>
     /// Waits until <paramref name="lockPath"/> can be held exclusively, retrying with a short growing pause.

@@ -566,6 +566,9 @@ models/*/staging/*/model.zip
 models/*/production/model.zip
 models/*/staging/*/training.log
 
+# A damaged experiment index, kept beside the rebuilt one for a look
+models/*/experiment-index.json.corrupt-*
+
 # Prediction outputs
 predictions/
 
