@@ -1390,7 +1390,8 @@ mloop serve
 # Custom port and host
 mloop serve --port 8080 --host 0.0.0.0
 
-# Run in background
+# Run in background (prints the process id; stop it with `kill <pid>`, `taskkill /PID <pid> /F` on Windows).
+# On Linux and macOS the server's own output goes to .mloop/temp/serve-<port>.log, not to the terminal.
 mloop serve --detach
 
 # API Endpoints:

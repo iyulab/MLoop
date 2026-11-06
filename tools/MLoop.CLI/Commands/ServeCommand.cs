@@ -69,6 +69,32 @@ public class ServeCommand : Command
     // How long a starting server may take to answer /health — loading preloaded models included.
     private static readonly TimeSpan ReadinessTimeout = TimeSpan.FromSeconds(60);
 
+    /// <summary>
+    /// How to start <paramref name="program"/> so it keeps running after this command returns without holding anything of the
+    /// caller's open: a shell opens the log for its output and <c>/dev/null</c> for its input, then becomes the program
+    /// (<c>exec</c> — the process id stays the one the caller is told). Unix only.
+    /// </summary>
+    internal static ProcessStartInfo DetachedStartInfo(
+        string program, IReadOnlyList<string> arguments, string logFile, string workingDirectory)
+    {
+        var info = new ProcessStartInfo
+        {
+            FileName = "/bin/sh",
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WorkingDirectory = workingDirectory
+        };
+        info.ArgumentList.Add("-c");
+        // "$0" is a name for the shell, "$1" the log, the rest the program and its arguments, each passed whole.
+        info.ArgumentList.Add("log=$1; shift; exec \"$@\" >>\"$log\" 2>&1 </dev/null");
+        info.ArgumentList.Add("mloop-serve");
+        info.ArgumentList.Add(logFile);
+        info.ArgumentList.Add(program);
+        foreach (var argument in arguments)
+            info.ArgumentList.Add(argument);
+        return info;
+    }
+
     /// <summary>Whether <paramref name="host"/> is something a server binds to: a host name, an address, or <c>*</c> / <c>+</c>.</summary>
     internal static bool IsBindableHost(string host) =>
         host is "*" or "+" || Uri.CheckHostName(host.Trim('[', ']')) != UriHostNameType.Unknown;
@@ -140,20 +166,35 @@ public class ServeCommand : Command
                 Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
             }
 
-            // Start the API server
-            var startInfo = new ProcessStartInfo
+            // Start the API server. A server in the background has nothing to write to but a file: handed the caller's
+            // output it holds the caller's pipe open for as long as it runs (`mloop serve --detach | tee`, a CI step
+            // reading the command's output, never returns), so on Unix it writes to a log beside the project's other
+            // temporary files. (Windows starts it through the shell, which hands it no handles of the caller's.)
+            string? detachedLog = null;
+            ProcessStartInfo startInfo;
+            if (detach && !OperatingSystem.IsWindows())
             {
-                FileName = "dotnet",
-                Arguments = $"\"{apiAssembly}\" --urls http://{host}:{port}",
-                UseShellExecute = detach,
-                CreateNoWindow = !detach,
-                WorkingDirectory = projectRoot
-            };
+                detachedLog = Path.Combine(projectRoot, ".mloop", "temp", $"serve-{port}.log");
+                Directory.CreateDirectory(Path.GetDirectoryName(detachedLog)!);
+                startInfo = DetachedStartInfo(
+                    "dotnet", [apiAssembly, "--urls", $"http://{host}:{port}"], detachedLog, projectRoot);
+            }
+            else
+            {
+                startInfo = new ProcessStartInfo
+                {
+                    FileName = "dotnet",
+                    Arguments = $"\"{apiAssembly}\" --urls http://{host}:{port}",
+                    UseShellExecute = detach,
+                    CreateNoWindow = !detach,
+                    WorkingDirectory = projectRoot
+                };
 
-            if (!detach)
-            {
-                startInfo.RedirectStandardOutput = true;
-                startInfo.RedirectStandardError = true;
+                if (!detach)
+                {
+                    startInfo.RedirectStandardOutput = true;
+                    startInfo.RedirectStandardError = true;
+                }
             }
 
             var process = new Process { StartInfo = startInfo };
@@ -192,13 +233,17 @@ public class ServeCommand : Command
                     {
                         ErrorConsole.Error(
                             $"MLoop.API exited with code {process.ExitCode} before it answered on http://{host}:{port}.",
-                            "Run mloop serve without --detach to see why.");
+                            detachedLog is null
+                                ? "Run mloop serve without --detach to see why."
+                                : $"The server's output is in {detachedLog} — or run mloop serve without --detach to watch it.");
                         return process.ExitCode == 0 ? 1 : process.ExitCode;
                     }
                     WarningConsole.Warn($"The server (PID {process.Id}) is running but did not answer http://{host}:{port}/health within {ReadinessTimeout.TotalSeconds:0} s.");
                     return 0;
                 }
                 AnsiConsole.MarkupLine($"[green]✅ Server started in background (PID: {process.Id})[/]");
+                if (detachedLog is not null)
+                    AnsiConsole.MarkupLine($"[grey]📝 Server output: {Markup.Escape(detachedLog)}[/]");
                 AnsiConsole.MarkupLine($"[blue]📖 API Documentation: http://{host}:{port}/swagger[/]");
                 AnsiConsole.MarkupLine($"[blue]❤️  Health Check: http://{host}:{port}/health[/]");
                 AnsiConsole.WriteLine();

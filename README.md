@@ -186,7 +186,8 @@ That's it! Your model is trained and ready to use.
 
 ```bash
 mloop serve --detach                       # port 5000 by default (--port to change; on macOS the AirPlay Receiver holds 5000, so use e.g. --port 5001);
-                                           # prints the process id; stop it later with `kill <pid>` (taskkill /PID <pid> /F on Windows)
+                                           # prints the process id; stop it later with `kill <pid>` (taskkill /PID <pid> /F on Windows);
+                                           # on Linux and macOS its own output goes to `.mloop/temp/serve-<port>.log`, so a pipe after the command (`| tee`) ends at once
 export MLOOP_TOKEN=$(mloop token --quiet)  # every endpoint except /health needs this bearer token
 curl -X POST http://localhost:5000/predict \
   -H "Authorization: Bearer $MLOOP_TOKEN" -H "Content-Type: application/json" \
