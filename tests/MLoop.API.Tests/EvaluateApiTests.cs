@@ -182,6 +182,20 @@ public class EvaluateApiTests : IClassFixture<TestWebApplicationFactory>, IAsync
     }
 
     [Fact]
+    public async Task AFileWithAQuotedFieldThatNeverCloses_IsTheCallersError_NamingTheLine()
+    {
+        var path = Path.Combine(_factory.TestProjectRoot, "datasets", "unclosed-quote.csv");
+        var lines = (await File.ReadAllLinesAsync(_withWeight)).ToList();
+        lines.Insert(11, "\"0.5,0.5,1,true");   // opens at the start of a field on line 12 and never closes
+        await File.WriteAllLinesAsync(path, lines);
+
+        var (status, body) = await EvaluateAsync(new { name = Model, experimentId = "exp-001", testDataPath = path });
+
+        status.Should().Be(HttpStatusCode.BadRequest, body.ToString());
+        body.GetProperty("error").GetString().Should().Contain("line 12").And.Contain("never closed");
+    }
+
+    [Fact]
     public async Task ALabelWrittenWithThousandsSeparators_IsTheCallersError_NotAServerError()
     {
         // `mloop evaluate` refuses this file before it measures anything (a label the loader cannot read loads as missing, and the

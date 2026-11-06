@@ -327,7 +327,7 @@ public static class TrainingInput
         // A workbook or Parquet file with a header and no rows is only a table now: said as that, as for a CSV of the same shape.
         if (HeaderOnlyDataFileRefusal(file, definition.Task, reportedAs: dataFile) is { } headerOnlyRefusal)
             throw new InvalidOperationException($"{headerOnlyRefusal} {HeaderOnlyDataFileGuidance}");
-        file = CsvDataLoader.FlattenMultiLineQuotedFields(file);
+        file = CsvDataLoader.FlattenMultiLineQuotedFields(file, reportedAs: dataFile);
 
         if (maxRows is > 0)
             file = await TrainDataValidator.ApplySamplingIfNeededAsync(

@@ -404,7 +404,15 @@ public static partial class TrainCommand
         }
 
         // Flatten multi-line quoted fields early so all downstream line-by-line processing is safe
-        resolvedDataFile = CsvDataLoader.FlattenMultiLineQuotedFields(resolvedDataFile, CoreNarration.Sink);
+        try
+        {
+            resolvedDataFile = CsvDataLoader.FlattenMultiLineQuotedFields(resolvedDataFile, CoreNarration.Sink, reportedAs: namedDataFile);
+        }
+        catch (UnterminatedQuoteException ex)
+        {
+            ErrorConsole.Error(Markup.Escape(ex.Message), "Close the quote in the data file - or train on another file: mloop train <data-file>");
+            return PreparedData.Exit(1);
+        }
 
         // Auto-sampling for large datasets (--max-rows)
         if (maxRows.HasValue && maxRows.Value > 0)

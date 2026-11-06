@@ -1752,32 +1752,49 @@ public class CsvDataLoader : DataProviderBase
     /// Flattens multi-line quoted fields in CSV data by replacing newlines with spaces.
     /// ML.NET's TextLoader treats physical newlines as record boundaries even inside
     /// RFC 4180 quoted fields. This normalizes such fields to single-line representation.
-    /// Uses a quick-check scan: if no unbalanced quotes found, returns the original path. The file is read in the encoding it is
+    /// Uses a quick-check scan: if no line ends inside a quoted field, returns the original path. The file is read in the encoding it is
     /// written in (a CP949 export keeps its Korean) and the copy is UTF-8.
     /// </summary>
-    public static string FlattenMultiLineQuotedFields(string filePath, Action<string>? log = null)
+    /// <remarks>
+    /// A quote opens a quoted field only where a field starts - at the start of a record or right after a delimiter - as the readers
+    /// that follow (CsvHelper, ML.NET's TextLoader) take it; a quote inside an unquoted field (<c>12" pipe</c>) is part of the text.
+    /// Counting every quote took such a text for the start of a quoted field and joined the rest of the file into one record.
+    /// </remarks>
+    /// <param name="filePath">The file to read - possibly a converted or composed copy of what the user gave.</param>
+    /// <param name="log">Where the narration goes.</param>
+    /// <param name="reportedAs">The file the user gave when <paramref name="filePath"/> is a copy made of it, for the refusal's message.</param>
+    /// <exception cref="UnterminatedQuoteException">A quoted field opens and the file ends inside it.</exception>
+    public static string FlattenMultiLineQuotedFields(string filePath, Action<string>? log = null, string? reportedAs = null)
     {
         var write = log ?? NoLog;
 
-        // Quick check: scan for any line with unbalanced quotes.
-        // If every physical line has balanced quotes, there are no multiline quoted fields.
+        // Quick check: does any physical line end inside a quoted field? If none does, there are no multiline quoted fields.
+        // A quote still open at the end of the file is a field that never closes: refused, not joined into one record.
         bool hasMultiLine = false;
         using (var reader = EncodingDetector.OpenReader(filePath))
         {
             string? line;
+            var inQuote = false;
+            var fieldStart = true;
+            var delimiter = FileDelimiter(filePath);
+            long lineNumber = 0, recordStartLine = 1;
             while ((line = reader.ReadLine()) != null)
             {
-                int quoteCount = 0;
-                foreach (char c in line)
+                lineNumber++;
+                if (!inQuote)
                 {
-                    if (c == '"') quoteCount++;
+                    recordStartLine = lineNumber;
+                    fieldStart = true;
                 }
-                if (quoteCount % 2 != 0)
-                {
+                AdvanceQuoteState(line, delimiter, ref inQuote, ref fieldStart, lineNumber == 1);
+                if (inQuote)
                     hasMultiLine = true;
-                    break;
-                }
             }
+            if (inQuote)
+                throw new UnterminatedQuoteException(
+                    $"{Path.GetFileName(reportedAs ?? filePath)}: the quoted field that opens on line {recordStartLine} is never closed, so it takes in " +
+                    $"the {lineNumber - recordStartLine} line(s) after it, to the end of the file. Close the quote - a quote that is part of the text " +
+                    "is written as \"\" inside a quoted field.");
         }
 
         if (!hasMultiLine) return filePath;
@@ -1791,6 +1808,9 @@ public class CsvDataLoader : DataProviderBase
         {
             var lineBuilder = new System.Text.StringBuilder();
             bool inQuote = false;
+            bool fieldStart = true;
+            bool firstLine = true;
+            var delimiter = FileDelimiter(filePath);
 
             string? physicalLine;
             while ((physicalLine = reader.ReadLine()) != null)
@@ -1808,22 +1828,10 @@ public class CsvDataLoader : DataProviderBase
                 }
 
                 // Track quote state across this physical line
-                for (int i = 0; i < physicalLine.Length; i++)
-                {
-                    char c = physicalLine[i];
-                    if (c == '"')
-                    {
-                        // Handle escaped quotes ("") — skip consecutive pair
-                        if (inQuote && i + 1 < physicalLine.Length && physicalLine[i + 1] == '"')
-                        {
-                            i++;
-                        }
-                        else
-                        {
-                            inQuote = !inQuote;
-                        }
-                    }
-                }
+                if (!inQuote)
+                    fieldStart = true;
+                AdvanceQuoteState(physicalLine, delimiter, ref inQuote, ref fieldStart, firstLine);
+                firstLine = false;
 
                 if (!inQuote)
                 {
@@ -1835,15 +1843,68 @@ public class CsvDataLoader : DataProviderBase
                 }
             }
 
-            // Handle unterminated quote at EOF — write whatever we have
-            if (inQuote && lineBuilder.Length > 0)
-            {
-                writer.WriteLine(lineBuilder.ToString());
-            }
+            // (A quote still open at the end of the file was refused above.)
         }
 
         write($"[Info] Flattened {flattenedCount} multi-line quoted field(s) in CSV data: {Path.GetFileName(filePath)}");
         return tempPath;
+    }
+
+    /// <summary>
+    /// The delimiter a file separates its fields with, read from its first lines (a header may itself span lines): whichever of comma,
+    /// semicolon, tab and bar they hold most of (a tie is the comma), or none for lines that hold none of them - a file of one column,
+    /// where a field starts only at the start of a line.
+    /// </summary>
+    private static char FileDelimiter(string filePath)
+    {
+        var counts = new Dictionary<char, int> { [','] = 0, [';'] = 0, ['\t'] = 0, ['|'] = 0 };
+        using var reader = EncodingDetector.OpenReader(filePath);
+        for (var i = 0; i < 5 && reader.ReadLine() is { } line; i++)
+        {
+            foreach (var c in line)
+            {
+                if (counts.ContainsKey(c))
+                    counts[c]++;
+            }
+        }
+        var best = counts.MaxBy(kv => kv.Value);
+        return best.Value > 0 ? best.Key : '\0';
+    }
+
+    /// <summary>
+    /// Moves the quote state over one physical line. A quote opens a quoted field only at the start of a field (white space in front
+    /// of it is skipped, as a reader that trims does); inside a quoted field a doubled quote is a quote of the text and a single one
+    /// closes it, after which the rest of the field is plain text.
+    /// </summary>
+    private static void AdvanceQuoteState(string line, char delimiter, ref bool inQuote, ref bool fieldStart, bool firstLine)
+    {
+        for (var i = 0; i < line.Length; i++)
+        {
+            var c = line[i];
+            if (inQuote)
+            {
+                if (c != '"')
+                    continue;
+                if (i + 1 < line.Length && line[i + 1] == '"')
+                    i++; // an escaped quote
+                else
+                {
+                    inQuote = false;
+                    fieldStart = false;
+                }
+                continue;
+            }
+            if (c == '"' && fieldStart)
+            {
+                inQuote = true;
+                continue;
+            }
+            if (c == '\uFEFF' && firstLine && i == 0)
+                continue; // a byte-order mark is not part of the first field
+            if (c is ' ' or '\t' && fieldStart)
+                continue; // leading white space: the field has not started yet
+            fieldStart = c == delimiter;
+        }
     }
 
     /// <summary>

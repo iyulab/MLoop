@@ -560,6 +560,56 @@ public class CsvDataLoaderTests : IDisposable
         Assert.Equal(csvPath, result);
     }
 
+    [Theory]
+    [InlineData("12\" pipe,3,1")]                  // a quote inside an unquoted field is part of the text
+    [InlineData("say \"hi\" now,3,1")]            // so are balanced ones
+    [InlineData("5\",3,1")]                        // and one that ends the field
+    [InlineData("a;\"b,3,1")]                      // a delimiter-looking character of another kind in front of it
+    public void FlattenMultiLineQuotedFields_AQuoteInsideAnUnquotedField_IsTheTextsAndJoinsNoLines(string row)
+    {
+        var csvPath = Path.Combine(_tempDirectory, "stray_quote.csv");
+        File.WriteAllText(csvPath, "size,x2,y\n1,2,0\n" + row + "\n3,4,0\n4,5,1\n");
+
+        var result = CsvDataLoader.FlattenMultiLineQuotedFields(csvPath);
+
+        Assert.Equal(csvPath, result); // no line ends inside a quoted field: the file is read as written
+    }
+
+    [Fact]
+    public void FlattenMultiLineQuotedFields_AQuotedFieldAfterADelimiterOrLeadingSpaceOrBom_StillFlattens()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "quoted_starts.csv");
+        File.WriteAllText(csvPath, "\uFEFF\"a\nb\",x,y\n1,  \"c\nd\",2\n3,4,\"e\nf\"\n", new System.Text.UTF8Encoding(false));
+
+        var result = CsvDataLoader.FlattenMultiLineQuotedFields(csvPath);
+
+        Assert.NotEqual(csvPath, result);
+        var lines = File.ReadAllLines(result);
+        Assert.Equal(3, lines.Length);
+        Assert.Contains("a b", lines[0], StringComparison.Ordinal);
+        Assert.Contains("c d", lines[1], StringComparison.Ordinal);
+        Assert.Contains("e f", lines[2], StringComparison.Ordinal);
+        File.Delete(result);
+    }
+
+    [Fact]
+    public void FlattenMultiLineQuotedFields_AQuotedFieldThatNeverCloses_IsRefused_NamingTheLineAndTheFile()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "unclosed.csv");
+        var lines = new List<string> { "x1,x2,y" };
+        lines.AddRange(Enumerable.Range(1, 9).Select(i => $"{i},{i % 5},{i % 2}"));
+        lines.Add("\"7,3,1");                          // line 11: opens at the start of a field and never closes
+        lines.AddRange(Enumerable.Range(10, 30).Select(i => $"{i},{i % 5},{i % 2}"));
+        File.WriteAllLines(csvPath, lines);
+
+        var error = Assert.Throws<UnterminatedQuoteException>(() => CsvDataLoader.FlattenMultiLineQuotedFields(csvPath, reportedAs: "people.xlsx"));
+
+        Assert.Contains("people.xlsx", error.Message, StringComparison.Ordinal);
+        Assert.Contains("line 11", error.Message, StringComparison.Ordinal);
+        Assert.Contains("30 line(s)", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("unclosed.csv", error.Message, StringComparison.Ordinal); // the user's name, not the copy's
+    }
+
     #endregion
 
     #region IsLikelyIndexColumn
