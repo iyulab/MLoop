@@ -165,7 +165,10 @@ public class ModelNameGateApiTests : IClassFixture<TestWebApplicationFactory>
 
             var train = await _client.PostAsJsonAsync("/train", new
             {
-                dataFile = "datasets/" + PresentFile, labelColumn = "y", task = "binary-classification", name = $"../../mloop-written-{token}",
+                dataFile = "datasets/" + PresentFile,
+                labelColumn = "y",
+                task = "binary-classification",
+                name = $"../../mloop-written-{token}",
             });
             train.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             Directory.Exists(written).Should().BeFalse("a refused request must not create the directory it named");
