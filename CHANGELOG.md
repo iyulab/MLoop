@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.49.1] - 2026-11-06
+
+### Security
+
+- **`mloop serve` took a model name from the request and joined it into `models/<name>/` and `.mloop/logs/<name>/` without checking it.** A name with `..` in it (`?name=../../other`) made `GET /info`, `/models`, `/experiments`, `/logs` and the other endpoints that take `name` answer from any directory beside the project that is laid out like a model, with an ordinary token; and `POST /train`, which built the name from the request body itself, created its experiment folder wherever the `..` led (this one needs the `admin` role). A model name now has to be a valid model name (lowercase letters, digits and single hyphens, not a reserved word) wherever a request or a configured `MLOOP_MODEL_NAME` supplies one; anything else is answered `400` with the reason, on every endpoint, before a path is built.
+- **`POST /train` and `POST /evaluate` kept their data files inside the project by comparing the spelling of the path**, so a symbolic link inside the project that points out of it passed, and the server read the file the link named. The check now follows links, and a link it cannot follow counts as outside.
+
 ## [0.49.0] - 2026-11-02
 
 ### Added

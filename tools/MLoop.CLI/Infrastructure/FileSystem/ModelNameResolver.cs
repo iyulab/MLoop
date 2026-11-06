@@ -119,13 +119,8 @@ public class ModelNameResolver : IModelNameResolver
     /// <inheritdoc />
     public async Task CreateAsync(string name, ModelDefinition definition, CancellationToken cancellationToken = default)
     {
+        // Resolve is the gate: a name that is not a valid model name throws InvalidModelNameException (an ArgumentException).
         var resolvedName = Resolve(name);
-
-        if (!IsValidName(resolvedName))
-        {
-            throw new ArgumentException($"Invalid model name: '{resolvedName}'. " +
-                Core.Storage.ModelName.DescribeViolation(resolvedName));
-        }
 
         if (Exists(resolvedName))
         {
