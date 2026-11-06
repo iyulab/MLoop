@@ -69,7 +69,7 @@ public class ExperimentStore : IExperimentStore
         // the earlier experiment's records without a word.
         return await WithIndexLockAsync(resolvedName, async () =>
         {
-            var index = await LoadOrCreateIndexAsync(resolvedName, cancellationToken);
+            var index = await LoadOrCreateIndexAsync(resolvedName, cancellationToken, repair: true);
 
             // A folder that exists names an id that is taken, whatever the index says: an index restored from git, merged,
             // or rebuilt may be behind the folders (a train killed mid-run leaves its folder behind too).
@@ -419,7 +419,8 @@ public class ExperimentStore : IExperimentStore
         return _fileSystem.CombinePath(modelPath, IndexFileName);
     }
 
-    private async Task<ExperimentIndex> LoadOrCreateIndexAsync(string modelName, CancellationToken cancellationToken)
+    private async Task<ExperimentIndex> LoadOrCreateIndexAsync(
+        string modelName, CancellationToken cancellationToken, bool repair = false)
     {
         var indexPath = GetIndexPath(modelName);
 
@@ -441,11 +442,81 @@ public class ExperimentStore : IExperimentStore
             return newIndex;
         }
 
-        var index = await _fileSystem.ReadJsonAsync<ExperimentIndex>(indexPath, cancellationToken);
+        ExperimentIndex index;
+        try
+        {
+            index = await _fileSystem.ReadJsonAsync<ExperimentIndex>(indexPath, cancellationToken);
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException)
+        {
+            // The file exists and cannot be read - a merge conflict's markers, a cut write, a hand edit. That is not "no
+            // experiments": the folders under staging/ are the record and the index only a list of them, so the list is
+            // rebuilt from them. A writer then keeps the damaged bytes beside it and writes the rebuilt index; a reader
+            // only says so.
+            return await RebuildIndexAsync(modelName, indexPath, ex, repair, cancellationToken);
+        }
         if (index.Version < ExperimentIndex.CurrentVersion)
             await UpgradeIndexAsync(modelName, index, cancellationToken);
         return index;
     }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> ReportedDamage = new();
+
+    private async Task<ExperimentIndex> RebuildIndexAsync(
+        string modelName, string indexPath, Exception cause, bool repair, CancellationToken cancellationToken)
+    {
+        var rebuilt = new ExperimentIndex
+        {
+            Version = ExperimentIndex.CurrentVersion,
+            NextId = 1,
+            Experiments = new List<ExperimentSummary>()
+        };
+
+        var stagingPath = _fileSystem.CombinePath(_fileSystem.CombinePath(_modelsPath, modelName), StagingDirectory);
+        var highest = 0;
+        if (_fileSystem.DirectoryExists(stagingPath))
+        {
+            foreach (var directory in Directory.GetDirectories(stagingPath).OrderBy(d => d, StringComparer.Ordinal))
+            {
+                var id = Path.GetFileName(directory);
+                var number = System.Text.RegularExpressions.Regex.Match(id, @"^exp-(\d+)$");
+                if (!number.Success)
+                    continue;
+                highest = Math.Max(highest, int.Parse(number.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture));
+                try
+                {
+                    rebuilt.Experiments.Add(SummaryOf(modelName, await LoadAsync(modelName, id, cancellationToken)));
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                               or System.Text.Json.JsonException or InvalidOperationException)
+                {
+                    // A folder with no readable record (a train killed before it saved) holds an id but no experiment to list.
+                }
+            }
+        }
+        rebuilt.NextId = highest + 1;
+
+        string? kept = null;
+        if (repair)
+        {
+            kept = indexPath + ".corrupt-" + TimestampKeys.Stamp(DateTime.Now);
+            File.Copy(indexPath, kept, overwrite: true);
+            await SaveIndexAsync(modelName, rebuilt, cancellationToken);
+        }
+
+        if (ReportedDamage.TryAdd(indexPath + (repair ? "|repaired" : "|read"), 0))
+        {
+            Console.Error.WriteLine(
+                $"Warning: {indexPath} cannot be read ({FirstLine(cause.Message)}). " +
+                $"Using the {rebuilt.Experiments.Count} experiment(s) found under {StagingDirectory}/ instead." +
+                (kept is null
+                    ? " The next mloop train rewrites the file and keeps the damaged one beside it."
+                    : $" The damaged file is kept as {Path.GetFileName(kept)}."));
+        }
+        return rebuilt;
+    }
+
+    private static string FirstLine(string text) => text.Split('\n', 2)[0].TrimEnd();
 
     /// <summary>
     /// Fills what an older index did not record from each experiment's own record, in memory — a
@@ -509,18 +580,27 @@ public class ExperimentStore : IExperimentStore
         ExperimentData experiment,
         CancellationToken cancellationToken)
     {
-        var index = await LoadOrCreateIndexAsync(modelName, cancellationToken);
+        var index = await LoadOrCreateIndexAsync(modelName, cancellationToken, repair: true);
 
         // Remove old entry if exists
         var experiments = index.Experiments
             .Where(e => e.ExperimentId != experiment.ExperimentId)
             .ToList();
 
+        experiments.Add(SummaryOf(modelName, experiment));
+
+        index.Experiments = experiments;
+        await SaveIndexAsync(modelName, index, cancellationToken);
+    }
+
+    /// <summary>The index's line for an experiment - one place, so the index a train writes and the one rebuilt from the folders agree.</summary>
+    private static ExperimentSummary SummaryOf(string modelName, ExperimentData experiment)
+    {
         // The value and the name come from one resolution, so the entry names the metric it holds.
         var best = TaskMetadata.ResolvePrimaryMetric(
             experiment.Metrics, experiment.Config.Metric, experiment.Task);
 
-        experiments.Add(new ExperimentSummary
+        return new ExperimentSummary
         {
             ModelName = modelName,
             ExperimentId = experiment.ExperimentId,
@@ -533,10 +613,7 @@ public class ExperimentStore : IExperimentStore
             MetricName = best?.Name ?? experiment.Config.Metric,
             TrainingTimeSeconds = experiment.Result?.TrainingTimeSeconds,
             WeightColumn = experiment.Config.WeightColumn
-        });
-
-        index.Experiments = experiments;
-        await SaveIndexAsync(modelName, index, cancellationToken);
+        };
     }
 
     private static string ResolveModelName(string? name)
