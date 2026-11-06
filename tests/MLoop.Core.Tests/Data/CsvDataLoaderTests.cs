@@ -610,6 +610,61 @@ public class CsvDataLoaderTests : IDisposable
         Assert.DoesNotContain("unclosed.csv", error.Message, StringComparison.Ordinal); // the user's name, not the copy's
     }
 
+    private static string Describe(Microsoft.ML.IDataView view)
+        => string.Join(",", view.Schema.Where(c => !c.IsHidden).Select(c => c.Name + ":" + c.Type));
+
+    private (string Train, string Test) MixedColumnPair()
+    {
+        // One column of numbers; the one word that spoils it is in the test file only (an in-memory split puts it wherever it falls).
+        string Rows(int from, int to, string? word) => string.Join("\n", Enumerable.Range(from, to - from + 1)
+            .Select(i => $"{(word is not null && i == from ? word : i.ToString())},{(i * 7) % 13},{((i * 7) % 13 > 6 ? 1 : 0)}"));
+        var train = Path.Combine(_tempDirectory, "mixed_train.csv");
+        var test = Path.Combine(_tempDirectory, "mixed_test.csv");
+        File.WriteAllText(train, "size,x2,y\n" + Rows(1, 32, null) + "\n");
+        File.WriteAllText(test, "size,x2,y\n" + Rows(33, 40, "abc") + "\n");
+        return (train, test);
+    }
+
+    [Fact]
+    public void LoadDataSharingLayout_ReadsTheTestFileWithTheTrainingFilesColumns()
+    {
+        var (train, test) = MixedColumnPair();
+        var loader = new CsvDataLoader(new Microsoft.ML.MLContext(1));
+
+        var trainView = loader.LoadData(train, "y", "binary-classification");
+        var testView = loader.LoadDataSharingLayout(test, "y", "binary-classification");
+
+        Assert.Equal(Describe(trainView), Describe(testView));
+    }
+
+    [Fact]
+    public void LoadData_OnEachFileAlone_DoesNotAgree_WhichIsWhatSharingTheLayoutIsFor()
+    {
+        // The control: the test above would pass if the two files laid out alike on their own.
+        var (train, test) = MixedColumnPair();
+        var loader = new CsvDataLoader(new Microsoft.ML.MLContext(1));
+
+        var trainView = loader.LoadData(train, "y", "binary-classification");
+        var testView = loader.LoadData(test, "y", "binary-classification");
+
+        Assert.NotEqual(Describe(trainView), Describe(testView));
+    }
+
+    [Fact]
+    public void LoadDataSharingLayout_OnAFileWithOtherColumns_LaysItOutOnItsOwn()
+    {
+        var (train, _) = MixedColumnPair();
+        var other = Path.Combine(_tempDirectory, "other_columns.csv");
+        File.WriteAllText(other, "a,b,y\n1,2,0\n2,3,1\n3,4,0\n4,5,1\n");
+        var loader = new CsvDataLoader(new Microsoft.ML.MLContext(1));
+        loader.LoadData(train, "y", "binary-classification");
+
+        var view = loader.LoadDataSharingLayout(other, "y", "binary-classification");
+
+        Assert.Contains(view.Schema, c => c.Name == "a" || c.Name == "Features");
+        Assert.DoesNotContain(view.Schema, c => c.Name == "size");
+    }
+
     #endregion
 
     #region IsLikelyIndexColumn

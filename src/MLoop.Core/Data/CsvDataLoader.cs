@@ -26,6 +26,9 @@ public class CsvDataLoader : DataProviderBase
     internal static readonly Action<string> NoLog = _ => { };
 
     private IReadOnlyDictionary<string, string[]>? _mergedColumnGroups;
+    // The layout the last load read its file with, and the columns it read - what the next load shares when it is asked to.
+    private (TextLoader.Options Options, string[] Headers)? _lastLayout;
+    private bool _shareLayout;
 
     public CsvDataLoader(MLContext mlContext, Action<string>? log = null)
         : base(mlContext, log)
@@ -39,6 +42,21 @@ public class CsvDataLoader : DataProviderBase
     /// loses the source names, so schema capture recovers them here.
     /// </summary>
     public override IReadOnlyDictionary<string, string[]>? GetMergedColumnGroups() => _mergedColumnGroups;
+
+    public override IDataView LoadDataSharingLayout(string filePath, string? labelColumn = null, string? taskType = null,
+        IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null,
+        DataKind? labelKind = null)
+    {
+        _shareLayout = _lastLayout is not null;
+        try
+        {
+            return LoadData(filePath, labelColumn, taskType, preserveColumns, featureExclusions, labelKind);
+        }
+        finally
+        {
+            _shareLayout = false;
+        }
+    }
 
     public override IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null,
         IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null,
@@ -118,26 +136,34 @@ public class CsvDataLoader : DataProviderBase
         // A file of one column of numbers (a univariate series) is read by the layout authority like every other file.
         var csvHeaders = ReadCsvHeaders(mlnetCompatiblePath);
 
+        // The second file of a pre-split run is read with the layout of the first (LoadDataSharingLayout) - when it has the same columns.
+        var sharedLayout = _shareLayout && _lastLayout is { } last && last.Headers.SequenceEqual(csvHeaders, StringComparer.Ordinal)
+            ? last.Options
+            : null;
+
         // Infer columns from the file
-        TextLoader.Options loaderOptions;
-        try
+        TextLoader.Options loaderOptions = sharedLayout!;
+        if (sharedLayout is null)
         {
-            // A task without a label (clustering, anomaly detection) gets a layout without one, so every
-            // numeric column is in the Features vector — the vector the prediction path rebuilds from the
-            // saved schema. Standing in a column as the label set that column apart, and the trained
-            // vector no longer matched the one a prediction was made from.
-            loaderOptions = ColumnLayoutInference.Infer(_mlContext, mlnetCompatiblePath,
-                string.IsNullOrEmpty(labelColumn) ? null : labelColumn).Options;
-        }
-        catch (ColumnLayoutException ex) when (ex.Message.Contains("split") || ex.Message.Contains("consistent columns"))
-        {
-            throw new InvalidOperationException(
-                $"Failed to parse CSV file: {ex.Message}\n\n" +
-                "If your data contains commas within fields, ensure they are properly quoted (RFC 4180):\n" +
-                "  WRONG:  app-18,Data hash table of /run/log/journal, suggesting rotation.\n" +
-                "  RIGHT:  app-18,\"Data hash table of /run/log/journal, suggesting rotation.\"\n\n" +
-                "Fields containing commas, double quotes, or newlines must be wrapped in double quotes.\n" +
-                "Double quotes inside a field must be escaped as \"\" (two double quotes).", ex);
+            try
+            {
+                // A task without a label (clustering, anomaly detection) gets a layout without one, so every
+                // numeric column is in the Features vector — the vector the prediction path rebuilds from the
+                // saved schema. Standing in a column as the label set that column apart, and the trained
+                // vector no longer matched the one a prediction was made from.
+                loaderOptions = ColumnLayoutInference.Infer(_mlContext, mlnetCompatiblePath,
+                    string.IsNullOrEmpty(labelColumn) ? null : labelColumn).Options;
+            }
+            catch (ColumnLayoutException ex) when (ex.Message.Contains("split") || ex.Message.Contains("consistent columns"))
+            {
+                throw new InvalidOperationException(
+                    $"Failed to parse CSV file: {ex.Message}\n\n" +
+                    "If your data contains commas within fields, ensure they are properly quoted (RFC 4180):\n" +
+                    "  WRONG:  app-18,Data hash table of /run/log/journal, suggesting rotation.\n" +
+                    "  RIGHT:  app-18,\"Data hash table of /run/log/journal, suggesting rotation.\"\n\n" +
+                    "Fields containing commas, double quotes, or newlines must be wrapped in double quotes.\n" +
+                    "Double quotes inside a field must be escaped as \"\" (two double quotes).", ex);
+            }
         }
 
         // Fix InferColumns misdetecting multiclass label as Boolean.
@@ -156,7 +182,7 @@ public class CsvDataLoader : DataProviderBase
                             || string.Equals(taskType, "Regression", StringComparison.OrdinalIgnoreCase)
                             || (taskType is not null && Training.NumericLabelCheck.HasNumericLabel(taskType));
 
-        if (!isBinaryTask && !isRegressionTask && !string.IsNullOrEmpty(labelColumn) && loaderOptions.Columns != null)
+        if (sharedLayout is null && !isBinaryTask && !isRegressionTask && !string.IsNullOrEmpty(labelColumn) && loaderOptions.Columns != null)
         {
             foreach (var col in loaderOptions.Columns)
             {
@@ -171,7 +197,7 @@ public class CsvDataLoader : DataProviderBase
 
         // For regression, override Boolean label to Single.
         // InferColumns may detect 0/1 numeric labels as Boolean, but regression needs Single.
-        if (isRegressionTask && !string.IsNullOrEmpty(labelColumn) && loaderOptions.Columns != null)
+        if (sharedLayout is null && isRegressionTask && !string.IsNullOrEmpty(labelColumn) && loaderOptions.Columns != null)
         {
             foreach (var col in loaderOptions.Columns)
             {
@@ -186,7 +212,7 @@ public class CsvDataLoader : DataProviderBase
 
         // The run's decision overrides every inference above: the partitions of one split type the
         // label alike, as the saved schema recorded it (LabelKinds).
-        if (labelKind is { } decidedLabelKind && !string.IsNullOrEmpty(labelColumn) && loaderOptions.Columns != null)
+        if (sharedLayout is null && labelKind is { } decidedLabelKind && !string.IsNullOrEmpty(labelColumn) && loaderOptions.Columns != null)
         {
             foreach (var col in loaderOptions.Columns)
             {
@@ -213,7 +239,9 @@ public class CsvDataLoader : DataProviderBase
         // name left to be found by.
         if (TaskTypes.Canonical(taskType) == "question-answering")
             preserveColumns = csvHeaders.Concat(preserveColumns ?? []);
-        ApplyColumnPreservation(loaderOptions, mlnetCompatiblePath, preserveColumns);
+        if (sharedLayout is null)
+            ApplyColumnPreservation(loaderOptions, mlnetCompatiblePath, preserveColumns);
+        _lastLayout = (loaderOptions, csvHeaders);
 
         // Record which source columns each merged range spans — the loaded IDataView
         // carries no slot names, so this mapping is what lets schema capture expand the

@@ -306,7 +306,8 @@ public partial class TrainingRunner
             trainSet = loader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve, featureExclusions, config.LabelKind);
             // Grab the training file's merge mapping before the test-file load overwrites it
             mergedColumnGroups = loader.GetMergedColumnGroups();
-            testSet = loader.LoadData(config.TestDataFile, config.LabelColumn, config.Task, preserve, featureExclusions, config.LabelKind);
+            // Read with the training file's layout: inferred from each file, a column of numbers with one word in it is numbers in one and text in the other.
+            testSet = loader.LoadDataSharingLayout(config.TestDataFile, config.LabelColumn, config.Task, preserve, featureExclusions, config.LabelKind);
         }
         else if (isTimeSeriesTask)
         {

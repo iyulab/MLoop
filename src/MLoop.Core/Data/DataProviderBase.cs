@@ -36,6 +36,12 @@ public abstract class DataProviderBase : IDataProvider
         DataKind? labelKind = null);
 
     /// <inheritdoc />
+    public virtual IDataView LoadDataSharingLayout(string filePath, string? labelColumn = null, string? taskType = null,
+        IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null,
+        DataKind? labelKind = null)
+        => LoadData(filePath, labelColumn, taskType, preserveColumns, featureExclusions, labelKind);
+
+    /// <inheritdoc />
     public virtual bool ValidateLabelColumn(IDataView data, string labelColumn) =>
         data.Schema.Any(col => col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase));
 
