@@ -385,7 +385,23 @@ public static partial class TrainCommand
         }
 
         // A data file in another format (Parquet, Excel, JSON, TSV) is read as a table from here on.
-        resolvedDataFile = await TabularDataFile.AsCsvAsync(resolvedDataFile, records);
+        var namedDataFile = resolvedDataFile;
+        try
+        {
+            resolvedDataFile = await TabularDataFile.AsCsvAsync(resolvedDataFile, records);
+        }
+        catch (EmptyTableFileException ex)
+        {
+            // A workbook or Parquet file with no cells: said as an empty CSV is, naming the user's file.
+            ErrorConsole.Error(Markup.Escape(ex.Message), TrainingInput.EmptyDataFileGuidance);
+            return PreparedData.Exit(1);
+        }
+        // A workbook or Parquet file with a header and no rows is a table with no rows now: refused as the CSV of that shape is, naming the user's file.
+        if (TrainingInput.HeaderOnlyDataFileRefusal(resolvedDataFile, effectiveDefinition.Task, reportedAs: namedDataFile) is { } convertedHeaderOnlyRefusal)
+        {
+            ErrorConsole.Error(Markup.Escape(convertedHeaderOnlyRefusal), TrainingInput.HeaderOnlyDataFileGuidance);
+            return PreparedData.Exit(1);
+        }
 
         // Flatten multi-line quoted fields early so all downstream line-by-line processing is safe
         resolvedDataFile = CsvDataLoader.FlattenMultiLineQuotedFields(resolvedDataFile, CoreNarration.Sink);
@@ -436,13 +452,13 @@ public static partial class TrainCommand
             }
         }
 
-        if (TrainingInput.LabelColumnRefusal(resolvedDataFile, effectiveDefinition.Task, effectiveDefinition.Label) is { } labelRefusal)
+        if (TrainingInput.LabelColumnRefusal(resolvedDataFile, effectiveDefinition.Task, effectiveDefinition.Label, reportedAs: namedDataFile) is { } labelRefusal)
         {
             ErrorConsole.Error(labelRefusal);
             return PreparedData.Exit(1);
         }
 
-        if (TrainingInput.DuplicateColumnRefusal(resolvedDataFile, effectiveDefinition.Task) is { } duplicateRefusal)
+        if (TrainingInput.DuplicateColumnRefusal(resolvedDataFile, effectiveDefinition.Task, reportedAs: namedDataFile) is { } duplicateRefusal)
         {
             ErrorConsole.Error(duplicateRefusal, TrainingInput.DuplicateColumnGuidance);
             return PreparedData.Exit(1);

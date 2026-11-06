@@ -32,9 +32,11 @@ public static class TrainingInput
     /// <summary>
     /// Why a task that learns from a label column cannot train on <paramref name="dataFile"/>: the label is not one of its columns. Said
     /// first, and as that, with the columns the file has - the steps after it read the label, and one of them fails with "only one class"
-    /// when there is none. <c>null</c> when the label is a column, or the task reads no label column from a table.
+    /// when there is none. <c>null</c> when the label is a column, or the task reads no label column from a table. <paramref name="reportedAs"/>
+    /// is the file the user gave when <paramref name="dataFile"/> is a copy made of it (a workbook's converted table, a prepared file): the
+    /// refusal names the user's file, not a scratch name.
     /// </summary>
-    public static string? LabelColumnRefusal(string dataFile, string? task, string? label)
+    public static string? LabelColumnRefusal(string dataFile, string? task, string? label, string? reportedAs = null)
     {
         if (string.IsNullOrWhiteSpace(label) || !TrainingRunner.RequiresLabel(task) || DataLoaderFactory.IsDirectoryBased(task))
             return null;
@@ -54,7 +56,7 @@ public static class TrainingInput
         var columns = CsvFieldParser.ParseFields(header);
         if (columns.Any(column => string.Equals(column, label, StringComparison.Ordinal)))
             return null;
-        var message = $"Label column '{label}' not found in {Path.GetFileName(dataFile)}. Available columns: {string.Join(", ", columns)}.";
+        var message = $"Label column '{label}' not found in {Path.GetFileName(reportedAs ?? dataFile)}. Available columns: {string.Join(", ", columns)}.";
         return columns.FirstOrDefault(column => string.Equals(column, label, StringComparison.OrdinalIgnoreCase)) is { } sameLetters
             ? $"{message} '{sameLetters}' differs only in case; column names are case-sensitive."
             : message;
@@ -67,13 +69,13 @@ public static class TrainingInput
     /// A file with a header and no rows is <see cref="HeaderOnlyDataFileRefusal"/>'s. Directory datasets have no
     /// single file to be empty.
     /// </summary>
-    public static string? EmptyDataFileRefusal(string dataFile, string? task)
+    public static string? EmptyDataFileRefusal(string dataFile, string? task, string? reportedAs = null)
     {
         if (DataLoaderFactory.IsDirectoryBased(task) || !File.Exists(dataFile))
             return null;
         try
         {
-            var name = Path.GetFileName(dataFile);
+            var name = Path.GetFileName(reportedAs ?? dataFile);
             if (new FileInfo(dataFile).Length == 0)
                 return $"{name} is empty: it has no header row and no data.";
             var text = dataFile.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) || dataFile.EndsWith(".tsv", StringComparison.OrdinalIgnoreCase)
@@ -102,9 +104,12 @@ public static class TrainingInput
     /// to the steps that count rows, the file trained as a label with 0 values and ended in "Cannot train a classifier with only one
     /// class" - advice about the label for a file that has no rows. Only comma- and tab-separated files are read here (a record is
     /// counted as CSV, so a quoted header that spans lines is one), and a file with no header at all is
-    /// <see cref="EmptyDataFileRefusal"/>'s.
+    /// <see cref="EmptyDataFileRefusal"/>'s. A workbook or Parquet file is read once converted: the converted copy is passed as
+    /// <paramref name="dataFile"/> and the file the user named as <paramref name="reportedAs"/>, so the refusal names the user's file
+    /// (a header-only workbook otherwise trained as "only one class" - the advice about the label this refusal exists to prevent). A
+    /// converted table with no header at all never gets here: <see cref="TabularDataFile.AsCsvAsync"/> refuses it as empty.
     /// </summary>
-    public static string? HeaderOnlyDataFileRefusal(string dataFile, string? task)
+    public static string? HeaderOnlyDataFileRefusal(string dataFile, string? task, string? reportedAs = null)
     {
         if (DataLoaderFactory.IsDirectoryBased(task) || !File.Exists(dataFile))
             return null;
@@ -127,7 +132,7 @@ public static class TrainingInput
                 if (header.Length == 1 || record.Length != 1 || !string.IsNullOrWhiteSpace(record[0]))
                     return null;
             }
-            return header is null ? null : $"{Path.GetFileName(dataFile)} has a header row and no data rows.";
+            return header is null ? null : $"{Path.GetFileName(reportedAs ?? dataFile)} has a header row and no data rows.";
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or CsvHelper.CsvHelperException)
         {
@@ -151,7 +156,7 @@ public static class TrainingInput
     /// names are not counted: an index column has none and is removed. A name written over two lines is read with the break as a space,
     /// and names are compared as the same text however composed, ignoring nothing else - column names are case-sensitive.
     /// </summary>
-    public static string? DuplicateColumnRefusal(string dataFile, string? task)
+    public static string? DuplicateColumnRefusal(string dataFile, string? task, string? reportedAs = null)
     {
         if (DataLoaderFactory.IsDirectoryBased(task))
             return null;
@@ -168,7 +173,7 @@ public static class TrainingInput
         if (named.Count == 0)
             return null;
         var said = string.Join("; ", named.Take(3).Select(g => $"'{g.Key}' is columns {string.Join(", ", g.Select(c => c.Position))}"));
-        return $"{Path.GetFileName(dataFile)} has columns that share a name: {said}{(named.Count > 3 ? "; …" : "")}. A column is found by its name, so each name must be its own.";
+        return $"{Path.GetFileName(reportedAs ?? dataFile)} has columns that share a name: {said}{(named.Count > 3 ? "; …" : "")}. A column is found by its name, so each name must be its own.";
     }
 
     /// <summary>
@@ -319,6 +324,9 @@ public static class TrainingInput
     {
         ArgumentNullException.ThrowIfNull(definition);
         var file = await TabularDataFile.AsCsvAsync(dataFile);
+        // A workbook or Parquet file with a header and no rows is only a table now: said as that, as for a CSV of the same shape.
+        if (HeaderOnlyDataFileRefusal(file, definition.Task, reportedAs: dataFile) is { } headerOnlyRefusal)
+            throw new InvalidOperationException($"{headerOnlyRefusal} {HeaderOnlyDataFileGuidance}");
         file = CsvDataLoader.FlattenMultiLineQuotedFields(file);
 
         if (maxRows is > 0)

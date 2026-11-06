@@ -476,7 +476,7 @@ public static class ExperimentEndpoints
                     warnings = warnings.Count == 0 ? null : warnings,
                 });
             }
-            catch (Exception ex) when (ex is MLoop.Core.Training.UnreadableLabelException or MLoop.Core.Data.ColumnLayoutException)
+            catch (Exception ex) when (ex is MLoop.Core.Training.UnreadableLabelException or MLoop.Core.Data.ColumnLayoutException or MLoop.Core.Data.EmptyTableFileException)
             {
                 // The file's own fault, as the schema check above: a label written as numbers for people, a file that does not split into
                 // columns. `mloop evaluate` says the same and exits 1; a 500 told the caller the server was broken.

@@ -166,6 +166,21 @@ public class EvaluateApiTests : IClassFixture<TestWebApplicationFactory>, IAsync
         body.GetProperty("missingColumns").EnumerateArray().Select(c => c.GetString()).Should().Contain("x");
     }
 
+    [Theory]
+    [InlineData("nothing.xlsx")]
+    [InlineData("nothing.parquet")]
+    [InlineData("nothing.json")]
+    public async Task AFileInAnotherFormatWithNothingInIt_IsTheCallersError_NamingTheFile(string name)
+    {
+        var path = Path.Combine(_factory.TestProjectRoot, "datasets", name);
+        await File.WriteAllBytesAsync(path, []);
+
+        var (status, body) = await EvaluateAsync(new { name = Model, experimentId = "exp-001", testDataPath = path });
+
+        status.Should().Be(HttpStatusCode.BadRequest, body.ToString());
+        body.GetProperty("error").GetString().Should().Contain($"{name} is empty");
+    }
+
     [Fact]
     public async Task ALabelWrittenWithThousandsSeparators_IsTheCallersError_NotAServerError()
     {

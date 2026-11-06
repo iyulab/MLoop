@@ -146,14 +146,14 @@ public static class ExplainCommand
                     {
                         if (ProgressNote(done, total, ref reportedTenth) is { } note)
                             AnsiConsole.WriteLine(note);
-                    });
+                    }, reportedAs: reportedDataPath);
             }
             else
                 await AnsiConsole.Progress().StartAsync(async ctx =>
                 {
                     var task = ctx.AddTask("[yellow]Shuffling columns...[/]", maxValue: 1);
                     explanation = await ModelExplanation.ExplainAsync(new EvaluationEngine(), modelPath, dataPath, experiment, weightColumn, repeats, rows, seed,
-                        (done, total) => { task.MaxValue = total; task.Value = done; });
+                        (done, total) => { task.MaxValue = total; task.Value = done; }, reportedAs: reportedDataPath);
                 });
 
             return Emit(name, id, reportedDataPath!, weightColumn, explanation, jsonOutput);

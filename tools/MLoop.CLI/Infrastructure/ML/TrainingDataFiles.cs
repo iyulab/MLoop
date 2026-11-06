@@ -43,7 +43,17 @@ public static class TrainingDataFiles
         var givenName = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var file in files)
         {
-            var table = await TabularDataFile.AsCsvAsync(file, jsonRecordPath);
+            string table;
+            try
+            {
+                table = await TabularDataFile.AsCsvAsync(file, jsonRecordPath);
+            }
+            catch (EmptyTableFileException ex)
+            {
+                // A file with nothing in it is one of the files to merge: said as that, naming it, not thrown past the caller.
+                return new Merge(null, ex.Message,
+                    "Put a header row naming the columns, and the data rows under it, in that file - or leave it out of the merge.", []);
+            }
             tables.Add(table);
             givenName[System.IO.Path.GetFileName(table)] = System.IO.Path.GetFileName(file);
         }

@@ -41,7 +41,7 @@ public static class ModelExplanation
     public static async Task<Explanation> ExplainAsync(
         EvaluationEngine engine, string modelPath, string dataFile, ExperimentData experiment, string? weightColumn,
         int repeats = DefaultRepeats, int maxRows = DefaultRows, int seed = DefaultSeed,
-        Action<int, int>? progress = null, CancellationToken cancellationToken = default)
+        Action<int, int>? progress = null, CancellationToken cancellationToken = default, string? reportedAs = null)
     {
         ArgumentNullException.ThrowIfNull(engine);
         ArgumentNullException.ThrowIfNull(experiment);
@@ -56,9 +56,9 @@ public static class ModelExplanation
         var (header, rows) = await ReadAsync(dataFile, cancellationToken).ConfigureAwait(false);
         var label = experiment.Config.LabelColumn;
         if (!header.Any(h => h.Equals(label, StringComparison.OrdinalIgnoreCase)))
-            throw new ArgumentException($"'{dataFile}' has no label column '{label}' — the score of a model needs the answers. Columns: {string.Join(", ", header)}.");
+            throw new ArgumentException($"'{reportedAs ?? dataFile}' has no label column '{label}' — the score of a model needs the answers. Columns: {string.Join(", ", header)}.");
         if (rows.Count < 2)
-            throw new ArgumentException($"'{dataFile}' has {rows.Count} row(s); importance needs a labeled file with at least two.");
+            throw new ArgumentException($"'{reportedAs ?? dataFile}' has {rows.Count} row(s); importance needs a labeled file with at least two.");
         if (rows.Count > maxRows)
             rows = [.. PermutationImportance.Order(rows.Count, seed).Take(maxRows).Order().Select(i => rows[i])];
 
