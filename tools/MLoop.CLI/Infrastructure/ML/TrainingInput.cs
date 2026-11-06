@@ -61,6 +61,47 @@ public static class TrainingInput
     }
 
     /// <summary>
+    /// Why a data file with no content cannot be trained on, or <c>null</c>. Said first and as that: an empty table has no header to
+    /// name a label by, and the first reader to meet it (the parser behind the format conversion) reported its own state dump -
+    /// "No header record was found" with the reader's column count and byte offsets - which names neither the file nor the cause.
+    /// A file with a header and no rows is a different case and is judged by the steps that count rows. Directory datasets have no
+    /// single file to be empty.
+    /// </summary>
+    public static string? EmptyDataFileRefusal(string dataFile, string? task)
+    {
+        if (DataLoaderFactory.IsDirectoryBased(task) || !File.Exists(dataFile))
+            return null;
+        try
+        {
+            var name = Path.GetFileName(dataFile);
+            if (new FileInfo(dataFile).Length == 0)
+                return $"{name} is empty: it has no header row and no data.";
+            var text = dataFile.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) || dataFile.EndsWith(".tsv", StringComparison.OrdinalIgnoreCase)
+                || dataFile.EndsWith(".txt", StringComparison.OrdinalIgnoreCase);
+            if (!text)
+                return null;
+            using var reader = EncodingDetector.OpenReader(dataFile);
+            var buffer = new char[4096];
+            int read;
+            while ((read = reader.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                for (var i = 0; i < read; i++)
+                {
+                    if (!char.IsWhiteSpace(buffer[i]) && buffer[i] != '\uFEFF')
+                        return null;
+                }
+            }
+            return $"{name} is empty: it holds only blank space, no header row and no data.";
+        }
+        catch (IOException) { return null; }
+        catch (UnauthorizedAccessException) { return null; }
+    }
+
+    /// <summary>What to do when <see cref="EmptyDataFileRefusal"/> is the answer.</summary>
+    public const string EmptyDataFileGuidance =
+        "Put a header row naming the columns, and the data rows under it, in the file - or train on another file: mloop train <data-file>";
+
+    /// <summary>
     /// Why a table cannot be trained on because two of its columns share a name, or <c>null</c>. A column is found by its name - by the
     /// loader, the saved schema, a prediction's input - so the second of two columns named alike either shadows the first or fails
     /// after the whole search ("An item with the same key has already been added"), and the model it would have made is lost. Empty

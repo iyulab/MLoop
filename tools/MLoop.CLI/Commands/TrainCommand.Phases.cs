@@ -372,6 +372,13 @@ public static partial class TrainCommand
         IEstimator<ITransformer>? preFeaturizer = null;
         List<string> preFeaturizerColumns = new();
 
+        // A file with nothing in it is said to be empty before any reader gets to it: the conversion below reports its parser's state.
+        if (TrainingInput.EmptyDataFileRefusal(resolvedDataFile, effectiveDefinition.Task) is { } emptyRefusal)
+        {
+            ErrorConsole.Error(Markup.Escape(emptyRefusal), TrainingInput.EmptyDataFileGuidance);
+            return PreparedData.Exit(1);
+        }
+
         // A data file in another format (Parquet, Excel, JSON, TSV) is read as a table from here on.
         resolvedDataFile = await TabularDataFile.AsCsvAsync(resolvedDataFile, records);
 
