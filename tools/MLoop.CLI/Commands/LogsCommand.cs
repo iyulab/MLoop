@@ -98,9 +98,7 @@ public static class LogsCommand
             }
 
             // Resolve model name
-            var resolvedModelName = string.IsNullOrWhiteSpace(modelName)
-                ? null
-                : modelName.Trim().ToLowerInvariant();
+            var resolvedModelName = MLoop.Core.Storage.ModelName.Filter(modelName);
 
             // Create logger and fetch logs
             var logger = new FilePredictionLogger(projectRoot);

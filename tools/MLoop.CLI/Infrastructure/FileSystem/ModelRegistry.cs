@@ -562,8 +562,6 @@ public class ModelRegistry : IModelRegistry
 
     private static string ResolveModelName(string? name)
     {
-        return string.IsNullOrWhiteSpace(name)
-            ? ConfigDefaults.DefaultModelName
-            : name.Trim().ToLowerInvariant();
+        return MLoop.Core.Storage.ModelName.Resolve(name);
     }
 }

@@ -70,9 +70,7 @@ public static class RollbackCommand
                 return 1;
             }
 
-            var resolvedModelName = string.IsNullOrWhiteSpace(modelName)
-                ? ConfigDefaults.DefaultModelName
-                : modelName.Trim().ToLowerInvariant();
+            var resolvedModelName = MLoop.Core.Storage.ModelName.Resolve(modelName);
 
             var experimentStore = new ExperimentStore(fileSystem, projectDiscovery);
             var modelRegistry = new ModelRegistry(fileSystem, projectDiscovery, experimentStore);

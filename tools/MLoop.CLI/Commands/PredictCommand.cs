@@ -194,9 +194,7 @@ public static partial class PredictCommand
             }
 
             // Resolve model name (defaults to "default")
-            var resolvedModelName = string.IsNullOrWhiteSpace(modelName)
-                ? ConfigDefaults.DefaultModelName
-                : modelName.Trim().ToLowerInvariant();
+            var resolvedModelName = MLoop.Core.Storage.ModelName.Resolve(modelName);
 
             // The model to predict with, and what its experiment record says it was trained on.
             var model = await ResolveModelAsync(modelPath, experiment, resolvedModelName, projectRoot, fileSystem, projectDiscovery);

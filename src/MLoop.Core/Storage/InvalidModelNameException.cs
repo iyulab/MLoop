@@ -9,7 +9,7 @@ namespace MLoop.Core.Storage;
 public sealed class InvalidModelNameException : ArgumentException
 {
     public InvalidModelNameException(string name, string violation)
-        : base($"Invalid model name '{Printable(name)}'. {violation}", nameof(name))
+        : base($"Invalid model name '{Printable(name)}'. {violation}")
     {
         Name = name;
     }

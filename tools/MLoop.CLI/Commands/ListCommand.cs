@@ -77,9 +77,7 @@ public static class ListCommand
             var ctx = CommandContext.TryCreate();
             if (ctx == null) return 1;
 
-            var resolvedModelName = string.IsNullOrWhiteSpace(modelName)
-                ? ConfigDefaults.DefaultModelName
-                : modelName.Trim().ToLowerInvariant();
+            var resolvedModelName = MLoop.Core.Storage.ModelName.Resolve(modelName);
 
             if (!ctx.ExperimentStore.ExperimentExists(resolvedModelName, experimentId))
             {

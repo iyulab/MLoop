@@ -120,7 +120,7 @@ public sealed class FilePromotionManager : IPromotionManager
     }
 
     private string GetModelPath(string modelName)
-        => Path.Combine(_projectRoot, "models", modelName.ToLowerInvariant());
+        => Path.Combine(_projectRoot, "models", MLoop.Core.Storage.ModelName.Require(modelName));
 
     private string GetHistoryPath(string modelName)
         => Path.Combine(GetModelPath(modelName), "promotion-history.json");

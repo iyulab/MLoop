@@ -12,7 +12,7 @@ namespace MLoop.API.Tests;
 /// <summary>
 /// A model name a caller supplies becomes <c>models/&lt;name&gt;/…</c> and <c>.mloop/logs/&lt;name&gt;/</c>, so every endpoint that takes
 /// one refuses a name that is not a valid directory name — <c>400</c>, with the reason — and none of them leaves <c>models/</c>.
-/// The earlier sweep (<see cref="QueryValueApiTests"/>) only asked "never a 500", which a <c>200</c> from a directory outside the
+/// The earlier sweep (the query-value sweep in QueryValueApiTests) only asked "never a 500", which a <c>200</c> from a directory outside the
 /// project also satisfies; this one asks for the refusal itself, on the read endpoints, on the ones that take the name in a
 /// body, and on <c>POST /train</c>, which wrote an experiment tree wherever <c>..</c> led.
 /// </summary>
@@ -27,7 +27,11 @@ public class ModelNameGateApiTests : IClassFixture<TestWebApplicationFactory>
     {
         _factory = factory;
         _client = factory.CreateClient();
+        // A file that exists, so POST /train gets as far as the name: a request refused for a missing file says nothing about the gate.
+        File.WriteAllText(Path.Combine(factory.TestProjectRoot, "datasets", PresentFile), "x,y\n1,0\n2,1\n3,0\n4,1\n");
     }
+
+    private const string PresentFile = "t.csv";
 
     /// <summary>The names that must be refused: parents, separators of both kinds, a reserved word, a case the rule does not allow.</summary>
     public static readonly string[] BadNames =
@@ -47,14 +51,14 @@ public class ModelNameGateApiTests : IClassFixture<TestWebApplicationFactory>
         "POST /promote", "POST /rollback", "POST /samples", "POST /evaluate", "POST /train",
     ];
 
-    private static string BodyFor(string route, string name)
+    private static string BodyFor(string route, string name, string dataFile = "datasets/" + PresentFile)
     {
         var quoted = System.Text.Json.JsonSerializer.Serialize(name);
         return route switch
         {
             "POST /promote" => $"{{\"experimentId\":\"exp-001\",\"name\":{quoted}}}",
-            "POST /evaluate" => $"{{\"testDataPath\":\"datasets/t.csv\",\"experimentId\":\"exp-001\",\"name\":{quoted}}}",
-            "POST /train" => $"{{\"dataFile\":\"datasets/t.csv\",\"labelColumn\":\"y\",\"task\":\"binary-classification\",\"name\":{quoted}}}",
+            "POST /evaluate" => $"{{\"testDataPath\":\"{dataFile}\",\"experimentId\":\"exp-001\",\"name\":{quoted}}}",
+            "POST /train" => $"{{\"dataFile\":\"{dataFile}\",\"labelColumn\":\"y\",\"task\":\"binary-classification\",\"name\":{quoted}}}",
             _ => $"{{\"name\":{quoted}}}",
         };
     }
@@ -70,7 +74,7 @@ public class ModelNameGateApiTests : IClassFixture<TestWebApplicationFactory>
         return data;
     }
 
-    private async Task<HttpResponseMessage> SendAsync(string endpoint, string name)
+    private async Task<HttpResponseMessage> SendAsync(string endpoint, string name, string dataFile = "datasets/" + PresentFile)
     {
         var space = endpoint.IndexOf(' ');
         var method = new HttpMethod(endpoint[..space]);
@@ -79,7 +83,7 @@ public class ModelNameGateApiTests : IClassFixture<TestWebApplicationFactory>
             ? new HttpRequestMessage(method, string.Format(target, Uri.EscapeDataString(name)))
             : new HttpRequestMessage(method, target);
         if (method == HttpMethod.Post)
-            request.Content = new StringContent(target.Contains("{0}") ? "{}" : BodyFor(endpoint, name), Encoding.UTF8, "application/json");
+            request.Content = new StringContent(target.Contains("{0}") ? "{}" : BodyFor(endpoint, name, dataFile), Encoding.UTF8, "application/json");
         return await _client.SendAsync(request);
     }
 
@@ -104,7 +108,7 @@ public class ModelNameGateApiTests : IClassFixture<TestWebApplicationFactory>
     {
         foreach (var endpoint in QueryEndpoints.Concat(BodyEndpoints))
         {
-            var response = await SendAsync(endpoint, name);
+            var response = await SendAsync(endpoint, name, dataFile: "datasets/absent.csv");
             var body = await response.Content.ReadAsStringAsync();
 
             body.Should().NotContain(Refusal, $"{endpoint} refused the valid name '{name}': {body}");
@@ -161,7 +165,7 @@ public class ModelNameGateApiTests : IClassFixture<TestWebApplicationFactory>
 
             var train = await _client.PostAsJsonAsync("/train", new
             {
-                dataFile = "datasets/t.csv", labelColumn = "y", task = "binary-classification", name = $"../../mloop-written-{token}",
+                dataFile = "datasets/" + PresentFile, labelColumn = "y", task = "binary-classification", name = $"../../mloop-written-{token}",
             });
             train.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             Directory.Exists(written).Should().BeFalse("a refused request must not create the directory it named");

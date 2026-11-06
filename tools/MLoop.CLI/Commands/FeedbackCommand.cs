@@ -263,7 +263,7 @@ public static class FeedbackCommand
             var (fromOffset, toOffset) = DateRangeFilter.ToFilterRange(from, to);
 
             var feedback = await collector.GetFeedbackAsync(
-                modelName.ToLowerInvariant(),
+                MLoop.Core.Storage.ModelName.Require(modelName),
                 fromOffset,
                 toOffset,
                 limit);
@@ -315,7 +315,7 @@ public static class FeedbackCommand
             var (fromOffset, toOffset) = DateRangeFilter.ToFilterRange(from, to);
 
             var metrics = await collector.CalculateMetricsAsync(
-                modelName.ToLowerInvariant(),
+                MLoop.Core.Storage.ModelName.Require(modelName),
                 fromOffset,
                 toOffset);
 

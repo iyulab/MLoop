@@ -74,9 +74,7 @@ public sealed class CommandContext
     /// </summary>
     public static string ResolveModelName(string? modelName)
     {
-        return string.IsNullOrWhiteSpace(modelName)
-            ? ConfigDefaults.DefaultModelName
-            : modelName.Trim().ToLowerInvariant();
+        return MLoop.Core.Storage.ModelName.Resolve(modelName);
     }
 
     /// <summary>
@@ -84,8 +82,6 @@ public sealed class CommandContext
     /// </summary>
     public static string? ResolveOptionalModelName(string? modelName)
     {
-        return string.IsNullOrWhiteSpace(modelName)
-            ? null
-            : modelName.Trim().ToLowerInvariant();
+        return MLoop.Core.Storage.ModelName.Filter(modelName);
     }
 }

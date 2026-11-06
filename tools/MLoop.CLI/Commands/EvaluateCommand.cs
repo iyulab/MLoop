@@ -172,9 +172,7 @@ public static partial class EvaluateCommand
             }
 
             // Resolve model name (defaults to "default")
-            var resolvedModelName = string.IsNullOrWhiteSpace(modelName)
-                ? ConfigDefaults.DefaultModelName
-                : modelName.Trim().ToLowerInvariant();
+            var resolvedModelName = MLoop.Core.Storage.ModelName.Resolve(modelName);
 
             // Resolve experiment and model path
             var experimentStore = new ExperimentStore(fileSystem, projectDiscovery);

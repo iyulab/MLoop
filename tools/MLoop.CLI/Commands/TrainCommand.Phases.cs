@@ -62,9 +62,7 @@ public static partial class TrainCommand
         }
 
         // Resolve model name (defaults to "default")
-        var resolvedModelName = string.IsNullOrWhiteSpace(modelName)
-            ? ConfigDefaults.DefaultModelName
-            : modelName.Trim().ToLowerInvariant();
+        var resolvedModelName = MLoop.Core.Storage.ModelName.Resolve(modelName);
 
         // Load configuration
         var configLoader = new ConfigLoader(fileSystem, projectDiscovery);
