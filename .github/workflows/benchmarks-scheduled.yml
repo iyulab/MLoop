@@ -1,0 +1,188 @@
+name: Benchmarks scheduled
+
+# The engine comparison and the lifecycle walk, run on a schedule so that a regression shows up in a run instead of
+# in whoever next remembers to start one. Linux x64, where the LightGBM native library is available.
+#
+#  * engine: the trainer search against FLAML and stand-alone LightGBM on the 16 public tables of benchmarks/engine-compare
+#    (split seeds 0-4, 60 s budget). `run.py regress` then reads the run against the previous successful run of this workflow:
+#    the search's verdict against FLAML (which ran in the same execution, so the runner's speed cancels) per table, and the run
+#    fails when the number of tables where the search is behind FLAML rises by three or more. A table flipping to "behind"
+#    or a rise of two is printed as a watch and does not fail the run.
+#  * lifecycle: the generated-table walk for the tabular and series tasks (scripts/lifecycle-check.py) - train, promote, predict
+#    with logs, drift, feedback, retrain, paired evaluation, rollback.
+#
+# The schedule runs the day before the weekly release day. The results are kept as artifacts for 30 days; the next run's
+# baseline is the artifact of the previous successful run, so a deliberate step down needs one accepted run to become the
+# baseline. Start it by hand with the same inputs to check a branch.
+on:
+  schedule:
+    - cron: '0 3 * * 0'
+  workflow_dispatch:
+    inputs:
+      seeds:
+        description: 'Comma-separated split seeds, one job each'
+        default: '0,1,2,3,4'
+      budget:
+        description: 'Time budget in seconds for each searching system and dataset'
+        default: '60'
+
+concurrency:
+  group: benchmarks-scheduled-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      seeds: ${{ steps.seeds.outputs.seeds }}
+    steps:
+    - name: Read the split seeds
+      id: seeds
+      env:
+        SEEDS: ${{ inputs.seeds || '0,1,2,3,4' }}
+      run: |
+        if ! [[ "$SEEDS" =~ ^[0-9]+(,[0-9]+)*$ ]]; then
+          echo "seeds must be comma-separated non-negative integers, got: $SEEDS" >&2
+          exit 1
+        fi
+        echo "seeds=[$SEEDS]" >> "$GITHUB_OUTPUT"
+
+  engine:
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    strategy:
+      matrix:
+        seed: ${{ fromJson(needs.plan.outputs.seeds) }}
+      fail-fast: false
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install Python packages
+      run: pip install flaml lightgbm xgboost scikit-learn pandas numpy
+
+    - name: Build the CLI
+      run: dotnet build tools/MLoop.CLI --configuration Release
+
+    - name: Sweep
+      env:
+        BUDGET: ${{ inputs.budget || '60' }}
+      run: >
+        python benchmarks/engine-compare/run.py run
+        --mloop "dotnet $PWD/tools/MLoop.CLI/bin/Release/net10.0/mloop.dll"
+        --seeds ${{ matrix.seed }} --budget "$BUDGET"
+        --systems mloop,flaml,lightgbm --out results-${{ matrix.seed }}.jsonl
+
+    - name: Keep the results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: bench-seed-${{ matrix.seed }}
+        path: results-${{ matrix.seed }}.jsonl
+        retention-days: 30
+
+  regress:
+    needs: [plan, engine]
+    if: always() && needs.plan.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - run: pip install numpy
+
+    - name: Download this run's results
+      uses: actions/download-artifact@v4
+      with:
+        pattern: bench-seed-*
+        merge-multiple: true
+
+    - name: Summarize
+      shell: bash
+      run: |
+        ls results-*.jsonl
+        python benchmarks/engine-compare/run.py summarize results-*.jsonl | tee -a "$GITHUB_STEP_SUMMARY"
+
+    - name: Read against the previous successful run
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        run_id=$(gh run list --workflow "Benchmarks scheduled" --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+        if [ -z "$run_id" ]; then
+          echo "No earlier successful run: this one becomes the baseline." | tee -a "$GITHUB_STEP_SUMMARY"
+        elif ! gh run download "$run_id" --name bench-results --dir baseline; then
+          echo "Run $run_id kept no baseline artifact: this one becomes the baseline." | tee -a "$GITHUB_STEP_SUMMARY"
+        else
+          { echo; echo "### Against run $run_id"; echo; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          python benchmarks/engine-compare/run.py regress --base baseline/bench-results.jsonl --candidate results-*.jsonl | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Keep this run as the next baseline
+      run: cat results-*.jsonl > bench-results.jsonl
+
+    - name: Upload the baseline
+      uses: actions/upload-artifact@v4
+      with:
+        name: bench-results
+        path: bench-results.jsonl
+        retention-days: 30
+
+  lifecycle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Build the CLI
+      run: dotnet build tools/MLoop.CLI -c Release
+
+    - name: Time-series prerequisite
+      # ML.NET's MKL native links an Intel-ABI OpenMP runtime that Linux leaves to the system
+      run: |
+        sudo apt-get install -y libomp5
+        omp=$(find /usr/lib -name 'libomp.so.5' | head -n 1)
+        sudo ln -sf "$omp" "$(dirname "$omp")/libiomp5.so"
+        sudo ldconfig
+
+    - name: Walk
+      run: >
+        python3 scripts/lifecycle-check.py
+        --mloop "dotnet $PWD/tools/MLoop.CLI/bin/Release/net10.0/mloop.dll"
+        --tasks binary,multiclass,regression,forecast,anomaly,clustering,outliers,ranking,recommendation
+        --trials 10 --time 300 --no-serve --out lifecycle-results.json
+
+    - name: Upload the results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: lifecycle-scheduled
+        path: lifecycle-results.json
+        if-no-files-found: ignore
+        retention-days: 30

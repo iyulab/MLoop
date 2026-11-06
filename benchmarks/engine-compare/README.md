@@ -36,6 +36,20 @@ The `Engine compare` workflow (`workflow_dispatch`) runs one job per split seed 
 
 `summarize` ends with a per-seed table when the rows hold `mloop` and `flaml` or `mloop-ensemble`: the sign of each split seed (`+` the first system is better, `-` worse, `=` the same value) next to the verdict, the number of runs that took longer than the budget plus the larger of 2 s and 20 %, and the held-out expected calibration error of the MLoop rows. `ensemble where run vs flaml` counts a blend where `--ensemble` was run (binary, regression) and the single model where it was not (multiclass), so its tally covers every table.
 
+## Reading one execution against an earlier one (`regress`)
+
+`run.py regress --base <results> --candidate <results>` answers whether the search has got worse between two executions of this harness. Two executions run on
+different machines at different times, so an absolute metric would carry the runner. The rule therefore reads each execution against a reference system that
+ran in the same execution (`--reference`, FLAML by default): per table the verdict of `mloop` against it, as `summarize` prints it. It reports `WATCH` for a
+table that was ahead or equal in the baseline and is behind by at least two standard errors in the candidate (or when the number of tables where `mloop` is behind rose by two),
+and `REGRESSION` (exit status 1) when that number rose by three or more - with five seeds a table whose true gap is nil is read "behind" about 19 % of the time, which
+makes a rise of two a coin-toss-sized event across sixteen tables and a rise of three rare (about 1 % for identical code, simulated). The rule was fixed before the code was written; `test_regress.py` builds a flip, a machine that is slower for
+both systems, and a new draw of noise around the same gaps, and checks the status of each. A table that sits on the boundary between equal and behind can flip on
+noise alone - that is why one flip is only a watch.
+
+The `Benchmarks scheduled` workflow runs the comparison (systems `mloop`, `flaml`, `lightgbm`; split seeds 0-4) and the lifecycle walk on a weekly schedule and reads
+each comparison against the previous successful run.
+
 ## Learner parity and the cost of a large model
 
 `parity/` answers two questions that a gap between systems raises. `parity.py` trains one fixed set of hyperparameters with the LightGBM
