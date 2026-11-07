@@ -11,7 +11,7 @@ For each split seed `rank-tables.py` cuts MSLR-WEB10K (validation fold) into a t
 Both numbers are NDCG at 10 from ML.NET's own evaluator with its default gains (0, 3, 7, 15, 31), so they are the same quantity.
 
   python rank.py run --mloop "dotnet tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" --source validation.parquet --seeds 0,1,2 --budget 60 --out rank.jsonl
-  python rank.py summarize rank.jsonl
+  python rank.py summarize rank.jsonl [more.jsonl ...]   # files merge; a later row of the same system and seed wins
 
 `summarize` reads a pair as equal when the mean paired difference over the seeds lies within its standard error (the rule of `run.py summarize`);
 with three seeds that is coarse. Needs pandas, numpy and pyarrow.
@@ -59,7 +59,9 @@ def run(args):
             sh([sys.executable, os.path.join(HERE, 'rank-tables.py'), '--source', args.source, '--out', work, '--seed', str(seed),
                 '--train-queries', str(args.train_queries), '--test-queries', str(args.test_queries)])
             for system, measure in (('mloop', lambda: run_mloop(mloop, work, args.budget)), ('automl-legacy', lambda: run_legacy(work, args.budget))):
-                row = {'seed': seed, 'system': system, 'budget_s': args.budget, **measure()}
+                if system not in args.systems.split(','):
+                    continue
+                row = {'seed': seed, 'system': args.mloop_name if system == 'mloop' else system, 'budget_s': args.budget, **measure()}
                 rows.append(row)
                 print(json.dumps(row), flush=True)
     with open(args.out, 'a', encoding='utf-8') as handle:
@@ -77,16 +79,18 @@ def verdict(base, other):
 
 
 def summarize(args):
-    rows = [json.loads(line) for line in open(args.results, encoding='utf-8') if line.strip()]
+    rows = [json.loads(line) for path in args.results for line in open(path, encoding='utf-8') if line.strip()]
     by = {}
-    for row in rows:
+    for row in rows:   # a later row of the same system and seed replaces an earlier one
         by.setdefault(row['system'], {})[row['seed']] = row['ndcg_at_10']
     for system, seeds in sorted(by.items()):
         values = list(seeds.values())
         print(f'{system:14s} NDCG@10 mean {sum(values) / len(values):.4f} over seeds {sorted(seeds)}: ' + ' '.join(f'{v:.4f}' for _, v in sorted(seeds.items())))
-    if 'mloop' in by and 'automl-legacy' in by:
-        mean, se, word, n = verdict(by['mloop'], by['automl-legacy'])
-        print(f'mloop - automl-legacy: {mean:+.4f} +/- {se:.4f} over {n} seed(s) -> mloop is {word}')
+    if 'automl-legacy' in by:
+        for system in sorted(by):
+            if system.startswith('mloop'):
+                mean, se, word, n = verdict(by[system], by['automl-legacy'])
+                print(f'{system} - automl-legacy: {mean:+.4f} +/- {se:.4f} over {n} seed(s) -> {system} is {word}')
 
 
 def main():
@@ -100,9 +104,11 @@ def main():
     r.add_argument('--train-queries', type=int, default=600)
     r.add_argument('--test-queries', type=int, default=150)
     r.add_argument('--out', default='rank-results.jsonl')
+    r.add_argument('--systems', default='mloop,automl-legacy', help='which systems to run (the legacy search takes the whole budget, so a second look at MLoop alone can leave it out)')
+    r.add_argument('--mloop-name', default='mloop', help='the name MLoop is recorded under - to keep two builds apart in one summary')
     r.set_defaults(func=run)
     s = sub.add_parser('summarize')
-    s.add_argument('results')
+    s.add_argument('results', nargs='+')
     s.set_defaults(func=summarize)
     args = ap.parse_args()
     args.func(args)

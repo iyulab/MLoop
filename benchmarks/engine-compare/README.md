@@ -63,6 +63,11 @@ python benchmarks/engine-compare/rank.py run --mloop "dotnet tools/MLoop.CLI/bin
 python benchmarks/engine-compare/rank.py summarize rank.jsonl
 ```
 
+`run` takes `--systems` (run one side only; a later row of the same system and seed replaces an earlier one in `summarize`) and `--mloop-name` (record
+MLoop under another name, to keep two builds apart). Read the pair with the legacy search's own noise in mind: its search is multi-threaded and
+bound by the clock, so repeating a seed gives another model - seed 3 scored 0.4731 and, run again, 0.4494 - and one run per seed carries about 0.02 of NDCG
+at 10. A gap of 0.008 over five seeds is inside what a repeat of the legacy side alone can move; more seeds or repeated legacy runs are needed to call it.
+
 The ranking evaluator groups consecutive rows with the same query key. A key mapping fitted on the train file alone turns every unseen test
 query into the missing key and the evaluator then scores the whole test file as one list (NDCG at 10 of 0.61 instead of 0.46 on the same model) -
 `automl-legacy` fits its mapping on both files for that reason.
