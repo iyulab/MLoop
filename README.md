@@ -49,7 +49,7 @@ MLoop fills the gap left by the discontinued ML.NET CLI, providing a simple yet 
 
 ### Key Features
 
-- **16 ML Task Types**: Full ML.NET coverage — classification, regression, clustering, ranking, forecasting, recommendation, anomaly detection, NLP, image (classification, detection, and anomaly scoring from normal images alone), and more
+- **16 ML Task Types**: classification, regression, clustering, ranking, forecasting, recommendation, anomaly detection, text tasks, and image tasks (classification, detection, and anomaly scoring from normal images alone). Tabular tasks are the core; the deep-learning tasks run on on-demand runtimes and their measured limits are stated under *Supported ML Tasks* below
 - **AutoML Training**: Automatic model selection — a trainer search over ML.NET's trainers, scored over folds
 - **Multi-Model Projects**: Manage multiple models (churn, revenue, etc.) in one project
 - **On-Demand DL Runtimes**: `mloop runtime install torch` downloads native runtimes only when needed
