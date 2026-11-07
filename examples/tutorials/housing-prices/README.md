@@ -63,47 +63,42 @@ mloop train
 ```
 
 **What happens**:
-1. ML.NET automatically handles categorical features (one-hot encoding for "Neighborhood")
-2. Normalizes numeric features (different scales: sqft vs year)
-3. Tries regression algorithms (FastTree, LightGBM, SDCA)
-4. Optimizes for R² (coefficient of determination)
+1. MLoop encodes the categorical column ("Neighborhood") and puts numeric features on a common scale for the linear trainers
+2. Its trainer search tries regression trainers (FastTree, FastForest, LightGBM where its native library is present, SDCA, L-BFGS Poisson) on cross-validation folds
+3. Optimizes for R² (coefficient of determination)
+4. The best trial is fitted again on the whole training share and scored once on the rows held out
 
-**Expected output**:
+**Output** (the end of the run — the search prints a progress line per trial before it):
 ```
-Training Configuration
-─────────────────────
-Model         default
-Task          regression
-Data File     datasets/houses.csv
-Label Column  Price
-Time Limit    45s
-Metric        r_squared
+── Training Complete! ──────────────────────────────────────────────────────────
 
-Trial 1: FastTreeRegression - r_squared=0.8542
-Trial 2: LightGbmRegression - r_squared=0.9123
-Trial 3: SdcaRegression - r_squared=0.7834
-...
+> Model: default
+> Experiment ID: exp-001
+> Best Trainer: LbfgsPoissonRegression
+> Training Time: 45.10s
 
-Training Complete!
-─────────────────
-Best Trainer: LightGbmRegression
-Training Time: 42.18s
+┌────────────────────────┬────────────────┐
+│ Metric                 │ Value          │
+├────────────────────────┼────────────────┤
+│ RMSE                   │ 12892.3692     │
+│ MAE                    │ 11192.7917     │
+│ R SQUARED              │ 0.9943         │
+│ ...                    │                │
+└────────────────────────┴────────────────┘
 
-METRIC              VALUE
-R_SQUARED           0.9123
-ABSOLUTE_LOSS       28,450
-SQUARED_LOSS        1.24e9
-RMS_LOSS            35,214
-
+Model saved to: models/default/staging/exp-001/model.zip
 Model promoted to production!
 ```
+
+This is one real run on the 20-row sample, whose held-out share is only 4 houses, so the numbers are indicative and
+move from run to run (and the winning trainer with them). Use real data of a few hundred rows or more before trusting them.
 
 ---
 
 ## Step 3: Understand Regression Metrics
 
-### R² - R-Squared (0.9123)
-- **Interpretation**: Model explains 91.23% of price variation
+### R² - R-Squared (0.9943)
+- **Interpretation**: Model explains 99.4% of price variation on the 4 held-out houses
 - **Range**: 0 (random) to 1 (perfect)
 - **Rule of thumb**:
   - R² > 0.9: Excellent
@@ -115,17 +110,17 @@ Model promoted to production!
 - R² = 0.9: Model predictions are very close to actual prices
 - R² = 0.5: Model has large errors
 
-### MAE - Mean Absolute Error (28,450)
-- **Interpretation**: Average prediction error is $28,450
-- **In real terms**: Predictions are typically off by ±$28K
+### MAE - Mean Absolute Error (11,193)
+- **Interpretation**: Average prediction error is $11,193
+- **In real terms**: Predictions are typically off by about ±$11K
 - **Lower is better** (0 = perfect)
 
 **Example**:
 - Actual: $425,000
-- Predicted: $453,000
-- Error: $28,000 (within MAE)
+- Predicted: $436,000
+- Error: $11,000 (about the MAE)
 
-### RMSE - Root Mean Squared Error (35,214)
+### RMSE - Root Mean Squared Error (12,892)
 - **Interpretation**: Similar to MAE but penalizes large errors more
 - **Always ≥ MAE** (because it squares errors)
 - **Use when**: Large errors are particularly bad
@@ -152,39 +147,45 @@ Predict:
 mloop predict predict.csv
 ```
 
-**Output**:
+**Output** (saved to `predictions/default-predictions-<timestamp>.csv`; the file holds your columns and these):
 ```
-Predictions
-────────────────────────────────────────────────────────────────
-SquareFeet  Bedrooms  Bathrooms  YearBuilt  Neighborhood  Score
-1650        3         2          2015       Suburbs       $382,500
-2300        4         3          2011       Downtown      $598,200
-1100        2         1          2018       Rural         $238,100
+SquareFeet,Bedrooms,Bathrooms,YearBuilt,Neighborhood,Score,ScoreLowerBound,ScoreUpperBound,Confidence
+1650,3,2,2015,Suburbs,384113.03,368010.22,400215.84,0.58366
+2300,4,3,2011,Downtown,602270.6,586167.8,618373.44,0.58366
+1100,2,1,2018,Rural,228897.19,212794.38,245000,0.58366
+```
 
-Results saved to: predict_predictions.csv
-```
+`Score` is the predicted price; `ScoreLowerBound` / `ScoreUpperBound` bracket it by the model's held-out error.
 
 **Understanding predictions**:
-- $382,500: 1650 sqft in Suburbs → typical price for that area
-- $598,200: Larger house in expensive Downtown area
-- $238,100: Small house in affordable Rural area
+- $384,113: 1650 sqft in Suburbs → typical price for that area
+- $602,271: Larger house in expensive Downtown area
+- $228,897: Small house in affordable Rural area
 
 ---
 
 ## Step 5: Analyze Feature Importance
 
-Which features matter most for price?
+Which features matter most for price? `mloop explain` shuffles one column at a time on a labeled file and reports how much the score falls:
 
-**Common patterns** (from our training):
-1. **SquareFeet**: +1000 sqft → ~+$180K (strongest correlation)
-2. **Neighborhood**: Downtown > Suburbs > Rural (~$150K difference)
-3. **Bathrooms**: +1 bathroom → ~+$75K
-4. **Bedrooms**: +1 bedroom → ~+$50K (less than bathrooms!)
-5. **YearBuilt**: Newer (+5 years) → ~+$15K
+```bash
+mloop explain --data datasets/houses.csv
+```
 
-**Surprising insight**: Bathrooms have more impact than bedrooms!
-- **Why?**: Master bathrooms indicate luxury/size
-- **Lesson**: Domain knowledge helps interpret models
+**Output** (this run):
+```
+exp-001 on houses.csv: 20 rows, r_squared 0.9930 (higher is better), 3 shuffle(s) per column
+│ Column       │ Fall in r_squared │   ± sd │
+│ SquareFeet   │           +0.6752 │ 0.1457 │
+│ Neighborhood │           +0.3477 │ 0.0843 │
+│ Bedrooms     │           +0.0705 │ 0.0137 │
+│ YearBuilt    │           +0.0015 │ 0.0015 │
+│ Bathrooms    │           +0.0004 │ 0.0004 │
+```
+
+**Reading it**: the model leans on `SquareFeet` and `Neighborhood` almost entirely; shuffling `Bathrooms` or `YearBuilt`
+costs nothing. "Relies on" is not "causes": columns that move together (more bedrooms, more bathrooms, more square feet)
+share one another's credit, and 20 rows is far too few to say anything about a real market.
 
 ---
 
@@ -194,29 +195,17 @@ Which features matter most for price?
 mloop evaluate datasets/houses.csv
 ```
 
-**Output**:
+**Output** (trimmed):
 ```
-Evaluation Results
-──────────────────
-R_SQUARED           0.9123
-ABSOLUTE_LOSS       28,450
-SQUARED_LOSS        1.24e9
-RMS_LOSS            35,214
+── Evaluation Results ──────────────────────────────────────────────────────────
 
-Prediction Errors:
-Actual      Predicted   Error       % Error
-$425,000    $442,300    +$17,300    +4.1%
-$315,000    $298,750    -$16,250    -5.2%
-$585,000    $612,400    +$27,400    +4.7%
-...
-
-Mean Absolute Percentage Error (MAPE): 6.2%
+│ Metric    │ Training       │ Test           │ Difference     │
+│ r_squared │ 0.9943         │ 0.9930         │ -0.0014        │
+│ rmse      │ 12892.3692     │ 15540.5461     │ +2648.1770     │
+│ mae       │ 11192.7917     │ 12173.5812     │ +980.7896      │
 ```
 
-**What is MAPE?**
-- Average error as percentage of actual price
-- 6.2% MAPE = predictions within ±6.2% on average
-- For $400K house: ±$24,800 typical error
+The "Test" column here is the whole file, rows the model trained on included — a real evaluation uses houses it has never seen.
 
 ---
 

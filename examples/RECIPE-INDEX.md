@@ -32,7 +32,7 @@ Learn:
 - Interpret accuracy metrics
 
 **Features**: 4 numeric features → 3 species categories
-**Accuracy**: 93% with 30 seconds training
+**Accuracy**: about 93% held out, 30 seconds training (150 rows; varies a little run to run)
 
 ```bash
 cd examples/tutorials/iris-classification
@@ -53,7 +53,7 @@ Learn:
 - Work with natural language data
 
 **Features**: Movie review text → Positive/Negative
-**Accuracy**: 96% with 60 seconds training
+**Accuracy**: about 97-98% held out, 60 seconds training (201 generated reviews — easier than real text)
 
 ```bash
 cd examples/tutorials/sentiment-analysis
@@ -74,7 +74,7 @@ Learn:
 - Handle mixed feature types (numeric + categorical)
 
 **Features**: 5 features (sqft, beds, baths, year, location) → Price
-**R-Squared**: 0.91 with 45 seconds training
+**R-Squared**: above 0.9 held out, 45 seconds training (a 20-row sample — indicative only)
 
 ```bash
 cd examples/tutorials/housing-prices
