@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace MLoop.Tests.Commands;
 
@@ -42,6 +43,20 @@ public sealed class TrainNoFeatureColumnTests : IDisposable
         return csv.ToString();
     }
 
+    /// <summary>
+    /// The model's <c>label:</c> line followed by a <c>columns:</c> block declaring <paramref name="column"/> as <paramref name="type"/>
+    /// — in the file's own line ending (a checkout on Windows writes CRLF).
+    /// </summary>
+    private static string Declaring(string yaml, string column, string type)
+    {
+        var declared = Regex.Replace(yaml, @"^(    label: Label)(\r?\n)",
+            m => m.Groups[1].Value + m.Groups[2].Value
+                + string.Join(m.Groups[2].Value, "    columns:", $"      {column}:", $"        type: {type}") + m.Groups[2].Value,
+            RegexOptions.Multiline);
+        Assert.NotEqual(yaml, declared);
+        return declared;
+    }
+
     private async Task<string> ProjectWithTheTableAsync()
     {
         var (initExit, initOutput, _) = await CliRunner.RunAsync("init", "p", "--task", "binary-classification");
@@ -74,11 +89,7 @@ public sealed class TrainNoFeatureColumnTests : IDisposable
     public async Task ADeclaredTextRole_KeepsTheColumn_AndTheSameFileTrains()
     {
         var data = await ProjectWithTheTableAsync();
-        var yaml = await File.ReadAllTextAsync("mloop.yaml");
-        const string label = "    label: Label\n";
-        Assert.Contains(label, yaml);
-        await File.WriteAllTextAsync("mloop.yaml",
-            yaml.Replace(label, label + "    columns:\n      Content:\n        type: text\n", StringComparison.Ordinal));
+        await File.WriteAllTextAsync("mloop.yaml", Declaring(await File.ReadAllTextAsync("mloop.yaml"), "Content", "text"));
 
         var (exit, output, error) = await CliRunner.RunAsync(
             "train", data, "--label", "Label", "--max-trials", "2", "--time", "30", "--no-promote");
@@ -97,10 +108,7 @@ public sealed class TrainNoFeatureColumnTests : IDisposable
         for (var i = 0; i < 100; i++)
             csv.Append(CultureInfo.InvariantCulture, $"{i / 100.0:F2},{(i > 60 ? 1 : 0)}\n");
         await File.WriteAllTextAsync("datasets/train.csv", csv.ToString());
-        const string label = "    label: Label\n";
-        var yaml = await File.ReadAllTextAsync("mloop.yaml");
-        await File.WriteAllTextAsync("mloop.yaml",
-            yaml.Replace(label, label + "    columns:\n      a:\n        type: ignore\n", StringComparison.Ordinal));
+        await File.WriteAllTextAsync("mloop.yaml", Declaring(await File.ReadAllTextAsync("mloop.yaml"), "a", "ignore"));
 
         var (exit, output, error) = await CliRunner.RunAsync(
             "train", "datasets/train.csv", "--label", "Label", "--max-trials", "3", "--time", "30", "--no-promote");
@@ -125,10 +133,7 @@ public sealed class TrainNoFeatureColumnTests : IDisposable
         Assert.Contains("CRITICAL", output + error);
         Assert.Contains("No column is left to train on", output + error);
 
-        const string label = "    label: Label\n";
-        var yaml = await File.ReadAllTextAsync("mloop.yaml");
-        await File.WriteAllTextAsync("mloop.yaml",
-            yaml.Replace(label, label + "    columns:\n      Content:\n        type: text\n", StringComparison.Ordinal));
+        await File.WriteAllTextAsync("mloop.yaml", Declaring(await File.ReadAllTextAsync("mloop.yaml"), "Content", "text"));
 
         var (_, declaredOut, declaredErr) = await CliRunner.RunAsync(
             "train", data, "--label", "Label", "--max-trials", "3", "--analyze-data");
