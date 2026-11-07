@@ -106,6 +106,29 @@ public class ImageAnomalyTrainerTests : IDisposable
     }
 
     [Fact]
+    public void ABankLargerThanTheThreshold_IsToldItsSize_AndTheWayToASmallerOne()
+    {
+        // 230,400 patches of 384 numbers (a thousand 1280 x 960 pictures through a 16 x 16 grid) is about 0.33 GiB; ten thousand is 3.3 GiB.
+        Assert.Null(ImageAnomalyTrainer.LargeBankNote(230_400, 384));
+        var note = ImageAnomalyTrainer.LargeBankNote(2_304_000, 384);
+
+        Assert.NotNull(note);
+        Assert.Contains("3.3 GiB", note, StringComparison.Ordinal);
+        Assert.Contains("--bank-size", note, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ASmallBank_SaysNothingAboutItsSize()
+    {
+        WriteImages(20);
+        var said = new List<string>();
+
+        ImageAnomalyTrainer.Train(_images, "tiny", null, said.Add, _pool, default);
+
+        Assert.DoesNotContain(said, line => line.Contains("GiB", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void ABankSizeAtLeastThePatches_KeepsEveryPatch()
     {
         WriteImages(20);
