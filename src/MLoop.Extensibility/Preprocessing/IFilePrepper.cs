@@ -1,7 +1,7 @@
 namespace MLoop.Extensibility.Preprocessing;
 
 /// <summary>
-/// Integration interface for FilePrepper - fast data preprocessing library (20x faster than pandas).
+/// Integration interface for FilePrepper - data preprocessing library that needs no Python environment.
 /// </summary>
 /// <remarks>
 /// FilePrepper provides optimized operations for common preprocessing tasks:

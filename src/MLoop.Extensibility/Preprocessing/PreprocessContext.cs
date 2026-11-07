@@ -36,7 +36,7 @@ public class PreprocessContext
     /// FilePrepper integration for advanced data preprocessing (encoding, cleaning, etc.).
     /// </summary>
     /// <remarks>
-    /// FilePrepper provides 20x faster preprocessing than pandas for common operations:
+    /// FilePrepper does the common preprocessing operations without a Python environment:
     /// - CSV encoding normalization
     /// - Missing value handling
     /// - Type inference and conversion

@@ -55,7 +55,7 @@ MLoop fills the gap left by the discontinued ML.NET CLI, providing a simple yet 
 - **On-Demand DL Runtimes**: `mloop runtime install torch` downloads native runtimes only when needed
 - **Smart Predictions**: Production model auto-discovery and batch processing
 - **Filesystem MLOps**: Git-friendly experiment tracking (no database required)
-- **Fast Preprocessing**: Integrated FilePrepper (20x faster than pandas)
+- **Integrated Preprocessing**: FilePrepper reads CSV, Excel, Parquet and JSON and does the common cleaning and feature steps without a Python environment (speed is on par with pandas, not ahead of it — measured in the guide)
 - **Operated by agents, not written by them**: MCP, `--json` and HTTP drive the same commands a person runs — no generated code is executed, no LLM key is needed ([details](docs/AI-AGENTS.md))
 - **Extensibility**: Code-based hooks and custom metrics
 - **Zero Config**: Works immediately with intelligent defaults
@@ -522,7 +522,7 @@ With the ML.NET CLI discontinued, MLoop provides:
 - ✅ **Production Ready** - From prototyping to deployment
 - ✅ **Git Friendly** - All state as files, no database
 - ✅ **Extensible** - Hooks and custom metrics
-- ✅ **Fast** - FilePrepper integration (20x speedup)
+- ✅ **Self-contained** - FilePrepper integration (no Python environment for preprocessing)
 
 ## Requirements
 
