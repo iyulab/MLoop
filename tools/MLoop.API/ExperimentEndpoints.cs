@@ -39,7 +39,7 @@ public static class ExperimentEndpoints
             CancellationToken ct) =>
         {
             var stopwatch = Stopwatch.StartNew();
-            var modelName = string.IsNullOrWhiteSpace(name) ? null : name.Trim().ToLowerInvariant();
+            var modelName = MLoop.Core.Storage.ModelName.Filter(name);
 
             try
             {
@@ -402,7 +402,7 @@ public static class ExperimentEndpoints
 
                 // A relative path is the project's, as for POST /train.
                 var resolvedTestPath = ProjectPaths.Resolve(testDataPath, projectRootPath.Value);
-                if (!ProjectPaths.IsWithin(resolvedTestPath, projectRootPath.Value))
+                if (!ProjectPaths.IsWithinReal(resolvedTestPath, projectRootPath.Value))
                     return Results.BadRequest(new { error = "Test data file must be within the project directory." });
 
                 if (!TabularDataFile.Exists(resolvedTestPath))
@@ -476,7 +476,7 @@ public static class ExperimentEndpoints
                     warnings = warnings.Count == 0 ? null : warnings,
                 });
             }
-            catch (Exception ex) when (ex is MLoop.Core.Training.UnreadableLabelException or MLoop.Core.Data.ColumnLayoutException)
+            catch (Exception ex) when (ex is MLoop.Core.Training.UnreadableLabelException or MLoop.Core.Data.ColumnLayoutException or MLoop.Core.Data.EmptyTableFileException or MLoop.Core.Data.UnterminatedQuoteException)
             {
                 // The file's own fault, as the schema check above: a label written as numbers for people, a file that does not split into
                 // columns. `mloop evaluate` says the same and exits 1; a 500 told the caller the server was broken.

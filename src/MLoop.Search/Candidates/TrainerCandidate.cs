@@ -36,6 +36,36 @@ public sealed record TrainerCandidate(
     public IReadOnlyList<IReadOnlyDictionary<string, double>> StartingPoints { get; init; } = [];
 
     /// <summary>
+    /// Whether the trainer fits a model for each class (one-versus-all). Its cost grows with the classes: measured, one fit
+    /// of an eight-leaf forest took 0.5 s on two classes and 7.9 s on a hundred, whatever the rows (4,000 or 80,000 — the
+    /// per-class setup dominates), where a maximum-entropy trainer on the same rows took 0.9 s.
+    /// </summary>
+    public bool FitsPerClass { get; init; }
+
+    /// <summary>
+    /// The relative cost the proposer starts from on a label of <paramref name="classes"/> classes: <see cref="InitialCost"/> (AutoML's
+    /// table, measured on two classes) times the classes a per-class trainer fits a model for, in halves of that — a prior known
+    /// before any trial, so the search stays a function of the seed alone.
+    /// </summary>
+    public double CostFor(int classes) => FitsPerClass ? InitialCost * Math.Max(1, classes / 2.0) : InitialCost;
+
+    /// <summary>
+    /// The point a trainer is built from when it will be fitted on <paramref name="rows"/> rows: its leaf count, where it has one,
+    /// is at most the rows. A tree cannot have more leaves than rows, so the tree is the same whatever the leaf count above that —
+    /// but the trainer sizes its tree storage by the setting, and a forest of 78 trees of 32,768 leaves took 1.4 GB to fit three
+    /// thousand rows. The trial still records the point the tuner proposed; only what is built is bounded.
+    /// </summary>
+    public static SearchPoint FittedToRows(SearchPoint point, long rows)
+    {
+        ArgumentNullException.ThrowIfNull(point);
+        const string leaves = "NumberOfLeaves";
+        if (point.Space.Dimensions.All(d => d.Name != leaves))
+            return point;
+        var limit = Math.Max(rows, 4);   // the dimensions start at 4 leaves
+        return point[leaves] > limit ? point.With(leaves, limit) : point;
+    }
+
+    /// <summary>
     /// The size of the model a point of a space builds, read from the point alone: trees × leaves for a tree
     /// ensemble, 1 for a linear model. What a larger model costs is time to fit, save, load and score, and room
     /// on disk — a forest of a thousand trees of a thousand leaves is a model.zip of hundreds of megabytes.

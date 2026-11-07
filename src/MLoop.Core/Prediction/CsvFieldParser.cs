@@ -7,25 +7,44 @@ namespace MLoop.Core.Prediction;
 public static class CsvFieldParser
 {
     /// <summary>
-    /// Parses a CSV line respecting RFC 4180 quoted fields.
+    /// Parses a CSV line respecting RFC 4180 quoted fields. A quote opens a quoted field only where a field starts (white space in
+    /// front of it is skipped); a quote anywhere else in a field is part of its text, as CsvHelper and ML.NET's TextLoader read it.
+    /// Toggling on every quote took <c>12" pipe,11,1</c> for one quoted field - the rest of the line - and every reader built on
+    /// this lost the columns after it.
     /// </summary>
     public static string[] ParseFields(string line)
     {
         var fields = new List<string>();
         bool inQuotes = false;
+        bool atFieldStart = true;
         int fieldStart = 0;
 
         for (int i = 0; i < line.Length; i++)
         {
             char c = line[i];
-            if (c == '"')
+            if (inQuotes)
             {
-                inQuotes = !inQuotes;
+                if (c != '"')
+                    continue;
+                if (i + 1 < line.Length && line[i + 1] == '"')
+                    i++; // an escaped quote
+                else
+                    inQuotes = false;
             }
-            else if (c == ',' && !inQuotes)
+            else if (c == '"' && atFieldStart)
+            {
+                inQuotes = true;
+                atFieldStart = false;
+            }
+            else if (c == ',')
             {
                 fields.Add(UnquoteField(line[fieldStart..i]));
                 fieldStart = i + 1;
+                atFieldStart = true;
+            }
+            else if (!char.IsWhiteSpace(c))
+            {
+                atFieldStart = false;
             }
         }
 

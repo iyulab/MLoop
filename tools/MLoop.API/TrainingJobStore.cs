@@ -42,7 +42,7 @@ public class TrainingJobStore
         Load();
     }
 
-    public string CreateJob(TrainingJobRequest request)
+    public string CreateJob(TrainingJobRequest request, string? requestedBy = null)
     {
         var jobId = $"job-{MLoop.Core.Storage.TimestampKeys.Stamp(DateTime.UtcNow)}-{Guid.NewGuid().ToString()[..8]}";
         var job = new TrainingJob
@@ -63,6 +63,7 @@ public class TrainingJobStore
             Weight = request.Weight,
             Balance = request.Balance,
             Promote = request.Promote,
+            RequestedBy = requestedBy,
             Status = JobStatus.Queued,
             CreatedAt = DateTime.UtcNow
         };
@@ -207,6 +208,8 @@ public class TrainingJob
     public string? Balance { get; set; }
     /// <summary>Whether the job may promote its experiment; <c>false</c> is <c>--no-promote</c>.</summary>
     public bool Promote { get; init; } = true;
+    /// <summary>The <c>sub</c> of the token that started the job; the promotion history names it when the job promotes.</summary>
+    public string? RequestedBy { get; init; }
 
     public JobStatus Status { get; set; }
     public string? StatusMessage { get; set; }
@@ -273,7 +276,12 @@ public record TrainingJobRequest(
     int? Epochs = null,
     bool Ensemble = false)
 {
-    public string ModelName => string.IsNullOrWhiteSpace(Name) ? "default" : Name.Trim().ToLowerInvariant();
+    /// <summary>The model the job trains into: the name through the model-name gate - it becomes a directory, and a name with
+    /// <c>..</c> in it used to be one the job wrote into - and, when the request names none, the one <c>MLOOP_MODEL_NAME</c>
+    /// names, else <c>default</c>, as every other endpoint resolves it (an image built for one model trained <c>default</c>
+    /// from a request that named nothing, and predicted from the model the variable names).</summary>
+    /// <exception cref="MLoop.Core.Storage.InvalidModelNameException">The request names a model that cannot be a directory.</exception>
+    public string ModelName => MLoop.Core.Storage.ModelName.Resolve(Name);
 }
 
 public enum JobStatus

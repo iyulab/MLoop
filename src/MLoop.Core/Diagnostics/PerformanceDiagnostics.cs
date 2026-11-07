@@ -564,7 +564,7 @@ public class PerformanceDiagnostics
                 result.OverallAssessment = PerformanceLevel.Low;
                 result.Summary = $"High anomaly rate ({detRate:P1}) — detector may be oversensitive";
                 result.Warnings.Add("More than half of data flagged as anomalous");
-                result.Suggestions.Add("Increase confidence level or adjust threshold");
+                result.Suggestions.Add("Raise anomaly_threshold under the model in mloop.yaml (default 0.3; a higher value flags fewer points) and train again");
             }
             else if (detRate > 0.2)
             {
@@ -581,7 +581,7 @@ public class PerformanceDiagnostics
             {
                 result.OverallAssessment = PerformanceLevel.Moderate;
                 result.Summary = $"Very low anomaly rate ({detRate:P2}) — may be too conservative";
-                result.Suggestions.Add("Consider lowering confidence threshold to detect more anomalies");
+                result.Suggestions.Add("Lower anomaly_threshold under the model in mloop.yaml (0.2 finds smaller spikes and also flags more ordinary points; the guide's Time series section tabulates the trade) and train again");
             }
         }
         else

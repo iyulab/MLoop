@@ -83,7 +83,7 @@ public static partial class ModelName
 
     /// <summary>
     /// Which model a request means: the one it names, else the one the environment names, else
-    /// <see cref="Default"/>. Always normalized.
+    /// <see cref="Default"/>. Always normalized, and always a valid model name.
     /// </summary>
     /// <remarks>
     /// <para>This rule lived in the CLI, and the CLI is not what a generated image runs. The
@@ -98,11 +98,38 @@ public static partial class ModelName
     public static string Resolve(string? requested)
     {
         if (!string.IsNullOrWhiteSpace(requested))
-            return Normalize(requested);
+            return Require(requested);
 
         var configured = Environment.GetEnvironmentVariable(EnvironmentVariable);
-        return string.IsNullOrWhiteSpace(configured) ? Default : Normalize(configured);
+        return string.IsNullOrWhiteSpace(configured) ? Default : Require(configured);
     }
+
+    /// <summary>
+    /// A model name somebody supplied, normalized — or the refusal. The one gate between such a name and the file
+    /// system: a model name becomes <c>models/&lt;name&gt;/…</c> and <c>.mloop/logs/&lt;name&gt;/</c>, so a name that is
+    /// not a single valid segment — <c>../../other</c>, <c>a/b</c> — must never reach a path join. <see cref="IsValid"/>
+    /// already said so for <c>init</c> and <c>validate</c>; <see cref="Resolve"/> did not ask it, and the server's read
+    /// endpoints (<c>/info</c>, <c>/logs</c>, …) walked out of <c>models/</c> into any directory shaped like a model,
+    /// while <c>POST /train</c> built the name itself and wrote an experiment tree wherever <c>..</c> led.
+    /// A place that takes a name from a caller without wanting <see cref="Resolve"/>'s fallbacks (a filter that means
+    /// "all models" when blank, a body field with its own default) calls this directly.
+    /// </summary>
+    /// <exception cref="InvalidModelNameException">The name breaks the rule; the message says which.</exception>
+    public static string Require(string name)
+    {
+        var normalized = Normalize(name);
+        return IsValid(normalized)
+            ? normalized
+            : throw new InvalidModelNameException(normalized, DescribeViolation(normalized) ?? "A model name is a single directory name.");
+    }
+
+    /// <summary>
+    /// The model a request filters by: <c>null</c> when it names none (the filter means "every model"), else the
+    /// name from <see cref="Require"/>. Unlike <see cref="Resolve"/> it never falls back to the environment's or the
+    /// default model — a filter that silently narrowed to one model would answer a question nobody asked.
+    /// </summary>
+    public static string? Filter(string? requested) =>
+        string.IsNullOrWhiteSpace(requested) ? null : Require(requested);
 
     /// <summary>
     /// The name as it is written on disk: trimmed and lowercased. Normalizing does not make a name

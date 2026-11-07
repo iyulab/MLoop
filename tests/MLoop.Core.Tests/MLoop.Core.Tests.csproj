@@ -11,6 +11,7 @@
   <ItemGroup>
     <!-- Tests only: ONNX Runtime with its native library, so graph tests (export verification, image encoders)
          run without the on-demand runtime. The product ships only the managed half. -->
+    <PackageReference Include="CsvHelper" />
     <PackageReference Include="Microsoft.ML.OnnxRuntime" />
     <PackageReference Include="xunit.v3.mtp-v2" />
   </ItemGroup>

@@ -97,7 +97,10 @@ public class ModelNameResolver : IModelNameResolver
             // (production/metadata.json via ProductionMetadata), the same source ModelRegistry and
             // FilePromotionManager read, so `mloop list` can't disagree with them (registry.json removed).
             var productionDir = _fileSystem.CombinePath(modelDir, ProductionDirectory);
-            var production = await ProductionMetadata.ReadAsync(productionDir, cancellationToken);
+            // A model whose pointer cannot be read is listed with the damage said, not as having no production model.
+            var (production, damagedPointer) = await ProductionMetadata.TryReadAsync(productionDir, cancellationToken);
+            if (damagedPointer is not null)
+                Console.Error.WriteLine($"Warning: {damagedPointer.Path} cannot be read ({damagedPointer.Reason}); '{modelName}' is listed without its production experiment.");
             string? productionExperiment = production?.ExperimentId;
 
             summaries.Add(new ModelSummary
@@ -119,13 +122,8 @@ public class ModelNameResolver : IModelNameResolver
     /// <inheritdoc />
     public async Task CreateAsync(string name, ModelDefinition definition, CancellationToken cancellationToken = default)
     {
+        // Resolve is the gate: a name that is not a valid model name throws InvalidModelNameException (an ArgumentException).
         var resolvedName = Resolve(name);
-
-        if (!IsValidName(resolvedName))
-        {
-            throw new ArgumentException($"Invalid model name: '{resolvedName}'. " +
-                Core.Storage.ModelName.DescribeViolation(resolvedName));
-        }
 
         if (Exists(resolvedName))
         {

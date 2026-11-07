@@ -334,6 +334,7 @@ public class ModelRegistryTests : IDisposable
             DefaultModelName,
             experimentId,
             "accuracy",
+            null,
             CancellationToken.None);
 
         // Assert
@@ -393,6 +394,23 @@ public class ModelRegistryTests : IDisposable
         var productionModel = await _modelRegistry.GetProductionAsync(DefaultModelName, CancellationToken.None);
         Assert.NotNull(productionModel);
         Assert.Equal(exp2, productionModel.ExperimentId);
+    }
+
+    [Fact]
+    public async Task PromoteAsync_ForecastBand_MovesWithTheModel_AndIsNotLeftBehindByTheNext()
+    {
+        var withBand = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double> { ["r_squared"] = 0.80 });
+        var withoutBand = await CreateDummyExperimentAsync(DefaultModelName, "exp-002", new Dictionary<string, double> { ["r_squared"] = 0.90 });
+        var staging = Path.Combine(MLoop.Core.Storage.ExperimentLayout.ModelsDirectory, DefaultModelName, MLoop.Core.Storage.ExperimentLayout.StagingDirectory);
+        var production = Path.Combine(MLoop.Core.Storage.ExperimentLayout.ModelsDirectory, DefaultModelName, MLoop.Core.Storage.ExperimentLayout.ProductionDirectory);
+        var bandFile = MLoop.Core.Storage.ExperimentLayout.ForecastBandFileName;
+        File.WriteAllText(Path.Combine(staging, withBand, bandFile), "{}");
+
+        await _modelRegistry.PromoteAsync(DefaultModelName, withBand, CancellationToken.None);
+        Assert.True(File.Exists(Path.Combine(production, bandFile)), "the band fitted for the promoted model is beside the production model");
+
+        await _modelRegistry.PromoteAsync(DefaultModelName, withoutBand, CancellationToken.None);
+        Assert.False(File.Exists(Path.Combine(production, bandFile)), "a promoted model without a band does not keep the previous model's");
     }
 
     [Fact]
@@ -803,6 +821,52 @@ public class ModelRegistryTests : IDisposable
     }
 
     [Fact]
+    public async Task APromotion_RecordsWhoChangedTheSlotAndThroughWhichDoor()
+    {
+        var first = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double> { ["r_squared"] = 0.7 });
+        var second = await CreateDummyExperimentAsync(DefaultModelName, "exp-002", new Dictionary<string, double> { ["r_squared"] = 0.9 });
+
+        await _modelRegistry.PromoteAsync(DefaultModelName, first, MLoop.Ops.Interfaces.PromotionActions.Promote, null,
+            new MLoop.Ops.Interfaces.PromotionOrigin(MLoop.Ops.Interfaces.PromotionVia.Cli, "  release-bot  "), CancellationToken.None);
+        await _modelRegistry.PromoteAsync(DefaultModelName, second, MLoop.Ops.Interfaces.PromotionActions.Rollback, null,
+            new MLoop.Ops.Interfaces.PromotionOrigin(MLoop.Ops.Interfaces.PromotionVia.Http), CancellationToken.None);
+        await _modelRegistry.PromoteAsync(DefaultModelName, first, CancellationToken.None);
+
+        var history = await HistoryAsync();
+        // The name is the one that was given, trimmed; nothing is recorded for a caller that named nobody, and nothing is picked up from the machine.
+        Assert.Equal(("release-bot", MLoop.Ops.Interfaces.PromotionVia.Cli), (history[0].By, history[0].Via));
+        Assert.Equal((null, MLoop.Ops.Interfaces.PromotionVia.Http), (history[1].By, history[1].Via));
+        Assert.Equal((null, null), (history[2].By, history[2].Via));
+    }
+
+    [Fact]
+    public async Task APromotionBlankAboutWho_RecordsNobodyRatherThanAnEmptyName()
+    {
+        var first = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double> { ["r_squared"] = 0.7 });
+
+        await _modelRegistry.PromoteAsync(DefaultModelName, first, MLoop.Ops.Interfaces.PromotionActions.Promote, null,
+            new MLoop.Ops.Interfaces.PromotionOrigin(MLoop.Ops.Interfaces.PromotionVia.Cli, "   "), CancellationToken.None);
+
+        Assert.Null(Assert.Single(await HistoryAsync()).By);
+    }
+
+    [Fact]
+    public async Task APromotion_RecordsTheHashOfTheModelItPut_InTheSlotsPointer()
+    {
+        var first = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double> { ["r_squared"] = 0.7 });
+
+        await _modelRegistry.PromoteAsync(DefaultModelName, first, CancellationToken.None);
+
+        var slot = _modelRegistry.GetProductionPath(DefaultModelName);
+        var pointer = await MLoop.Core.Storage.ProductionMetadata.ReadAsync(slot);
+        Assert.Equal(MLoop.Core.Models.ModelFingerprint.Sha256(Path.Combine(slot, "model.zip")), pointer?.ModelSha256);
+        // ...and the load-time comparison finds the slot as it was left, then finds it changed.
+        Assert.Null(MLoop.Core.Models.ModelIntegrity.Mismatch(Path.Combine(slot, "model.zip")));
+        await File.WriteAllBytesAsync(Path.Combine(slot, "model.zip"), [7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7]);
+        Assert.NotNull(MLoop.Core.Models.ModelIntegrity.Mismatch(Path.Combine(slot, "model.zip")));
+    }
+
+    [Fact]
     public async Task ARollback_IsRecordedWithoutTheGate()
     {
         var first = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double> { ["r_squared"] = 0.7 });
@@ -816,6 +880,55 @@ public class ModelRegistryTests : IDisposable
         Assert.Equal(("exp-001", "exp-002"), (last.ExperimentId, last.PreviousExperimentId));
         Assert.Equal(MLoop.Ops.Interfaces.PromotionGate.NotApplied, last.Gate);
         Assert.Null(last.GateDetail);
+    }
+
+    // A pointer that exists and cannot be read is damage, not "no production model" - and promoting is what writes it again.
+
+    private string ProductionPointer() =>
+        Path.Combine(_modelRegistry.GetProductionPath(DefaultModelName), MLoop.Core.Storage.ExperimentLayout.MetadataFileName);
+
+    private async Task<string> PromotedThenDamagedAsync()
+    {
+        var exp1 = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double> { ["r_squared"] = 0.80 });
+        await _modelRegistry.PromoteAsync(DefaultModelName, exp1, CancellationToken.None);
+        await File.WriteAllTextAsync(ProductionPointer(), "{bad");
+        return exp1;
+    }
+
+    [Fact]
+    public async Task GetProductionAsync_AnUnreadablePointer_NamesTheFile_NotAbsence()
+    {
+        await PromotedThenDamagedAsync();
+
+        var ex = await Assert.ThrowsAsync<MLoop.Core.Storage.UnreadableStateFileException>(
+            () => _modelRegistry.GetProductionAsync(DefaultModelName, CancellationToken.None));
+
+        Assert.Equal(ProductionPointer(), ex.Path);
+    }
+
+    [Fact]
+    public async Task ListAsync_OneUnreadablePointer_DoesNotHideTheOtherModels()
+    {
+        await PromotedThenDamagedAsync();
+        var other = await CreateDummyExperimentAsync("other-model", "exp-001", new Dictionary<string, double> { ["r_squared"] = 0.7 });
+        await _modelRegistry.PromoteAsync("other-model", other, CancellationToken.None);
+
+        var listed = (await _modelRegistry.ListAsync(null, CancellationToken.None)).Select(m => m.ModelName).ToList();
+
+        Assert.Equal(["other-model"], listed);
+    }
+
+    [Fact]
+    public async Task PromoteAsync_OverAnUnreadablePointer_GoesOn_AndWritesItAgain()
+    {
+        await PromotedThenDamagedAsync();
+        var exp2 = await CreateDummyExperimentAsync(DefaultModelName, "exp-002", new Dictionary<string, double> { ["r_squared"] = 0.85 });
+
+        Assert.True(await _modelRegistry.ShouldPromoteAsync(DefaultModelName, exp2, "r_squared", CancellationToken.None));
+        await _modelRegistry.PromoteAsync(DefaultModelName, exp2, CancellationToken.None);
+
+        var production = await _modelRegistry.GetProductionAsync(DefaultModelName, CancellationToken.None);
+        Assert.Equal("exp-002", production?.ExperimentId);
     }
 
     private async Task<string> CreateDummyExperimentAsync(

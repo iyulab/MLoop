@@ -225,7 +225,7 @@ public class MultiModelWorkflowTests : IDisposable
         await CreateExperimentAsync("churn", "exp-002", 0.95);
 
         // Act - Auto-promote for churn only
-        var promoted = await _modelRegistry.AutoPromoteAsync("churn", "exp-002", "accuracy", CancellationToken.None);
+        var promoted = await _modelRegistry.AutoPromoteAsync("churn", "exp-002", "accuracy", null, CancellationToken.None);
 
         // Assert
         Assert.True(promoted);

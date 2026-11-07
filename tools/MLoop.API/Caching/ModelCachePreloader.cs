@@ -38,8 +38,18 @@ internal sealed class ModelCachePreloader : IHostedService
         {
             if (cancellationToken.IsCancellationRequested) break;
 
-            var trimmed = modelName?.Trim().ToLowerInvariant();
-            if (string.IsNullOrEmpty(trimmed)) continue;
+            // A configured name is a directory name like any other: one that is not is logged and skipped, never fatal.
+            string? trimmed;
+            try
+            {
+                trimmed = MLoop.Core.Storage.ModelName.Filter(modelName);
+            }
+            catch (MLoop.Core.Storage.InvalidModelNameException ex)
+            {
+                _logger.LogWarning("Preload: skipping a configured model name — {Reason}", ex.Message);
+                continue;
+            }
+            if (trimmed is null) continue;
 
             var modelPath = Path.Combine(_registry.GetProductionPath(trimmed), ExperimentLayout.ModelFileName);
             if (!File.Exists(modelPath))

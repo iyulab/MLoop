@@ -70,7 +70,17 @@ public sealed class FilePromotionManager : IPromotionManager
         var backupPath = Path.Combine(modelPath, "backups",
             $"{label}-{MLoop.Core.Storage.TimestampKeys.Stamp(DateTimeOffset.UtcNow)}");
         Directory.CreateDirectory(Path.GetDirectoryName(backupPath)!);
-        CopyDirectory(productionPath, backupPath);
+        try
+        {
+            CopyDirectory(productionPath, backupPath);
+        }
+        catch
+        {
+            // A backup that stopped half way looks like a whole one in backups/ and is not one: a full disk left
+            // such directories behind. Whatever stopped the copy is reported; the leftover is not kept.
+            try { Directory.Delete(backupPath, recursive: true); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            throw;
+        }
 
         return backupPath;
     }
@@ -100,7 +110,9 @@ public sealed class FilePromotionManager : IPromotionManager
             GetModelPath(modelName),
             ExperimentLayout.ProductionDirectory);
 
-        var metadata = await ProductionMetadata.ReadAsync(productionDir, cancellationToken).ConfigureAwait(false);
+        // The backup is made before a promotion replaces the pointer, so a pointer that cannot be read must not stop it - the
+        // backup is then labelled generically (below) - and the promotion is what writes the pointer again.
+        var (metadata, _) = await ProductionMetadata.TryReadAsync(productionDir, cancellationToken).ConfigureAwait(false);
         return metadata?.ExperimentId;
     }
 
@@ -120,7 +132,7 @@ public sealed class FilePromotionManager : IPromotionManager
     }
 
     private string GetModelPath(string modelName)
-        => Path.Combine(_projectRoot, "models", modelName.ToLowerInvariant());
+        => Path.Combine(_projectRoot, "models", MLoop.Core.Storage.ModelName.Require(modelName));
 
     private string GetHistoryPath(string modelName)
         => Path.Combine(GetModelPath(modelName), "promotion-history.json");

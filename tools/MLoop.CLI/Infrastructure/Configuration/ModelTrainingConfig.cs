@@ -47,6 +47,7 @@ public static class ModelTrainingConfig
             Horizon = definition.Horizon ?? 0,
             WindowSize = definition.WindowSize ?? 0,
             SeriesLength = definition.SeriesLength ?? 0,
+            AnomalyThreshold = definition.AnomalyThreshold,
             UserColumn = definition.UserColumn,
             ItemColumn = definition.ItemColumn,
             PreFeaturizer = preFeaturizer,
@@ -143,6 +144,23 @@ public static class ModelTrainingConfig
         return MLoop.Core.Training.TrainingRunner.EpochsUnused(definition.Task) is { } why
             ? $"epochs: '{definition.Task}' {why}, so it has no epoch count to set; leave --epochs / training.epochs unset."
             : null;
+    }
+
+    /// <summary>
+    /// Why the anomaly threshold in <paramref name="definition"/> cannot be honoured, or <c>null</c>. It is a score of the spectral-residual
+    /// detector, which lies above 0 and below 1, and only a <c>time-series-anomaly</c> model has one: set on another task it would be
+    /// accepted and meant nothing.
+    /// </summary>
+    public static string? AnomalyThresholdConflict(ModelDefinition definition)
+    {
+        if (definition.AnomalyThreshold is not { } threshold)
+            return null;
+        if (!MLoop.Core.Training.TrainingRunner.SupportsAnomalyThreshold(definition.Task))
+            return $"anomaly threshold: '{definition.Task}' has no detector score to set a threshold on; it is a setting of time-series-anomaly.";
+        return MLoop.Core.Training.TrainingRunner.IsValidAnomalyThreshold(threshold)
+            ? null
+            : string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                $"anomaly threshold: {threshold} is not a score threshold. It must be above 0 and below 1 (the default is {MLoop.Core.Training.TrainingRunner.DefaultAnomalyThreshold}); a lower value flags more points.");
     }
 
     /// <summary>

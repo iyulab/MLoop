@@ -62,9 +62,7 @@ public static partial class TrainCommand
         }
 
         // Resolve model name (defaults to "default")
-        var resolvedModelName = string.IsNullOrWhiteSpace(modelName)
-            ? ConfigDefaults.DefaultModelName
-            : modelName.Trim().ToLowerInvariant();
+        var resolvedModelName = MLoop.Core.Storage.ModelName.Resolve(modelName);
 
         // Load configuration
         var configLoader = new ConfigLoader(fileSystem, projectDiscovery);
@@ -115,6 +113,7 @@ public static partial class TrainCommand
         if ((ModelTrainingConfig.MaxTrialsConflict(effectiveDefinition)
              ?? ModelTrainingConfig.TestSplitConflict(effectiveDefinition)
              ?? ModelTrainingConfig.EpochsConflict(effectiveDefinition)
+             ?? ModelTrainingConfig.AnomalyThresholdConflict(effectiveDefinition)
              ?? TrainingInput.BalanceConflict(effectiveDefinition, balance)
              ?? ModelTrainingConfig.WeightConflict(effectiveDefinition, balance)) is { } weightError)
         {
@@ -344,9 +343,13 @@ public static partial class TrainCommand
         }
         if (resolvedDataFile == null)
         {
+            // The sentence every default data file says (evaluate · predict · preprocess already do): it names what mloop.yaml declared.
+            var found = ProjectDataFiles.Resolve(DatasetRole.Train, userConfig, projectRoot, datasetDiscovery);
             ErrorConsole.Error(
-                "No data file specified and datasets/train.csv not found.",
-                "Create datasets/train.csv or specify a file: mloop train <data-file>");
+                Markup.Escape(found.NotFoundMessage(DatasetRole.Train, "data file")),
+                found.DeclaredMissing is null
+                    ? "Create datasets/train.csv or specify a file: mloop train <data-file>"
+                    : "Fix data.train in mloop.yaml, create datasets/train.csv, or specify a file: mloop train <data-file>");
             return null;
         }
 
@@ -369,11 +372,47 @@ public static partial class TrainCommand
         IEstimator<ITransformer>? preFeaturizer = null;
         List<string> preFeaturizerColumns = new();
 
+        // A file with nothing in it is said to be empty before any reader gets to it: the conversion below reports its parser's state.
+        if (TrainingInput.EmptyDataFileRefusal(resolvedDataFile, effectiveDefinition.Task) is { } emptyRefusal)
+        {
+            ErrorConsole.Error(Markup.Escape(emptyRefusal), TrainingInput.EmptyDataFileGuidance);
+            return PreparedData.Exit(1);
+        }
+        if (TrainingInput.HeaderOnlyDataFileRefusal(resolvedDataFile, effectiveDefinition.Task) is { } headerOnlyRefusal)
+        {
+            ErrorConsole.Error(Markup.Escape(headerOnlyRefusal), TrainingInput.HeaderOnlyDataFileGuidance);
+            return PreparedData.Exit(1);
+        }
+
         // A data file in another format (Parquet, Excel, JSON, TSV) is read as a table from here on.
-        resolvedDataFile = await TabularDataFile.AsCsvAsync(resolvedDataFile, records);
+        var namedDataFile = resolvedDataFile;
+        try
+        {
+            resolvedDataFile = await TabularDataFile.AsCsvAsync(resolvedDataFile, records);
+        }
+        catch (EmptyTableFileException ex)
+        {
+            // A workbook or Parquet file with no cells: said as an empty CSV is, naming the user's file.
+            ErrorConsole.Error(Markup.Escape(ex.Message), TrainingInput.EmptyDataFileGuidance);
+            return PreparedData.Exit(1);
+        }
+        // A workbook or Parquet file with a header and no rows is a table with no rows now: refused as the CSV of that shape is, naming the user's file.
+        if (TrainingInput.HeaderOnlyDataFileRefusal(resolvedDataFile, effectiveDefinition.Task, reportedAs: namedDataFile) is { } convertedHeaderOnlyRefusal)
+        {
+            ErrorConsole.Error(Markup.Escape(convertedHeaderOnlyRefusal), TrainingInput.HeaderOnlyDataFileGuidance);
+            return PreparedData.Exit(1);
+        }
 
         // Flatten multi-line quoted fields early so all downstream line-by-line processing is safe
-        resolvedDataFile = CsvDataLoader.FlattenMultiLineQuotedFields(resolvedDataFile, CoreNarration.Sink);
+        try
+        {
+            resolvedDataFile = CsvDataLoader.FlattenMultiLineQuotedFields(resolvedDataFile, CoreNarration.Sink, reportedAs: namedDataFile);
+        }
+        catch (UnterminatedQuoteException ex)
+        {
+            ErrorConsole.Error(Markup.Escape(ex.Message), "Close the quote in the data file - or train on another file: mloop train <data-file>");
+            return PreparedData.Exit(1);
+        }
 
         // Auto-sampling for large datasets (--max-rows)
         if (maxRows.HasValue && maxRows.Value > 0)
@@ -421,13 +460,13 @@ public static partial class TrainCommand
             }
         }
 
-        if (TrainingInput.LabelColumnRefusal(resolvedDataFile, effectiveDefinition.Task, effectiveDefinition.Label) is { } labelRefusal)
+        if (TrainingInput.LabelColumnRefusal(resolvedDataFile, effectiveDefinition.Task, effectiveDefinition.Label, reportedAs: namedDataFile) is { } labelRefusal)
         {
             ErrorConsole.Error(labelRefusal);
             return PreparedData.Exit(1);
         }
 
-        if (TrainingInput.DuplicateColumnRefusal(resolvedDataFile, effectiveDefinition.Task) is { } duplicateRefusal)
+        if (TrainingInput.DuplicateColumnRefusal(resolvedDataFile, effectiveDefinition.Task, reportedAs: namedDataFile) is { } duplicateRefusal)
         {
             ErrorConsole.Error(duplicateRefusal, TrainingInput.DuplicateColumnGuidance);
             return PreparedData.Exit(1);
@@ -527,6 +566,13 @@ public static partial class TrainCommand
         {
             var analyzer = new DataQualityAnalyzer(new ConsoleLogger());
             var issues = await analyzer.AnalyzeAsync(resolvedDataFile, effectiveDefinition.Label);
+
+            // What training would refuse is the first thing a preflight owes: the same judgment, on the same exclusions.
+            var checkConfig = ModelTrainingConfig.From(effectiveDefinition, "preflight", resolvedDataFile, 0, 0);
+            if (TrainingRunner.ReadsFeatureColumns(checkConfig.Task)
+                && TrainingEngine.NoFeatureColumnRefusal(checkConfig, resolvedDataFile,
+                    CsvDataLoader.DetermineExcludedColumns(resolvedDataFile, checkConfig.LabelColumn, log: null, checkConfig.ClaimedColumns)) is { } noFeatures)
+                issues.Insert(0, new DataQualityIssue { Type = DataQualityIssueType.NoUsableFeatures, Severity = IssueSeverity.Critical, Description = noFeatures });
 
             TrainPresenter.DisplayDataQualityIssues(issues);
             events?.Analysis(issues);
@@ -737,6 +783,7 @@ public static partial class TrainCommand
             resolvedModelName,
             result.ExperimentId,
             primaryMetric,
+            new MLoop.Ops.Interfaces.PromotionOrigin(MLoop.Ops.Interfaces.PromotionVia.Cli),
             CancellationToken.None);
 
         // Resolve class count for quality gate threshold

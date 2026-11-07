@@ -125,6 +125,13 @@ public partial class TrainingRunner
         return rows;
     }
 
+    /// <summary>
+    /// Held-out rows scored through a model, held in memory when they fit (<see cref="RowCache.WhenItFits"/>), for a step that reads them more than
+    /// once. A scored view is lazy: each read scores the rows again through the model — measured, four reads of 200,000 rows through a model of
+    /// 4,607 trees cost 43 s. A step that reads them once, or not at all, does not call this: filling the copy is a scoring too.
+    /// </summary>
+    private IDataView ScoredOnce(IDataView scored) => RowCache.WhenItFits(_mlContext, scored, RowsIn(scored));
+
     public static bool IsClassification(string? task) =>
         Models.TaskTypes.Canonical(task)
             is "binary-classification"
@@ -179,6 +186,15 @@ public partial class TrainingRunner
     {
         return Models.TaskTypes.Canonical(task) is "forecasting" or "time-series-anomaly";
     }
+
+    /// <summary>The score above which a time-series anomaly model flags a point when the definition names none (ML.NET's default for the spectral-residual detector).</summary>
+    public const double DefaultAnomalyThreshold = 0.3;
+
+    /// <summary>Whether <paramref name="task"/> has a detector score a threshold can be set on: only <c>time-series-anomaly</c> does.</summary>
+    public static bool SupportsAnomalyThreshold(string? task) => Models.TaskTypes.Canonical(task) is "time-series-anomaly";
+
+    /// <summary>Whether <paramref name="threshold"/> can be a spectral-residual score threshold: the score lies between 0 and 1, so a value outside flags every point or none.</summary>
+    public static bool IsValidAnomalyThreshold(double threshold) => threshold is > 0 and < 1;
 
     /// <summary>
     /// Whether <paramref name="task"/>'s model reads the table's other columns as features. A series model
@@ -290,7 +306,8 @@ public partial class TrainingRunner
             trainSet = loader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve, featureExclusions, config.LabelKind);
             // Grab the training file's merge mapping before the test-file load overwrites it
             mergedColumnGroups = loader.GetMergedColumnGroups();
-            testSet = loader.LoadData(config.TestDataFile, config.LabelColumn, config.Task, preserve, featureExclusions, config.LabelKind);
+            // Read with the training file's layout: inferred from each file, a column of numbers with one word in it is numbers in one and text in the other.
+            testSet = loader.LoadDataSharingLayout(config.TestDataFile, config.LabelColumn, config.Task, preserve, featureExclusions, config.LabelKind);
         }
         else if (isTimeSeriesTask)
         {
@@ -307,7 +324,11 @@ public partial class TrainingRunner
             // featurization by construction. The exclusion set still flows through so the saved
             // schema predict replays describes exactly what was fitted.
             var dataView = loader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve, config.FeatureExclusions, config.LabelKind);
-            (trainSet, testSet) = loader.SplitData(dataView, config.TestSplit);
+            // A ranking is judged per query, so a query is held out whole: a split by row leaves the held-out documents of a
+            // query whose other documents were trained on, and the reported ranking score is for queries the model has seen.
+            (trainSet, testSet) = GroupedSplit.Applies(config.Task, config.GroupColumn, dataView)
+                ? GroupedSplit.Of(_mlContext, dataView, config.GroupColumn!, config.TestSplit)
+                : loader.SplitData(dataView, config.TestSplit);
             mergedColumnGroups = loader.GetMergedColumnGroups();
         }
 
@@ -653,7 +674,7 @@ public partial class TrainingRunner
                         .Select(i => new OutOfFoldScore { Label = outOfFold.Label[i], Score = outOfFold.Score[i] }))));
             if (outOfFold is null)
                 _logger.Warning("No out-of-fold answers were kept for the chosen trial; its probability calibrator was fitted on the training rows, which the model has seen — its probabilities are likelier to be over-confident than a calibrator fitted out of fold.");
-            return (model, ScoreBinaryWithCalibrationError(model.Transform(testSet), config.LabelColumn), null, null);
+            return (model, ScoreBinaryWithCalibrationError(ScoredOnce(model.Transform(testSet)), config.LabelColumn), null, null);
         }
 
         var calibration = outOfFold?.Probability is { } probability
@@ -662,9 +683,9 @@ public partial class TrainingRunner
                 "platt", OutOfFoldSource, string.IsNullOrEmpty(config.WeightColumn) ? null : config.WeightColumn, DateTimeOffset.UtcNow)
             : null;
         if (calibration is null)
-            return (model, ScoreBinaryWithCalibrationError(predictions, config.LabelColumn), null, null);
+            return (model, ScoreBinaryWithCalibrationError(ScoredOnce(predictions), config.LabelColumn), null, null);
 
-        var calibrated = calibration.Apply(_mlContext, model).Transform(testSet);
+        var calibrated = ScoredOnce(calibration.Apply(_mlContext, model).Transform(testSet));
         var metrics = ScoreBinaryWithCalibrationError(calibrated, config.LabelColumn);
         // ML.NET's binary evaluator re-derives each answer from the raw score at 0; the calibrated model answers at
         // its own 0.5, so the metrics that depend on the answer are counted from the answers it gives.
@@ -733,6 +754,8 @@ public partial class TrainingRunner
 
         if (FirstTrialOverrun(search.Trials, config.TimeLimitSeconds * (UsesEnsemble(config) ? EnsembleBudget.SearchShare : 1)) is { } overrun)
             _logger.Warning(overrun);
+        if (SampledSearchNotice(search.Sampling, config.TimeLimitSeconds) is { } sampled)
+            _logger.Warning(sampled);
 
         // The model is the smallest within one standard error of the top score (TrialRunner); when that is not the
         // top-scoring trial, say so here and mark it in the trial records, where the leaderboard ranks by score.
@@ -787,6 +810,21 @@ public partial class TrainingRunner
            || string.Equals(task?.Trim(), "regression", StringComparison.OrdinalIgnoreCase);
 
     // A blend is made for the two tasks it was measured on; another task ignores the request.
+    /// <summary>
+    /// The sentence to warn with when a large table was searched on a sample of its rows (<see cref="SearchSample"/>), or null. Saying so
+    /// matters: the trials' scores are on the sample, and a model fitted on the sample is not the model all the rows would give.
+    /// </summary>
+    internal static string? SampledSearchNotice(SamplingOutcome? sampling, double timeLimitSeconds)
+    {
+        if (sampling is not { Sampled: true } s)
+            return null;
+        var fitted = s.RefitRows == s.Rows
+            ? "the chosen settings were then fitted on all of them"
+            : $"the model was fitted on the same {s.RefitRows:N0} rows too, because a fit on all of them would take more than half of the time budget";
+        return $"The table has {s.Rows:N0} rows, and one trial on all of them would not leave the {timeLimitSeconds:0} s time budget room to search, " +
+               $"so the search ran on a stratified sample of {s.SearchRows:N0} rows; {fitted}. A longer --time lets the search use more of the rows.";
+    }
+
     /// <summary>
     /// The sentence to warn with when the first trial alone took longer than the search's whole time budget, or null. A search
     /// always finishes its first trial — it returns a model — so on a table where one trial costs more than the budget the run takes
@@ -1378,8 +1416,8 @@ public partial class TrainingRunner
                 OutOfFoldSource, string.IsNullOrEmpty(config.WeightColumn) ? null : config.WeightColumn, DateTimeOffset.UtcNow)
             : null;
         return calibration is null
-            ? (model, ScoreMulticlass(predictions, config.LabelColumn), null, null)
-            : (model, ScoreMulticlass(calibration.Apply(_mlContext, model).Transform(testSet), config.LabelColumn), null, calibration);
+            ? (model, ScoreMulticlass(ScoredOnce(predictions), config.LabelColumn), null, null)
+            : (model, ScoreMulticlass(ScoredOnce(calibration.Apply(_mlContext, model).Transform(testSet)), config.LabelColumn), null, calibration);
     }
 
     private Task<TrainedModel> RunRegressionAsync(
@@ -1402,6 +1440,7 @@ public partial class TrainingRunner
     /// </summary>
     private (Dictionary<string, double> Metrics, ITransformer? ResidualModel) FinishRegression(IDataView predictions, string labelColumn)
     {
+        predictions = ScoredOnce(predictions);   // read by the metrics, the interval widths and the σ-model's every step
         var metricsDict = ScoreRegression(predictions, labelColumn);
 
         // A test partition too small to score (none, or one row): the evaluator still answers, with zeros or an r² of 1e7.
@@ -1776,9 +1815,11 @@ public partial class TrainingRunner
                     var model = fullPipeline.Fit(trainSet);
                     var predictions = model.Transform(testSet);
 
-                    var rankMetrics = _mlContext.Ranking.Evaluate(predictions,
+                    // The test partition is made of held-out queries; the fitted "GroupId" key does not know them (RankingQueries).
+                    var (queryScored, queryKey) = RankingQueries.Of(_mlContext, predictions, config.GroupColumn);
+                    var rankMetrics = _mlContext.Ranking.Evaluate(queryScored,
                         labelColumnName: config.LabelColumn,
-                        rowGroupColumnName: "GroupId");
+                        rowGroupColumnName: queryKey);
 
                     var ndcg = rankMetrics.NormalizedDiscountedCumulativeGains;
                     var dcg = rankMetrics.DiscountedCumulativeGains;
@@ -1870,16 +1911,19 @@ public partial class TrainingRunner
 
             var horizon = config.Horizon;
             var seriesLength = config.SeriesLength > 0 ? config.SeriesLength : totalRows;
-            var windowSize = config.WindowSize > 0 ? config.WindowSize : Math.Max(2, seriesLength / 4);
+            var windowSize = config.WindowSize > 0 ? config.WindowSize : ForecastingWindow.Default(seriesLength);
             var trainSize = totalRows - horizon; // Hold out last `horizon` points for evaluation
 
-            if (trainSize <= windowSize)
+            if (totalRows < ForecastingWindow.MinimumRows(windowSize, horizon))
                 throw new InvalidOperationException(
-                    $"Insufficient data: {totalRows} rows with horizon={horizon}, need at least {windowSize + horizon + 1} rows.");
+                    $"Insufficient data: {totalRows} rows with horizon={horizon} and window={windowSize}; the training rows (all but the held-out horizon) must be more than twice the window, so this needs at least {ForecastingWindow.MinimumRows(windowSize, horizon)} rows — or a smaller window_size.");
 
             _logger.Info($"Forecasting: series='{valueColumn}', {totalRows} rows, horizon={horizon}, window={windowSize}, seriesLength={seriesLength}");
 
-            // Build SSA forecasting pipeline
+            // Build SSA forecasting pipeline. The stabilization is off: it finds the roots of the recurrence's polynomial
+            // (as many as the window is long) and moves those outside the unit circle in, and for a series with a trend
+            // those roots crowd at one, where the root finding is wrong by an amount that follows the noise. See
+            // ForecastingStabilizationTests for the measurement.
             var pipeline = _mlContext.Forecasting.ForecastBySsa(
                 outputColumnName: ForecastOutput.ForecastColumnName,
                 inputColumnName: valueColumn,
@@ -1887,6 +1931,7 @@ public partial class TrainingRunner
                 seriesLength: seriesLength,
                 trainSize: trainSize,
                 horizon: horizon,
+                shouldStabilize: false,
                 confidenceLowerBoundColumn: ForecastOutput.LowerBoundColumnName,
                 confidenceUpperBoundColumn: ForecastOutput.UpperBoundColumnName,
                 confidenceLevel: (float)ForecastOutput.ConfidenceLevel);
@@ -1902,6 +1947,7 @@ public partial class TrainingRunner
 
             // Evaluate: extract actual holdout values and compare with forecasts
             var metricsDict = new Dictionary<string, double>();
+            ForecastBandBacktest.Forecast? ownForecast = null;
 
             // Get the actual values from the series (last `horizon` values are holdout)
             var actualValues = new List<float>();
@@ -1925,8 +1971,15 @@ public partial class TrainingRunner
                 if (forecastCol.HasValue)
                 {
                     // ForecastedValues is a VBuffer<float> containing the horizon-length forecast
-                    using var forecastCursor = predictions.GetRowCursor(new[] { forecastCol.Value });
+                    var lowerBoundCol = predictions.Schema.GetColumnOrNull(ForecastOutput.LowerBoundColumnName);
+                    var upperBoundCol = predictions.Schema.GetColumnOrNull(ForecastOutput.UpperBoundColumnName);
+                    var readColumns = new List<DataViewSchema.Column> { forecastCol.Value };
+                    if (lowerBoundCol.HasValue) readColumns.Add(lowerBoundCol.Value);
+                    if (upperBoundCol.HasValue) readColumns.Add(upperBoundCol.Value);
+                    using var forecastCursor = predictions.GetRowCursor(readColumns);
                     var forecastGetter = forecastCursor.GetGetter<VBuffer<float>>(forecastCol.Value);
+                    var lowerGetter = lowerBoundCol.HasValue ? forecastCursor.GetGetter<VBuffer<float>>(lowerBoundCol.Value) : null;
+                    var upperGetter = upperBoundCol.HasValue ? forecastCursor.GetGetter<VBuffer<float>>(upperBoundCol.Value) : null;
 
                     // The forecast made at the last training row is the one that looks at the held-out points. The forecast
                     // of the file's last row is of the points beyond the file — scored against the held-out points it reported a phase error as a model error (a noiseless
@@ -1938,14 +1991,25 @@ public partial class TrainingRunner
                     // Stopping at the held-out stretch moved a saved model's forecast by the rows left unread.
                     VBuffer<float> forecastBuffer = default;
                     VBuffer<float> heldOutForecast = default;
+                    VBuffer<float> lowerBuffer = default, upperBuffer = default;
+                    VBuffer<float> heldOutLower = default, heldOutUpper = default;
                     var forecastRow = 0;
                     while (forecastCursor.MoveNext())
                     {
                         forecastGetter(ref forecastBuffer);
+                        lowerGetter?.Invoke(ref lowerBuffer);
+                        upperGetter?.Invoke(ref upperBuffer);
                         if (++forecastRow == trainSize)
+                        {
                             forecastBuffer.CopyTo(ref heldOutForecast);
+                            lowerBuffer.CopyTo(ref heldOutLower);
+                            upperBuffer.CopyTo(ref heldOutUpper);
+                        }
                     }
                     forecastBuffer = heldOutForecast;
+                    if (lowerGetter != null && upperGetter != null)
+                        ownForecast = new ForecastBandBacktest.Forecast(
+                            heldOutForecast.DenseValues().ToArray(), heldOutLower.DenseValues().ToArray(), heldOutUpper.DenseValues().ToArray());
 
                     var forecastedValues = forecastBuffer.DenseValues().ToArray();
                     var holdoutActual = actualValues.Skip(trainSize).Take(horizon).ToArray();
@@ -1989,6 +2053,31 @@ public partial class TrainingRunner
             metricsDict["series_length"] = seriesLength;
             metricsDict["train_size"] = trainSize;
 
+            // The band SSA gives is narrower than the error on points it has not seen: fit its width on forecasts of such points.
+            // A failure here costs the model its calibrated band, never the model.
+            ForecastBandCalibration? forecastBand = null;
+            try
+            {
+                if (actualValues.Count >= trainSize + horizon)
+                {
+                    forecastBand = TimeSeriesNativeSupport.Guard(() => ForecastBandBacktest.Calibrate(
+                        _mlContext, actualValues, trainSize, horizon, windowSize, config.SeriesLength, ownForecast, cancellationToken));
+                    if (forecastBand is not null)
+                    {
+                        // Recorded with the run's metrics, so a model's list entry and report say whether its band is calibrated.
+                        metricsDict["band_scale"] = forecastBand.Scale;
+                        metricsDict["band_scores"] = forecastBand.Scores;
+                    }
+                    _logger.Info(forecastBand is null
+                        ? "Forecast band: too few scored points to calibrate; the native band stands."
+                        : $"Forecast band: scaled by {forecastBand.Scale:F3} to hold {forecastBand.Level:P0} ({forecastBand.Scores} forecasts of {forecastBand.Origins} origins).");
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.Info($"Forecast band not calibrated: {ex.Message}");
+            }
+
             return new TrainedModel
             {
                 Trainer = forecastTrainer,
@@ -1996,7 +2085,8 @@ public partial class TrainingRunner
                 Metrics = metricsDict,
                 RowCount = totalRows,
                 Trials = trialChannel.Records,
-                RankingMetric = trialChannel.RankingMetric
+                RankingMetric = trialChannel.RankingMetric,
+                ForecastBand = forecastBand
             };
         }, cancellationToken).ConfigureAwait(false);
     }
@@ -2025,15 +2115,22 @@ public partial class TrainingRunner
                 throw new InvalidOperationException($"Time series anomaly detection requires at least 12 data points (got {totalRows}).");
 
             _logger.Info($"Time series anomaly: series='{valueColumn}', {totalRows} rows");
+            if (config.AnomalyThreshold is { } requested && !IsValidAnomalyThreshold(requested))
+                throw new InvalidOperationException(string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"Anomaly threshold {requested} is not a score threshold: it must be above 0 and below 1."));
 
-            // Try multiple detectors: SrCnn (best), then SSA Spike, then SSA ChangePoint
-            var detectors = new List<(string Name, Func<IEstimator<ITransformer>> Factory)>();
+            // A fallback chain, not a search: SR-CNN, and the SSA spike detector only where SR-CNN could not be fitted. There is no
+            // label to rank detectors by, and a detector's alert rate says how often it fires, not how well — so the first one that
+            // fits is the model, and the later ones are not fitted (nor recorded as trials of a search that never compared them).
+            var detectors = new List<(TrainerDescriptor Detector, Func<IEstimator<ITransformer>> Factory)>();
 
             // SR-CNN: Spectral Residual based — best general-purpose detector
             // Every window derives from the row count together — see
             // SrCnnWindowSizes for why the judgement window cannot be a literal.
             var srCnn = SrCnnWindowSizes.ForSeries(totalRows);
-            detectors.Add(("SrCnnAnomaly", () =>
+            // The descriptor carries the threshold the model was fitted with, so the trial record says which one an experiment used.
+            var threshold = config.AnomalyThreshold ?? DefaultAnomalyThreshold;
+            detectors.Add((TrainerDescriptor.Of("SrCnnAnomaly", ("threshold", threshold)), () =>
                 _mlContext.Transforms.DetectAnomalyBySrCnn(
                     outputColumnName: TimeSeriesAnomalyOutput.PredictionColumnName,
                     inputColumnName: valueColumn,
@@ -2042,13 +2139,13 @@ public partial class TrainingRunner
                     lookaheadWindowSize: srCnn.LookaheadWindowSize,
                     averagingWindowSize: srCnn.AveragingWindowSize,
                     judgementWindowSize: srCnn.JudgementWindowSize,
-                    threshold: 0.3)));
+                    threshold: threshold)));
 
             // SSA Spike Detector — trainingWindowSize must be > 2 * seasonalityWindowSize
             var ssaWindowSize = Math.Max(2, Math.Min(totalRows / 8, 50));
             var ssaPValueSize = Math.Max(2, ssaWindowSize / 2);
             var ssaTrainingSize = Math.Max(ssaWindowSize * 2 + 1, Math.Min(totalRows, 100));
-            detectors.Add(("SsaSpikeDetector", () =>
+            detectors.Add((TrainerDescriptor.Of("SsaSpikeDetector", ("confidence", 95.0)), () =>
                 _mlContext.Transforms.DetectSpikeBySsa(
                     outputColumnName: TimeSeriesAnomalyOutput.PredictionColumnName,
                     inputColumnName: valueColumn,
@@ -2058,16 +2155,16 @@ public partial class TrainingRunner
                     seasonalityWindowSize: ssaWindowSize)));
 
             ITransformer? bestModel = null;
-            string bestDetectorName = "";
+            TrainerDescriptor? bestDetector = null;
             Dictionary<string, double>? bestMetrics = null;
-            long bestAnomalyCount = -1;
             Exception? missingNative = null;
             var trialChannel = CreateTrialChannel(progress);
 
             for (int i = 0; i < detectors.Count; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var (name, factory) = detectors[i];
+                var (detector, factory) = detectors[i];
+                var name = detector.Name;
 
                 try
                 {
@@ -2106,16 +2203,12 @@ public partial class TrainingRunner
                     };
 
                     trialChannel.ReportCompleted(
-                        TrainerDescriptor.Of(name), "detection_rate", detectionRate, metricsDict);
+                        detector, "detection_rate", detectionRate, metricsDict);
 
-                    // Pick the first detector that produces reasonable results
-                    if (bestModel == null)
-                    {
-                        bestModel = model;
-                        bestDetectorName = name;
-                        bestMetrics = metricsDict;
-                        bestAnomalyCount = anomalyCount;
-                    }
+                    bestModel = model;
+                    bestDetector = detector;
+                    bestMetrics = metricsDict;
+                    break;
                 }
                 catch (Exception ex)
                 {
@@ -2140,7 +2233,7 @@ public partial class TrainingRunner
 
             return new TrainedModel
             {
-                Trainer = TrainerDescriptor.Of(bestDetectorName),
+                Trainer = bestDetector!,
                 Model = bestModel,
                 Metrics = bestMetrics ?? new Dictionary<string, double>(),
                 RowCount = totalRows,
@@ -2514,7 +2607,10 @@ public class ForecastOutput
     public const string ForecastColumnName = "ForecastedValues";
     public const string LowerBoundColumnName = "LowerBound";
     public const string UpperBoundColumnName = "UpperBound";
-    /// <summary>Coverage level of the SSA native prediction interval (confidenceLevel at train time).</summary>
+    /// <summary>
+    /// The level the prediction band is asked for at train time, and the level its width is fitted to
+    /// (<see cref="MLoop.Core.Models.ForecastBandCalibration"/> scales the native band to hold it).
+    /// </summary>
     public const double ConfidenceLevel = 0.95;
 
     public float[] ForecastedValues { get; set; } = [];
@@ -2576,6 +2672,13 @@ public record TrainedModel
     /// where none was fitted. <see cref="Metrics"/> are the calibrated model's.
     /// </summary>
     public ProbabilityCalibration? Calibration { get; init; }
+
+    /// <summary>
+    /// A forecasting model's band width, fitted on forecasts of points the recipe had not seen — saved beside the model
+    /// (<see cref="ForecastBandCalibration.WriteBeside"/>), where the one place that replays a forecast applies it. Null where
+    /// the series was too short to score enough points (the native band stands) and for every other task.
+    /// </summary>
+    public ForecastBandCalibration? ForecastBand { get; init; }
 
     /// <summary>
     /// What a run asked for a blend (<see cref="TrainingConfig.Ensemble"/>) came to — the blend it answers with, or why the single

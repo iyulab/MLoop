@@ -26,6 +26,9 @@ public class CsvDataLoader : DataProviderBase
     internal static readonly Action<string> NoLog = _ => { };
 
     private IReadOnlyDictionary<string, string[]>? _mergedColumnGroups;
+    // The layout the last load read its file with, and the columns it read - what the next load shares when it is asked to.
+    private (TextLoader.Options Options, string[] Headers)? _lastLayout;
+    private bool _shareLayout;
 
     public CsvDataLoader(MLContext mlContext, Action<string>? log = null)
         : base(mlContext, log)
@@ -39,6 +42,21 @@ public class CsvDataLoader : DataProviderBase
     /// loses the source names, so schema capture recovers them here.
     /// </summary>
     public override IReadOnlyDictionary<string, string[]>? GetMergedColumnGroups() => _mergedColumnGroups;
+
+    public override IDataView LoadDataSharingLayout(string filePath, string? labelColumn = null, string? taskType = null,
+        IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null,
+        DataKind? labelKind = null)
+    {
+        _shareLayout = _lastLayout is not null;
+        try
+        {
+            return LoadData(filePath, labelColumn, taskType, preserveColumns, featureExclusions, labelKind);
+        }
+        finally
+        {
+            _shareLayout = false;
+        }
+    }
 
     public override IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null,
         IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null,
@@ -118,26 +136,34 @@ public class CsvDataLoader : DataProviderBase
         // A file of one column of numbers (a univariate series) is read by the layout authority like every other file.
         var csvHeaders = ReadCsvHeaders(mlnetCompatiblePath);
 
+        // The second file of a pre-split run is read with the layout of the first (LoadDataSharingLayout) - when it has the same columns.
+        var sharedLayout = _shareLayout && _lastLayout is { } last && last.Headers.SequenceEqual(csvHeaders, StringComparer.Ordinal)
+            ? last.Options
+            : null;
+
         // Infer columns from the file
-        TextLoader.Options loaderOptions;
-        try
+        TextLoader.Options loaderOptions = sharedLayout!;
+        if (sharedLayout is null)
         {
-            // A task without a label (clustering, anomaly detection) gets a layout without one, so every
-            // numeric column is in the Features vector — the vector the prediction path rebuilds from the
-            // saved schema. Standing in a column as the label set that column apart, and the trained
-            // vector no longer matched the one a prediction was made from.
-            loaderOptions = ColumnLayoutInference.Infer(_mlContext, mlnetCompatiblePath,
-                string.IsNullOrEmpty(labelColumn) ? null : labelColumn).Options;
-        }
-        catch (ColumnLayoutException ex) when (ex.Message.Contains("split") || ex.Message.Contains("consistent columns"))
-        {
-            throw new InvalidOperationException(
-                $"Failed to parse CSV file: {ex.Message}\n\n" +
-                "If your data contains commas within fields, ensure they are properly quoted (RFC 4180):\n" +
-                "  WRONG:  app-18,Data hash table of /run/log/journal, suggesting rotation.\n" +
-                "  RIGHT:  app-18,\"Data hash table of /run/log/journal, suggesting rotation.\"\n\n" +
-                "Fields containing commas, double quotes, or newlines must be wrapped in double quotes.\n" +
-                "Double quotes inside a field must be escaped as \"\" (two double quotes).", ex);
+            try
+            {
+                // A task without a label (clustering, anomaly detection) gets a layout without one, so every
+                // numeric column is in the Features vector — the vector the prediction path rebuilds from the
+                // saved schema. Standing in a column as the label set that column apart, and the trained
+                // vector no longer matched the one a prediction was made from.
+                loaderOptions = ColumnLayoutInference.Infer(_mlContext, mlnetCompatiblePath,
+                    string.IsNullOrEmpty(labelColumn) ? null : labelColumn).Options;
+            }
+            catch (ColumnLayoutException ex) when (ex.Message.Contains("split") || ex.Message.Contains("consistent columns"))
+            {
+                throw new InvalidOperationException(
+                    $"Failed to parse CSV file: {ex.Message}\n\n" +
+                    "If your data contains commas within fields, ensure they are properly quoted (RFC 4180):\n" +
+                    "  WRONG:  app-18,Data hash table of /run/log/journal, suggesting rotation.\n" +
+                    "  RIGHT:  app-18,\"Data hash table of /run/log/journal, suggesting rotation.\"\n\n" +
+                    "Fields containing commas, double quotes, or newlines must be wrapped in double quotes.\n" +
+                    "Double quotes inside a field must be escaped as \"\" (two double quotes).", ex);
+            }
         }
 
         // Fix InferColumns misdetecting multiclass label as Boolean.
@@ -156,7 +182,7 @@ public class CsvDataLoader : DataProviderBase
                             || string.Equals(taskType, "Regression", StringComparison.OrdinalIgnoreCase)
                             || (taskType is not null && Training.NumericLabelCheck.HasNumericLabel(taskType));
 
-        if (!isBinaryTask && !isRegressionTask && !string.IsNullOrEmpty(labelColumn) && loaderOptions.Columns != null)
+        if (sharedLayout is null && !isBinaryTask && !isRegressionTask && !string.IsNullOrEmpty(labelColumn) && loaderOptions.Columns != null)
         {
             foreach (var col in loaderOptions.Columns)
             {
@@ -171,7 +197,7 @@ public class CsvDataLoader : DataProviderBase
 
         // For regression, override Boolean label to Single.
         // InferColumns may detect 0/1 numeric labels as Boolean, but regression needs Single.
-        if (isRegressionTask && !string.IsNullOrEmpty(labelColumn) && loaderOptions.Columns != null)
+        if (sharedLayout is null && isRegressionTask && !string.IsNullOrEmpty(labelColumn) && loaderOptions.Columns != null)
         {
             foreach (var col in loaderOptions.Columns)
             {
@@ -186,7 +212,7 @@ public class CsvDataLoader : DataProviderBase
 
         // The run's decision overrides every inference above: the partitions of one split type the
         // label alike, as the saved schema recorded it (LabelKinds).
-        if (labelKind is { } decidedLabelKind && !string.IsNullOrEmpty(labelColumn) && loaderOptions.Columns != null)
+        if (sharedLayout is null && labelKind is { } decidedLabelKind && !string.IsNullOrEmpty(labelColumn) && loaderOptions.Columns != null)
         {
             foreach (var col in loaderOptions.Columns)
             {
@@ -213,7 +239,9 @@ public class CsvDataLoader : DataProviderBase
         // name left to be found by.
         if (TaskTypes.Canonical(taskType) == "question-answering")
             preserveColumns = csvHeaders.Concat(preserveColumns ?? []);
-        ApplyColumnPreservation(loaderOptions, mlnetCompatiblePath, preserveColumns);
+        if (sharedLayout is null)
+            ApplyColumnPreservation(loaderOptions, mlnetCompatiblePath, preserveColumns);
+        _lastLayout = (loaderOptions, csvHeaders);
 
         // Record which source columns each merged range spans — the loaded IDataView
         // carries no slot names, so this mapping is what lets schema capture expand the
@@ -299,6 +327,28 @@ public class CsvDataLoader : DataProviderBase
         return headers.Count == 0
             ? []
             : declared.Where(name => !headers.Contains(name.Trim())).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+    }
+
+    /// <summary>
+    /// The columns of the CSV file at <paramref name="filePath"/> a model could still read as features once the
+    /// label, the columns the exclusion rules removed (<paramref name="excluded"/>) and the columns whose role is
+    /// not a feature (<paramref name="otherNonFeatures"/>: an <c>ignore</c> override, the weight, a group / user /
+    /// item column) are set aside. Empty when the file's header cannot be read.
+    /// </summary>
+    /// <remarks>
+    /// A table that reaches the trainer search with none left cannot train: every trial fails the same way. A
+    /// caller that finds <paramref name="excluded"/> non-empty and this empty can say so before the first trial,
+    /// naming what was removed, instead of letting the search discover it.
+    /// </remarks>
+    public static IReadOnlyList<string> FeatureColumnsLeft(
+        string filePath, string? labelColumn, IEnumerable<string> excluded, IEnumerable<string> otherNonFeatures)
+    {
+        var apart = new HashSet<string>(excluded.Concat(otherNonFeatures).Select(n => n.Trim()), StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrEmpty(labelColumn)) apart.Add(labelColumn.Trim());
+        return ReadCsvHeaders(filePath)
+            .Select(h => h.Trim())
+            .Where(h => h.Length > 0 && !apart.Contains(h))
+            .ToList();
     }
 
     /// <summary>
@@ -1752,32 +1802,49 @@ public class CsvDataLoader : DataProviderBase
     /// Flattens multi-line quoted fields in CSV data by replacing newlines with spaces.
     /// ML.NET's TextLoader treats physical newlines as record boundaries even inside
     /// RFC 4180 quoted fields. This normalizes such fields to single-line representation.
-    /// Uses a quick-check scan: if no unbalanced quotes found, returns the original path. The file is read in the encoding it is
+    /// Uses a quick-check scan: if no line ends inside a quoted field, returns the original path. The file is read in the encoding it is
     /// written in (a CP949 export keeps its Korean) and the copy is UTF-8.
     /// </summary>
-    public static string FlattenMultiLineQuotedFields(string filePath, Action<string>? log = null)
+    /// <remarks>
+    /// A quote opens a quoted field only where a field starts - at the start of a record or right after a delimiter - as the readers
+    /// that follow (CsvHelper, ML.NET's TextLoader) take it; a quote inside an unquoted field (<c>12" pipe</c>) is part of the text.
+    /// Counting every quote took such a text for the start of a quoted field and joined the rest of the file into one record.
+    /// </remarks>
+    /// <param name="filePath">The file to read - possibly a converted or composed copy of what the user gave.</param>
+    /// <param name="log">Where the narration goes.</param>
+    /// <param name="reportedAs">The file the user gave when <paramref name="filePath"/> is a copy made of it, for the refusal's message.</param>
+    /// <exception cref="UnterminatedQuoteException">A quoted field opens and the file ends inside it.</exception>
+    public static string FlattenMultiLineQuotedFields(string filePath, Action<string>? log = null, string? reportedAs = null)
     {
         var write = log ?? NoLog;
 
-        // Quick check: scan for any line with unbalanced quotes.
-        // If every physical line has balanced quotes, there are no multiline quoted fields.
+        // Quick check: does any physical line end inside a quoted field? If none does, there are no multiline quoted fields.
+        // A quote still open at the end of the file is a field that never closes: refused, not joined into one record.
         bool hasMultiLine = false;
         using (var reader = EncodingDetector.OpenReader(filePath))
         {
             string? line;
+            var inQuote = false;
+            var fieldStart = true;
+            var delimiter = FileDelimiter(filePath);
+            long lineNumber = 0, recordStartLine = 1;
             while ((line = reader.ReadLine()) != null)
             {
-                int quoteCount = 0;
-                foreach (char c in line)
+                lineNumber++;
+                if (!inQuote)
                 {
-                    if (c == '"') quoteCount++;
+                    recordStartLine = lineNumber;
+                    fieldStart = true;
                 }
-                if (quoteCount % 2 != 0)
-                {
+                AdvanceQuoteState(line, delimiter, ref inQuote, ref fieldStart, lineNumber == 1);
+                if (inQuote)
                     hasMultiLine = true;
-                    break;
-                }
             }
+            if (inQuote)
+                throw new UnterminatedQuoteException(
+                    $"{Path.GetFileName(reportedAs ?? filePath)}: the quoted field that opens on line {recordStartLine} is never closed, so it takes in " +
+                    $"the {lineNumber - recordStartLine} line(s) after it, to the end of the file. Close the quote - a quote that is part of the text " +
+                    "is written as \"\" inside a quoted field.");
         }
 
         if (!hasMultiLine) return filePath;
@@ -1791,6 +1858,9 @@ public class CsvDataLoader : DataProviderBase
         {
             var lineBuilder = new System.Text.StringBuilder();
             bool inQuote = false;
+            bool fieldStart = true;
+            bool firstLine = true;
+            var delimiter = FileDelimiter(filePath);
 
             string? physicalLine;
             while ((physicalLine = reader.ReadLine()) != null)
@@ -1808,22 +1878,10 @@ public class CsvDataLoader : DataProviderBase
                 }
 
                 // Track quote state across this physical line
-                for (int i = 0; i < physicalLine.Length; i++)
-                {
-                    char c = physicalLine[i];
-                    if (c == '"')
-                    {
-                        // Handle escaped quotes ("") — skip consecutive pair
-                        if (inQuote && i + 1 < physicalLine.Length && physicalLine[i + 1] == '"')
-                        {
-                            i++;
-                        }
-                        else
-                        {
-                            inQuote = !inQuote;
-                        }
-                    }
-                }
+                if (!inQuote)
+                    fieldStart = true;
+                AdvanceQuoteState(physicalLine, delimiter, ref inQuote, ref fieldStart, firstLine);
+                firstLine = false;
 
                 if (!inQuote)
                 {
@@ -1835,15 +1893,68 @@ public class CsvDataLoader : DataProviderBase
                 }
             }
 
-            // Handle unterminated quote at EOF — write whatever we have
-            if (inQuote && lineBuilder.Length > 0)
-            {
-                writer.WriteLine(lineBuilder.ToString());
-            }
+            // (A quote still open at the end of the file was refused above.)
         }
 
         write($"[Info] Flattened {flattenedCount} multi-line quoted field(s) in CSV data: {Path.GetFileName(filePath)}");
         return tempPath;
+    }
+
+    /// <summary>
+    /// The delimiter a file separates its fields with, read from its first lines (a header may itself span lines): whichever of comma,
+    /// semicolon, tab and bar they hold most of (a tie is the comma), or none for lines that hold none of them - a file of one column,
+    /// where a field starts only at the start of a line.
+    /// </summary>
+    private static char FileDelimiter(string filePath)
+    {
+        var counts = new Dictionary<char, int> { [','] = 0, [';'] = 0, ['\t'] = 0, ['|'] = 0 };
+        using var reader = EncodingDetector.OpenReader(filePath);
+        for (var i = 0; i < 5 && reader.ReadLine() is { } line; i++)
+        {
+            foreach (var c in line)
+            {
+                if (counts.ContainsKey(c))
+                    counts[c]++;
+            }
+        }
+        var best = counts.MaxBy(kv => kv.Value);
+        return best.Value > 0 ? best.Key : '\0';
+    }
+
+    /// <summary>
+    /// Moves the quote state over one physical line. A quote opens a quoted field only at the start of a field (white space in front
+    /// of it is skipped, as a reader that trims does); inside a quoted field a doubled quote is a quote of the text and a single one
+    /// closes it, after which the rest of the field is plain text.
+    /// </summary>
+    private static void AdvanceQuoteState(string line, char delimiter, ref bool inQuote, ref bool fieldStart, bool firstLine)
+    {
+        for (var i = 0; i < line.Length; i++)
+        {
+            var c = line[i];
+            if (inQuote)
+            {
+                if (c != '"')
+                    continue;
+                if (i + 1 < line.Length && line[i + 1] == '"')
+                    i++; // an escaped quote
+                else
+                {
+                    inQuote = false;
+                    fieldStart = false;
+                }
+                continue;
+            }
+            if (c == '"' && fieldStart)
+            {
+                inQuote = true;
+                continue;
+            }
+            if (c == '\uFEFF' && firstLine && i == 0)
+                continue; // a byte-order mark is not part of the first field
+            if (c is ' ' or '\t' && fieldStart)
+                continue; // leading white space: the field has not started yet
+            fieldStart = c == delimiter;
+        }
     }
 
     /// <summary>
@@ -1864,9 +1975,13 @@ public class CsvDataLoader : DataProviderBase
 
         if (string.IsNullOrEmpty(firstLine)) return filePath;
 
-        // Count quotes - if even number, header is single-line (no unterminated quoted field)
-        int quoteCount = firstLine.Count(c => c == '"');
-        if (quoteCount % 2 == 0)
+        // Does the first line end inside a quoted field? A quote opens one only at the start of a field (AdvanceQuoteState): a name
+        // with an inch mark (Pipe 5" long) is text, and counting its quote took the lines under it for the rest of the header.
+        var delimiter = FileDelimiter(filePath);
+        var headerInQuote = false;
+        var headerFieldStart = true;
+        AdvanceQuoteState(firstLine, delimiter, ref headerInQuote, ref headerFieldStart, true);
+        if (!headerInQuote)
         {
             // BUG-R2-07: Detect possible multi-row header pattern
             // Row1 has many duplicate values = likely category headers, not real column names
@@ -1883,22 +1998,29 @@ public class CsvDataLoader : DataProviderBase
             // Read and flatten the header (may span multiple physical lines)
             var headerBuilder = new System.Text.StringBuilder();
             bool inQuote = false;
+            bool fieldStart = true;
+            bool firstHeaderLine = true;
+            long headerLines = 0;
 
             while (true)
             {
                 var line = reader.ReadLine();
                 if (line == null) break;
+                headerLines++;
 
                 if (headerBuilder.Length > 0) headerBuilder.Append(' ');
                 headerBuilder.Append(line);
 
-                foreach (char c in line)
-                {
-                    if (c == '"') inQuote = !inQuote;
-                }
+                AdvanceQuoteState(line, delimiter, ref inQuote, ref fieldStart, firstHeaderLine);
+                firstHeaderLine = false;
 
                 if (!inQuote) break;
             }
+
+            if (inQuote)
+                throw new UnterminatedQuoteException(
+                    $"{Path.GetFileName(filePath)}: a quoted column name in the header row is never closed, so it takes in the {headerLines - 1} line(s) " +
+                    "after it, to the end of the file. Close the quote - a quote that is part of the name is written as \"\" inside a quoted name.");
 
             writer.WriteLine(headerBuilder.ToString());
 

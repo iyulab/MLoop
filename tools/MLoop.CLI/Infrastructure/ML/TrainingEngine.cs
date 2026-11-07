@@ -208,6 +208,8 @@ public class TrainingEngine : ITrainingEngine
             // The probability calibration fitted with the model (a binary model's, on the search's out-of-fold
             // answers) lives beside it, where every scoring path applies it; the run's metrics are the calibrated model's.
             trained.Calibration?.WriteBeside(modelPath);
+            // A forecasting model's band width, fitted on forecasts of points it had not seen — applied where the forecast is replayed.
+            trained.ForecastBand?.WriteBeside(modelPath);
             // The encoders of the text columns it reads as vectors — every loading path puts them in front of it.
             trained.TextEncodings?.WriteBeside(modelPath);
             // An image-anomaly model is its bank: the header above is only the experiment's.
@@ -394,14 +396,49 @@ public class TrainingEngine : ITrainingEngine
     }
 
     /// <summary>
-    /// Whether this run should replace ML.NET's uniform random split with a stratified one.
+    /// <see cref="NoFeatureColumnMessage"/> when the table has columns beside the label and none is left to read as a
+    /// feature once the rules' exclusions (<paramref name="exclusions"/>), the <c>ignore</c> overrides and the other
+    /// roles (weight, group, user, item) are set aside; null otherwise. The one judgment training and
+    /// <c>train --analyze-data</c> both ask, so the preflight and the refusal cannot disagree.
     /// </summary>
-    /// <remarks>
-    /// Only classification cares about class proportions. A caller that already supplied a test file
-    /// (the <c>--balance</c> flow, which stratify-splits upstream before oversampling) is left alone —
-    /// splitting again would discard its work. <c>TestSplit == 0</c> means the caller opted out of a
-    /// holdout entirely and AutoML validates internally.
-    /// </remarks>
+    internal static string? NoFeatureColumnRefusal(TrainingConfig config, string dataFilePath, IReadOnlyList<ExcludedColumn> exclusions)
+    {
+        if (!File.Exists(dataFilePath)) return null;
+        var ignored = (config.ColumnOverrides ?? [])
+            .Where(kv => string.Equals(kv.Value?.Trim(), "ignore", StringComparison.OrdinalIgnoreCase))
+            .Select(kv => kv.Key)
+            .ToList();
+        var otherRoles = new[] { config.WeightColumn, config.GroupColumn, config.UserColumn, config.ItemColumn }
+            .Where(c => !string.IsNullOrEmpty(c)).Select(c => c!);
+        var left = CsvDataLoader.FeatureColumnsLeft(dataFilePath, config.LabelColumn,
+            exclusions.Select(c => c.Name), ignored.Concat(otherRoles));
+        if (left.Count > 0) return null;
+        // a table of the label alone has no feature to lose — the loader says what is wrong with it
+        return CsvDataLoader.FeatureColumnsLeft(dataFilePath, config.LabelColumn, [], []).Count == 0
+            ? null
+            : NoFeatureColumnMessage(exclusions, ignored);
+    }
+
+    /// <summary>
+    /// The refusal when no column is left to read as a feature: each column a rule excluded with its reason, each
+    /// one declared <c>ignore</c>, and how to keep one — a type declared under the model's <c>columns:</c> is never
+    /// excluded.
+    /// </summary>
+    internal static string NoFeatureColumnMessage(IEnumerable<ExcludedColumn> excluded, IEnumerable<string> declaredIgnore)
+    {
+        var removed = excluded.Select(c => $"{c.Name} ({c.Reason}{ExclusionReason(c.Reason)})").ToList();
+        var ignored = declaredIgnore.ToList();
+        var parts = new List<string>();
+        if (removed.Count > 0) parts.Add("excluded from the features — " + string.Join("; ", removed));
+        if (ignored.Count > 0) parts.Add("declared `type: ignore` — " + string.Join(", ", ignored));
+        var why = parts.Count > 0 ? string.Join(", and ", parts) : "given another role (weight, group, user or item)";
+        return "No column is left to train on: every column except the label was " + why
+            + ". To keep a column as a feature, declare how it is read under the model's `columns:` in mloop.yaml "
+            + "(`type: text`, `categorical` or `numeric`) — a declared column is never excluded"
+            + (ignored.Count > 0 ? ", and remove its `type: ignore`" : "")
+            + "; otherwise unpack or derive features from the data first.";
+    }
+
     /// <summary>
     /// What an exclusion reason means to the person reading the warning — and, where there is one, what
     /// to do about it. The markers are <see cref="SchemaDataTypes"/>' vocabulary.
@@ -416,6 +453,15 @@ public class TrainingEngine : ITrainingEngine
         _ => "",
     };
 
+    /// <summary>
+    /// Whether this run should replace ML.NET's uniform random split with a stratified one.
+    /// </summary>
+    /// <remarks>
+    /// Only classification cares about class proportions. A caller that already supplied a test file
+    /// (the <c>--balance</c> flow, which stratify-splits upstream before oversampling) is left alone —
+    /// splitting again would discard its work. <c>TestSplit == 0</c> means the caller opted out of a
+    /// holdout entirely and AutoML validates internally.
+    /// </remarks>
     private static bool RequiresStratifiedSplit(TrainingConfig config) =>
         config.TestSplit > 0
         && string.IsNullOrEmpty(config.TestDataFile)
@@ -691,6 +737,13 @@ public class TrainingEngine : ITrainingEngine
                 WarningConsole.Warn(
                     $"Excluded from features ({group.Key}): {string.Join(", ", group.Select(c => c.Name))}{ExclusionReason(group.Key)}");
             }
+
+            // No column could be a feature: each was excluded by a rule, or declared `ignore`, or has another role
+            // (weight, group, user, item). The search would run each trainer into the same "no column is a feature"
+            // and stop after a few trials. Say it now, with what was removed and the way to keep a column (a
+            // declared role is never excluded).
+            if (readsFeatures && NoFeatureColumnRefusal(config, dataFilePath, featureExclusions) is { } noFeatureRefusal)
+                throw new InvalidOperationException(noFeatureRefusal);
 
             // A column of strictly increasing integers reads as a row number — judged here, on the whole file
             // before the split, as the exclusions are: the shuffled partitions the loader sees no longer

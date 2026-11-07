@@ -33,6 +33,7 @@ public static class TrainingEndpoints
         // Start training job (async, secured)
         app.MapPost("/train", async (
             [FromBody] TrainingJobRequest request,
+            HttpContext http,
             TrainingJobStore jobStore,
             TrainingJobRunner jobRunner,
             ProjectRootPath projectRootPath,
@@ -43,8 +44,10 @@ public static class TrainingEndpoints
             // request may leave the task and the label to mloop.yaml. Refused now, not inside the job: what the
             // project's mloop.yaml asks for that this run could not honour (a weight on a task it does not reach,
             // prep steps the API does not run), and what no task could train (an unknown task, a missing label).
-            var (trainDefinition, definitionError) = await TrainingDefinition.ResolveAsync(configLoader, request.ModelName, request.Task,
-                request.LabelColumn, request.TimeLimitSeconds, request.Metric, request.TestSplit, request.Weight, request.MaxTrials, request.Epochs, request.Ensemble);
+            var (trainDefinition, definitionError) = await TrainingDefinition.ResolveAsync(configLoader,
+                new TrainingDefinition.Request(
+                    ModelName: request.ModelName, Task: request.Task, Label: request.LabelColumn, TimeLimitSeconds: request.TimeLimitSeconds, Metric: request.Metric,
+                    TestSplit: request.TestSplit, Weight: request.Weight, MaxTrials: request.MaxTrials, Epochs: request.Epochs, Ensemble: request.Ensemble));
             if (definitionError != null)
                 return Results.BadRequest(new { error = definitionError });
             if (TrainingInput.BalanceConflict(trainDefinition!, request.Balance) is { } balanceError)
@@ -79,7 +82,7 @@ public static class TrainingEndpoints
                             : $" Not a directory: {request.DataFile}.";
                     return Results.BadRequest(new { error = $"{missing.Message}{named} {missing.Hint}" });
                 }
-                if (!ProjectPaths.IsWithin(directory, projectRootPath.Value))
+                if (!ProjectPaths.IsWithinReal(directory, projectRootPath.Value))
                     return Results.BadRequest(new { error = $"Data directory must be within the project directory: {request.DataFile}" });
                 dataFile = directory;
             }
@@ -90,7 +93,7 @@ public static class TrainingEndpoints
                 foreach (var file in new[] { request.DataFile }.Concat(request.AdditionalDataFiles ?? []))
                 {
                     var resolvedDataFile = InProject(file);
-                    if (!ProjectPaths.IsWithin(resolvedDataFile, projectRootPath.Value))
+                    if (!ProjectPaths.IsWithinReal(resolvedDataFile, projectRootPath.Value))
                         return Results.BadRequest(new { error = $"Data file must be within the project directory: {file}" });
                     if (Directory.Exists(resolvedDataFile))
                         return Results.BadRequest(new { error = $"Data file is a directory: {file}. '{trainDefinition.Task}' trains on a table (a file)." });
@@ -109,7 +112,7 @@ public static class TrainingEndpoints
             };
 
             // Create job and enqueue for background processing
-            var jobId = jobStore.CreateJob(request);
+            var jobId = jobStore.CreateJob(request, ModelEndpoints.CallerOrigin(http).By);
             jobRunner.EnqueueJob(jobId);
 
             logger.LogInformation("Training job '{JobId}' enqueued for model '{ModelName}' with task '{Task}'",

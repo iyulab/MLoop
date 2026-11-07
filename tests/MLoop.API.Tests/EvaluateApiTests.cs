@@ -166,6 +166,35 @@ public class EvaluateApiTests : IClassFixture<TestWebApplicationFactory>, IAsync
         body.GetProperty("missingColumns").EnumerateArray().Select(c => c.GetString()).Should().Contain("x");
     }
 
+    [Theory]
+    [InlineData("nothing.xlsx")]
+    [InlineData("nothing.parquet")]
+    [InlineData("nothing.json")]
+    public async Task AFileInAnotherFormatWithNothingInIt_IsTheCallersError_NamingTheFile(string name)
+    {
+        var path = Path.Combine(_factory.TestProjectRoot, "datasets", name);
+        await File.WriteAllBytesAsync(path, []);
+
+        var (status, body) = await EvaluateAsync(new { name = Model, experimentId = "exp-001", testDataPath = path });
+
+        status.Should().Be(HttpStatusCode.BadRequest, body.ToString());
+        body.GetProperty("error").GetString().Should().Contain($"{name} is empty");
+    }
+
+    [Fact]
+    public async Task AFileWithAQuotedFieldThatNeverCloses_IsTheCallersError_NamingTheLine()
+    {
+        var path = Path.Combine(_factory.TestProjectRoot, "datasets", "unclosed-quote.csv");
+        var lines = (await File.ReadAllLinesAsync(_withWeight)).ToList();
+        lines.Insert(11, "\"0.5,0.5,1,true");   // opens at the start of a field on line 12 and never closes
+        await File.WriteAllLinesAsync(path, lines);
+
+        var (status, body) = await EvaluateAsync(new { name = Model, experimentId = "exp-001", testDataPath = path });
+
+        status.Should().Be(HttpStatusCode.BadRequest, body.ToString());
+        body.GetProperty("error").GetString().Should().Contain("line 12").And.Contain("never closed");
+    }
+
     [Fact]
     public async Task ALabelWrittenWithThousandsSeparators_IsTheCallersError_NotAServerError()
     {

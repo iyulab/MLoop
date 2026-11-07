@@ -696,6 +696,7 @@ public class PerformanceDiagnosticsTests
 
         Assert.Equal(PerformanceLevel.Low, result.OverallAssessment);
         Assert.Contains(result.Warnings, w => w.Contains("anomalous"));
+        Assert.Contains(result.Suggestions, s => s.Contains("Raise anomaly_threshold", StringComparison.Ordinal));
     }
 
     [Fact]
@@ -711,8 +712,13 @@ public class PerformanceDiagnosticsTests
         var result = _diagnostics.Analyze("time-series-anomaly", metrics);
 
         Assert.Equal(PerformanceLevel.Moderate, result.OverallAssessment);
-        Assert.True(result.Suggestions.Count > 0);
+        Assert.Contains(result.Suggestions, s => s.Contains("Lower anomaly_threshold", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void Analyze_TimeSeriesAnomaly_GoodRate_PointsAtNoKnob()
+        => Assert.Empty(_diagnostics.Analyze("time-series-anomaly",
+            new Dictionary<string, double> { ["detection_rate"] = 0.05, ["anomaly_count"] = 50, ["total_count"] = 1000 }).Suggestions);
 
     [Fact]
     public void Analyze_TimeSeriesAnomaly_NoMetrics_ReturnsUnknown()

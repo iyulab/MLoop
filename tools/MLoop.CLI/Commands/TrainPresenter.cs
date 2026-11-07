@@ -53,7 +53,9 @@ internal static class TrainPresenter
 
             table.AddRow("Rows", $"[cyan]{rowCount:N0}[/]");
             table.AddRow("Columns", $"[cyan]{columns}[/]");
-            table.AddRow("Features", $"[cyan]{columns - 1}[/]");
+            // Every column but the label: the columns the exclusion rules and `type: ignore` take out come later, in
+            // their own warnings, so this is the candidates and not what the model will read.
+            table.AddRow("Candidate features", $"[cyan]{columns - 1}[/]");
             table.AddRow("Label", $"[cyan]{Markup.Escape(labelColumn)}[/]");
 
             // Check file size
@@ -104,6 +106,8 @@ internal static class TrainPresenter
             table.AddRow("Max Trials", maxTrials.ToString(System.Globalization.CultureInfo.InvariantCulture));
         if (definition.Training?.Epochs is { } epochs)
             table.AddRow("Epochs", epochs.ToString(System.Globalization.CultureInfo.InvariantCulture));
+        if (definition.AnomalyThreshold is { } anomalyThreshold)
+            table.AddRow("Anomaly Threshold", anomalyThreshold.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture));
         table.AddRow("Metric", definition.Training?.Metric ?? ConfigDefaults.DefaultMetric);
 
         if (TrainingRunner.IsTimeSeriesTask(definition.Task))

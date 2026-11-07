@@ -509,6 +509,12 @@ public static partial class TrainCommand
 
             return 0;
         }
+        catch (MLoop.Core.Storage.InvalidModelNameException ex)
+        {
+            // A name that cannot be a directory is refused before anything is read or created.
+            ErrorConsole.Error(ex.Message, "Choose a name of lowercase letters, digits and single hyphens, e.g. --name my-model.");
+            return 1;
+        }
         catch (Exception ex)
         {
             // DisplayTrainingError has existed since 0.28.0 (its CHANGELOG entry describes it as
@@ -517,9 +523,7 @@ public static partial class TrainCommand
             // the heading and the "mloop analyze"/"mloop status" diagnostic hints the dedicated
             // path was built to add. resolvedModelName is recomputed here (pure function of
             // modelName, safe to redo) since the try-scoped local isn't visible in catch.
-            var resolvedModelName = string.IsNullOrWhiteSpace(modelName)
-                ? ConfigDefaults.DefaultModelName
-                : modelName.Trim().ToLowerInvariant();
+            var resolvedModelName = MLoop.Core.Storage.ModelName.Resolve(modelName);
             ErrorSuggestions.DisplayTrainingError(ex, resolvedModelName, dataFile, failedTask);
             return 1;
         }

@@ -124,12 +124,13 @@ public static class ExplainCommand
                 reportedDataPath = dataPath;
                 dataPath = await TabularDataFile.AsCsvAsync(dataPath, records);
             }
-            else if (new DatasetDiscovery(fileSystem).FindDatasets(projectRoot)?.TestPath is { } discovered)
+            else if (ProjectDataFiles.Resolve(
+                         DatasetRole.Test, await new ConfigLoader(fileSystem, discovery).LoadUserConfigAsync(), projectRoot, new DatasetDiscovery(fileSystem)).Path is { } discovered)
             {
                 dataPath = reportedDataPath = discovered;
             }
             if (dataPath is null)
-                return Fail("Give the labeled file to score the model on with --data (or keep one as datasets/test.csv).");
+                return Fail("Give the labeled file to score the model on with --data (or keep one as datasets/test.csv, or name it as data.test in mloop.yaml).");
 
             var (weightColumn, weightWarning) = ModelComparison.ResolveWeight(weight, experiment, dataPath);
             if (weightWarning is not null)
@@ -145,14 +146,14 @@ public static class ExplainCommand
                     {
                         if (ProgressNote(done, total, ref reportedTenth) is { } note)
                             AnsiConsole.WriteLine(note);
-                    });
+                    }, reportedAs: reportedDataPath);
             }
             else
                 await AnsiConsole.Progress().StartAsync(async ctx =>
                 {
                     var task = ctx.AddTask("[yellow]Shuffling columns...[/]", maxValue: 1);
                     explanation = await ModelExplanation.ExplainAsync(new EvaluationEngine(), modelPath, dataPath, experiment, weightColumn, repeats, rows, seed,
-                        (done, total) => { task.MaxValue = total; task.Value = done; });
+                        (done, total) => { task.MaxValue = total; task.Value = done; }, reportedAs: reportedDataPath);
                 });
 
             return Emit(name, id, reportedDataPath!, weightColumn, explanation, jsonOutput);

@@ -37,6 +37,45 @@ public class TabularDataFileTests : IDisposable
         return path;
     }
 
+    [Theory]
+    [InlineData("none.json")]
+    [InlineData("none.parquet")]
+    [InlineData("none.xlsx")]
+    public async Task A_zero_byte_file_in_another_format_is_refused_as_empty_naming_the_file(string name)
+    {
+        var path = Path.Combine(_dir, name);
+        await File.WriteAllBytesAsync(path, []);
+
+        var error = await Assert.ThrowsAsync<EmptyTableFileException>(() => TabularDataFile.AsCsvAsync(path));
+
+        Assert.Contains(name + " is empty", error.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("{}")]
+    [InlineData("[{}]")]
+    public async Task A_json_file_with_no_fields_is_refused_as_empty_naming_the_file(string text)
+    {
+        var path = Path.Combine(_dir, "t.json");
+        await File.WriteAllTextAsync(path, text);
+
+        var error = await Assert.ThrowsAsync<EmptyTableFileException>(() => TabularDataFile.AsCsvAsync(path));
+
+        Assert.Contains("t.json is empty", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task A_parquet_file_with_a_schema_and_no_rows_becomes_a_csv_with_only_its_header()
+    {
+        var path = Path.Combine(_dir, "none.parquet");
+        await ParquetSerializer.SerializeAsync(Array.Empty<Row>(), path);
+
+        var csv = await TabularDataFile.AsCsvAsync(path);
+
+        Assert.Equal("Text,Labels.Label", File.ReadAllLines(csv).Single().TrimStart('\uFEFF'));
+    }
+
     [Fact]
     public async Task A_csv_file_is_returned_as_it_is()
     {

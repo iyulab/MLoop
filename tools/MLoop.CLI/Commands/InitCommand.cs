@@ -289,8 +289,11 @@ public static class InitCommand
             else
             {
                 AnsiConsole.MarkupLine("  2. Place your training data in datasets/train.csv");
-                AnsiConsole.MarkupLine("  3. Edit mloop.yaml to set your label column");
-                AnsiConsole.MarkupLine("  4. mloop train  [cyan]# Auto-detects datasets/train.csv[/]");
+                // "Label" is what init writes when none was given - the placeholder, not a column of the user's file. `train --label`
+                // names the real one in the same command that trains.
+                AnsiConsole.MarkupLine(labelColumn == "Label"
+                    ? "  3. mloop train --label <column>  [cyan]# Auto-detects datasets/train.csv; name your label column here (or as label: in mloop.yaml)[/]"
+                    : $"  3. mloop train  [cyan]# Auto-detects datasets/train.csv; the label column is {Markup.Escape(labelColumn)}[/]");
             }
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine("[grey]Folder structure:[/]");
@@ -566,6 +569,9 @@ models/*/staging/*/model.zip
 models/*/production/model.zip
 models/*/staging/*/training.log
 
+# A damaged experiment index, kept beside the rebuilt one for a look
+models/*/experiment-index.json.corrupt-*
+
 # Prediction outputs
 predictions/
 
@@ -686,6 +692,7 @@ See the Extensibility section of the MLoop guide (docs/GUIDE.md).
             "ranking" => "\n    group_column: query_id",
             "recommendation" => "\n    user_column: user_id\n    item_column: item_id",
             "clustering" => "\n    # num_clusters: auto",
+            "time-series-anomaly" => "\n    # anomaly_threshold: 0.3   # flag a point whose score passes this (above 0, below 1); lower finds smaller spikes and flags more ordinary points",
             _ => ""
         };
 

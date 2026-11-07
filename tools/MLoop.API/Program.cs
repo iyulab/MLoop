@@ -325,6 +325,9 @@ try
     app.UseRateLimiter();
     app.UseAuthorization();
 
+    // A model name that is not a valid directory name is the caller's mistake (400); ModelName.Resolve throws, this answers.
+    app.UseInvalidModelNameGuard();
+
     // Health check endpoint. HEAD is mapped alongside GET because probes send it: wget --spider,
     // and most load balancers, issue HEAD, and a GET-only route answers those 405 while the service
     // is perfectly healthy. RFC 9110 makes HEAD identical to GET minus the body, so ASP.NET returning

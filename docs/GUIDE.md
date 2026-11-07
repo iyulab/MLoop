@@ -174,6 +174,11 @@ mloop train datasets/train.csv --label price --time 120
 mloop train data/sales.csv --label revenue --time 300 --metric r_squared
 mloop train data/fraud.csv --label is_fraud --time 180 --test-split 0.3
 
+# Ranking: the held-out share is held out by query. A query's rows are all in training or all in the test,
+# and the test NDCG is that of queries the model has not seen. `mloop evaluate` on a file of new queries
+# scores that file's own queries, whatever ids the model was trained on.
+mloop train rank.train --label label --group-column qid --test-split 0.2
+
 # Multi-file training (v0.4.0+)
 mloop train --data normal.csv outlier.csv --label Target --task regression
 mloop train --auto-merge --label Status --task binary-classification
@@ -186,6 +191,20 @@ mloop train datasets/images --task image-classification --balance 3   # oversamp
 # Weighted rows — e.g. labels from a recheck sample, each row weighted 1/π
 mloop train data.csv --label risk --task binary-classification --weight inv_pi
 ```
+
+**The time limit and large tables.** `--time` is the budget of the trainer search, the final fit included. A run lasts
+longer than its limit by the time to read the file and to score the held-out rows (a fifth of it by default) — and that
+time grows with the model the search finds: a forest of thousands of trees scores slowly. A search
+always finishes its first trial so that it returns a model, and a trial costs more the more rows it fits — and, for a
+one-versus-all trainer, the more classes: the smallest forest took 7.9 s on 100 classes and 4,000 rows, where
+maximum-entropy L-BFGS took 0.9 s. So a multiclass search opens with a trainer that fits one model when the label has
+five classes or more, and from 50,000 training rows the search times its own first trial on a sample of 10,000 rows
+first: when that trial on all the rows would take more than a tenth of `--time`, the trials run on the largest sample
+of 10,000 × 2^k rows for which it would not, and the chosen settings are fitted on all the rows — or, when that fit
+would take more than half of `--time`, on the sample (a warning says which; a longer `--time` buys more rows). On generated tables
+(Linux x64 runner with four cores, 20 numeric columns, `--time 60`) training took 66–71 s at 100,000 rows and
+84–131 s at 1,000,000 (the longest where the search found a forest of thousands of trees). The worst case, 1,000,000 rows and 100 classes, took 884 s and 8 GB before the search
+learned to size itself, and takes 108 s and 0.9 GB now.
 
 **Weighted training** (`--weight <column>`, or `weight: <column>` under the model in `mloop.yaml`):
 each row counts by its weight — the relative frequency it should have, such as 1/π for a row drawn
@@ -525,8 +544,13 @@ answer `서울` — and a word-level F1 would score that zero.
 
 Run predictions with trained models.
 
+With no data file named, the commands read the project's default: `train` and `analyze` the file `data.train` of `mloop.yaml`
+names, `evaluate` and `explain` `data.test`, `predict` `data.predict` - and, where `mloop.yaml` names none (or names a file that is not
+there), `datasets/train.csv`, `datasets/test.csv` and `datasets/predict.csv`. Each is found on its own: a project kept for
+scoring and predicting does not need `datasets/train.csv`. When neither exists the message names the key and the file it looked for.
+
 ```bash
-# Auto-discovery mode (uses production model + datasets/predict.csv)
+# Auto-discovery mode (uses production model + datasets/predict.csv, or data.predict)
 mloop predict
 
 # Custom paths
@@ -686,6 +710,22 @@ and `mloop promote --history` lists it: when, which experiment, how (`promote`, 
 `not-applied` for a rollback) and the project metric's value. `--json` returns it as `promotions`,
 each with the experiment it replaced (`previousExperimentId`); `GET /promotions?name=` returns the same. Entries written
 before the gate was recorded carry `null` there.
+
+The history also says **who** changed the slot (`by`) and **through which door** (`via`: `cli` or `http`).
+`mloop promote --by <name>` and `mloop rollback --by <name>` record the name you give; the REST API records the `sub` of the calling
+token, and a `POST /train` job records the `sub` of the token that started it. A change nobody was named for has no `by`:
+the login name of the machine is never written on its own, because the project folder goes into git. Entries written before
+this was recorded have neither field.
+
+Each promotion also records the SHA-256 of the model it put in the slot (`modelSha256` in `production/metadata.json`).
+`mloop predict` and `mloop serve` compare `production/model.zip` with it when they load it and say, once per load, that the
+file was changed after it was promoted (disk damage, a file written over by hand, another tool). It is a warning, not a
+refusal — the model still answers; `mloop promote <experiment-id>` puts a staged model there again and `mloop rollback`
+returns to the previous one. A slot promoted before the hash was recorded has nothing to compare.
+
+A complete pipeline that retrains, compares with production on the same rows, promotes through the gate and watches the served model
+with `mloop trigger check` is in [`docs/examples/pipeline`](examples/pipeline/README.md): a GitHub Actions workflow, a cron script and
+the page that explains the stages.
 
 ### `mloop threshold`
 
@@ -1102,6 +1142,27 @@ rows of any file or request have no verdict: `isAnomaly` and `anomalyScore` are 
 the `PredictedLabel` and `Score` cells are empty in the prediction file, and a warning says how many. Send the series with
 at least that many earlier rows in front of the ones you ask about.
 
+How small a spike it finds: the detector flags a point when its spectral-residual score passes a fixed threshold (0.3, ML.NET's default).
+What that catches depends on the shape of the series, not on its level (a series around 10, 100 or 1,000 behaves the same). On generated
+series (noise of standard deviation 1, a spike every 100 points, three seeds each) the share of spikes flagged at 5 times the noise was
+9 % on a monthly season of amplitude 10, 13 % on a yearly season, 76 % on a constant level and 79 % on a straight trend; at 8 times the noise,
+47 % on the monthly season and 97 % on a constant level; at 40 times, 98 % (one series, one seed). Points that were not spikes were flagged
+0 % of the time on the monthly season and 0.3 – 0.7 % on the others. A series with strong structure therefore hides spikes of a few times
+its noise. A lower threshold finds more of them and flags ordinary points as well — on the monthly season, 0.2 flagged 56 % of the 5-times
+spikes with 0.5 % of ordinary points, 0.1 flagged 97 % with 9 %, and no threshold tried found 80 % of the 5-times spikes with at most 1 % of ordinary points flagged on any of the four shapes.
+The threshold is yours to set: `anomaly_threshold` under the model in `mloop.yaml` (above 0 and below 1; unset, it is 0.3). It is part of
+the trained detector, so retrain to change it, and `mloop validate` refuses a value that is no score or a task that has no detector score.
+
+```yaml
+models:
+  default:
+    task: time-series-anomaly
+    label: value
+    anomaly_threshold: 0.2
+```
+
+`mloop detect`, whose `--threshold` is set on every call, scores a file without training a model when that suits the work better.
+
 ### Image anomaly
 
 `image-anomaly` is for the case where only normal pictures are plentiful: a surface, a part, a screen that is normal
@@ -1322,6 +1383,14 @@ mloop validate --verbose
 # ❌ models.default.task: Invalid task type 'regressoin'. Valid values: binary-classification, ...
 ```
 
+A valid configuration can still carry warnings: a key `mloop` does not know (usually a typo), a key written twice in
+one mapping (the last one is read), a data file that is not there yet. The exit code is non-zero for errors and 0 for
+warnings. To fail a CI job on warnings too, read the structured result (`valid`, `errors`, `warnings`):
+
+```bash
+mloop validate --json | jq -e '.valid and (.warnings | length == 0)'
+```
+
 ---
 
 ## Deployment Commands
@@ -1337,7 +1406,8 @@ mloop serve
 # Custom port and host
 mloop serve --port 8080 --host 0.0.0.0
 
-# Run in background
+# Run in background (prints the process id; stop it with `kill <pid>`, `taskkill /PID <pid> /F` on Windows).
+# On Linux and macOS the server's own output goes to .mloop/temp/serve-<port>.log, not to the terminal.
 mloop serve --detach
 
 # API Endpoints:
@@ -2826,6 +2896,24 @@ mloop train data.csv --label label --time 600  # 10 minutes
 
 # For complex datasets, try 30 minutes
 mloop train data.csv --label label --time 1800
+```
+
+### Escape Codes in Captured Output (Colour and Bold)
+
+**Problem**: A log or a captured output of `mloop` holds sequences such as `ESC[1m` or `ESC[38;5;2m`
+
+**What `mloop` does**: output that is redirected to a file or a pipe, a terminal that declares itself dumb
+(`TERM=dumb`) and a missing `TERM` all give plain text. `NO_COLOR=1` removes the colour and keeps bold.
+`--json` writes the JSON document alone to stdout.
+
+**In CI**: a runner that is known to render colour (`GITHUB_ACTIONS`, `TF_BUILD`) is treated as a colour terminal
+even when the output is piped, so the human-readable output carries escape codes there — and so does the stderr
+of a `--json` command. `NO_COLOR` and `TERM=dumb` do not remove them in that case. For plain text, unset the
+variables for that one command; for a program to read, use `--json` and read stdout:
+
+```bash
+env -u GITHUB_ACTIONS -u TF_BUILD mloop validate > validate.txt
+mloop status --json > status.json
 ```
 
 ### API Server Won't Start

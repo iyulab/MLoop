@@ -46,6 +46,21 @@ public class DatasetDiscovery : IDatasetDiscovery
         };
     }
 
+    public string? FindFile(string projectRoot, DatasetRole role)
+    {
+        var datasetsPath = GetDatasetsPath(projectRoot);
+        if (!_fileSystem.DirectoryExists(datasetsPath))
+            return null;
+
+        return TryFindFile(datasetsPath, role switch
+        {
+            DatasetRole.Train => TrainFileName,
+            DatasetRole.Test => TestFileName,
+            DatasetRole.Predict => PredictFileName,
+            _ => throw new ArgumentOutOfRangeException(nameof(role), role, null),
+        });
+    }
+
     public bool HasDatasetsDirectory(string projectRoot)
     {
         return _fileSystem.DirectoryExists(GetDatasetsPath(projectRoot));

@@ -6,46 +6,11 @@ using MLoop.Core.Training;
 namespace MLoop.CLI.Infrastructure.Configuration;
 
 /// <summary>
-/// Merges configuration from multiple sources with priority:
-/// CLI Args > mloop.yaml > .mloop/config.json > Defaults
+/// Builds the effective definition of a model from mloop.yaml and the command line, with priority:
+/// CLI Args > mloop.yaml > Defaults
 /// </summary>
 public class ConfigMerger
 {
-    /// <summary>
-    /// Merges project-level configurations
-    /// </summary>
-    public MLoopConfig Merge(
-        MLoopConfig? cliConfig = null,
-        MLoopConfig? userConfig = null,
-        MLoopConfig? projectConfig = null)
-    {
-        var merged = new MLoopConfig
-        {
-            Models = new Dictionary<string, ModelDefinition>(),
-            Data = new DataSettings()
-        };
-
-        // Apply project config (.mloop/config.json) - lowest priority
-        if (projectConfig != null)
-        {
-            ApplyConfig(merged, projectConfig);
-        }
-
-        // Apply user config (mloop.yaml) - medium priority
-        if (userConfig != null)
-        {
-            ApplyConfig(merged, userConfig);
-        }
-
-        // Apply CLI args - highest priority
-        if (cliConfig != null)
-        {
-            ApplyConfig(merged, cliConfig);
-        }
-
-        return merged;
-    }
-
     /// <summary>
     /// Gets effective model definition by merging model-specific settings with defaults
     /// </summary>
@@ -118,9 +83,13 @@ public class ConfigMerger
             Weight = baseDefinition?.Weight,
             Encoder = baseDefinition?.Encoder,
             BankSize = baseDefinition?.BankSize,
+            Portable = baseDefinition?.Portable,
+            Ensemble = baseDefinition?.Ensemble,
+            Gate = baseDefinition?.Gate,
             Horizon = baseDefinition?.Horizon,
             WindowSize = baseDefinition?.WindowSize,
             SeriesLength = baseDefinition?.SeriesLength,
+            AnomalyThreshold = baseDefinition?.AnomalyThreshold,
             UserColumn = baseDefinition?.UserColumn,
             ItemColumn = baseDefinition?.ItemColumn
         };
@@ -164,68 +133,6 @@ public class ConfigMerger
         }
 
         return merged;
-    }
-
-    private void ApplyConfig(MLoopConfig target, MLoopConfig source)
-    {
-        // Apply project name
-        if (!string.IsNullOrEmpty(source.Project))
-        {
-            target.Project = source.Project;
-        }
-
-        // Merge model definitions
-        foreach (var (name, definition) in source.Models)
-        {
-            if (target.Models.TryGetValue(name, out var existing))
-            {
-                // Merge with existing definition
-                target.Models[name] = MergeModelDefinitions(existing, definition);
-            }
-            else
-            {
-                // Add new definition
-                target.Models[name] = definition;
-            }
-        }
-
-        // Apply data settings
-        if (source.Data != null)
-        {
-            target.Data ??= new DataSettings();
-
-            if (!string.IsNullOrEmpty(source.Data.Train))
-                target.Data.Train = source.Data.Train;
-
-            if (!string.IsNullOrEmpty(source.Data.Test))
-                target.Data.Test = source.Data.Test;
-
-            if (!string.IsNullOrEmpty(source.Data.Predict))
-                target.Data.Predict = source.Data.Predict;
-        }
-    }
-
-    private ModelDefinition MergeModelDefinitions(ModelDefinition existing, ModelDefinition source)
-    {
-        return new ModelDefinition
-        {
-            Task = !string.IsNullOrEmpty(source.Task) ? source.Task : existing.Task,
-            Label = !string.IsNullOrEmpty(source.Label) ? source.Label : existing.Label,
-            Training = MergeTrainingSettings(existing.Training, source.Training, null),
-            Description = !string.IsNullOrEmpty(source.Description) ? source.Description : existing.Description,
-            Prep = source.Prep ?? existing.Prep,
-            Columns = source.Columns ?? existing.Columns,
-            NumClusters = source.NumClusters ?? existing.NumClusters,
-            Weight = !string.IsNullOrEmpty(source.Weight) ? source.Weight : existing.Weight,
-            Encoder = !string.IsNullOrEmpty(source.Encoder) ? source.Encoder : existing.Encoder,
-            BankSize = source.BankSize ?? existing.BankSize,
-            GroupColumn = !string.IsNullOrEmpty(source.GroupColumn) ? source.GroupColumn : existing.GroupColumn,
-            Horizon = source.Horizon ?? existing.Horizon,
-            WindowSize = source.WindowSize ?? existing.WindowSize,
-            SeriesLength = source.SeriesLength ?? existing.SeriesLength,
-            UserColumn = !string.IsNullOrEmpty(source.UserColumn) ? source.UserColumn : existing.UserColumn,
-            ItemColumn = !string.IsNullOrEmpty(source.ItemColumn) ? source.ItemColumn : existing.ItemColumn
-        };
     }
 
     private void ApplyTrainingSettings(TrainingSettings target, TrainingSettings source)

@@ -35,6 +35,31 @@ public class FilePromotionManagerTests : IDisposable
     #region BackupProductionAsync Tests
 
     [Fact]
+    [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+    public async Task BackupProductionAsync_ACopyThatStopsHalfWay_LeavesNoBackupDirectory()
+    {
+        Assert.SkipWhen(OperatingSystem.IsWindows(), "Needs a file mode that refuses reading.");
+        Assert.SkipWhen(Environment.UserName == "root", "Root reads a file whatever its mode.");
+        var production = Path.Combine(_testDir, "models", "test-model", "production");
+        Directory.CreateDirectory(production);
+        await File.WriteAllTextAsync(Path.Combine(production, "a-model.zip"), "model");
+        var unreadable = Path.Combine(production, "z-calibration.json");
+        await File.WriteAllTextAsync(unreadable, "{}");
+        File.SetUnixFileMode(unreadable, UnixFileMode.None);
+        try
+        {
+            await Assert.ThrowsAnyAsync<Exception>(() => _manager.BackupProductionAsync("test-model"));
+        }
+        finally
+        {
+            File.SetUnixFileMode(unreadable, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+
+        var backups = Path.Combine(_testDir, "models", "test-model", "backups");
+        (Directory.Exists(backups) ? Directory.GetDirectories(backups) : []).Should().BeEmpty("a half copy looks like a whole backup");
+    }
+
+    [Fact]
     public async Task BackupProductionAsync_ReturnsNull_WhenNoProductionDirectory()
     {
         var backupPath = await _manager.BackupProductionAsync("test-model");

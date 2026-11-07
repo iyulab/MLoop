@@ -74,8 +74,9 @@ public class TrainingJobRunner : BackgroundService
         IModelRegistry registry,
         TrainingConfig config,
         TrainingResult result,
+        MLoop.Ops.Interfaces.PromotionOrigin? origin,
         CancellationToken cancellationToken)
-        => registry.AutoPromoteAsync(config.ModelName, result.ExperimentId, config.CanonicalMetric, cancellationToken);
+        => registry.AutoPromoteAsync(config.ModelName, result.ExperimentId, config.CanonicalMetric, origin, cancellationToken);
 
     private async Task ProcessJobAsync(TrainingJob job, CancellationToken stoppingToken)
     {
@@ -99,7 +100,10 @@ public class TrainingJobRunner : BackgroundService
             // ranking/recommendation/time-series columns — with the request in the command line's place.
             var (definition, refusal) = await TrainingDefinition.ResolveAsync(
                 scope.ServiceProvider.GetRequiredService<ConfigLoader>(),
-                job.ModelName, job.Task, job.LabelColumn, job.TimeLimitSeconds, job.Metric, job.TestSplit, job.Weight, job.MaxTrials, job.Epochs, job.Ensemble, stoppingToken);
+                new TrainingDefinition.Request(
+                    ModelName: job.ModelName, Task: job.Task, Label: job.LabelColumn, TimeLimitSeconds: job.TimeLimitSeconds, Metric: job.Metric,
+                    TestSplit: job.TestSplit, Weight: job.Weight, MaxTrials: job.MaxTrials, Epochs: job.Epochs, Ensemble: job.Ensemble),
+                stoppingToken);
             if (definition is null)
                 throw new InvalidOperationException(refusal);
             var projectRoot = scope.ServiceProvider.GetRequiredService<ProjectRootPath>().Value;
@@ -127,6 +131,11 @@ public class TrainingJobRunner : BackgroundService
                         Path.Combine(projectRoot, ".mloop", "merged", $"{job.JobId}.csv"));
                     dataFile = merge.Path ?? throw new InvalidOperationException($"{merge.Error} {merge.Guidance}");
                 }
+                // A file with nothing to learn from is said to be that, as `mloop train` says it, before a reader reports its own state.
+                if (TrainingInput.EmptyDataFileRefusal(dataFile, definition.Task) is { } emptyRefusal)
+                    throw new InvalidOperationException($"{emptyRefusal} {TrainingInput.EmptyDataFileGuidance}");
+                if (TrainingInput.HeaderOnlyDataFileRefusal(dataFile, definition.Task) is { } headerOnlyRefusal)
+                    throw new InvalidOperationException($"{headerOnlyRefusal} {TrainingInput.HeaderOnlyDataFileGuidance}");
                 if (TrainingInput.DuplicateColumnRefusal(dataFile, definition.Task) is { } duplicateRefusal)
                     throw new InvalidOperationException($"{duplicateRefusal} {TrainingInput.DuplicateColumnGuidance}");
                 var prepared = await TrainingInput.PrepareAsync(dataFile, definition, job.MaxRows, projectRoot);
@@ -189,7 +198,8 @@ public class TrainingJobRunner : BackgroundService
                 // A post-train hook that refused the model keeps it from being promoted, as in `mloop train`.
                 keptReason = $"a post-train hook refused it ({hookRefusal})";
             else
-                keptReason = await PromoteIfBetterAsync(registry, config, result, stoppingToken)
+                keptReason = await PromoteIfBetterAsync(registry, config, result,
+                    new MLoop.Ops.Interfaces.PromotionOrigin(MLoop.Ops.Interfaces.PromotionVia.Http, job.RequestedBy), stoppingToken)
                     ? null
                     : await registry.KeptInStagingReasonAsync(config.ModelName, result.ExperimentId, config.CanonicalMetric, stoppingToken)
                       ?? "it does not beat production";

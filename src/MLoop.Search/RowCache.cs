@@ -15,6 +15,27 @@ namespace MLoop.Search;
 /// </remarks>
 public static class RowCache
 {
+    /// <summary>
+    /// The rows of <paramref name="data"/> in memory when <paramref name="rows"/> of them fit the search's cache limit
+    /// (<see cref="TrialRunner.CacheCellLimit"/> cells, a text cell weighing <see cref="TrialRunner.TextCellWeight"/>), else the view itself. For scored rows
+    /// that several steps read: a scored view is lazy, so each step that reads it scores the rows again — measured, four reads of 200,000
+    /// rows through a model of 4,607 trees cost 43 s.
+    /// </summary>
+    public static IDataView WhenItFits(MLContext mlContext, IDataView data, long rows)
+    {
+        ArgumentNullException.ThrowIfNull(data);
+        return rows * CellsPerRow(data.Schema) <= TrialRunner.CacheCellLimit ? Of(mlContext, data) : data;
+    }
+
+    // A vector counts its length (100 where the length is not known), a text cell its weight, any other cell one.
+    internal static long CellsPerRow(DataViewSchema schema)
+        => schema.Sum(column => column.Type switch
+        {
+            Microsoft.ML.Data.VectorDataViewType vector => vector.Size > 0 ? vector.Size : 100,
+            Microsoft.ML.Data.TextDataViewType => (long)TrialRunner.TextCellWeight,
+            _ => 1L,
+        });
+
     /// <summary>The rows of <paramref name="data"/> in memory, completely filled.</summary>
     public static IDataView Of(MLContext mlContext, IDataView data)
     {

@@ -69,11 +69,36 @@ public class ProductionMetadataTests : IDisposable
         Assert.Null(await ProductionMetadata.ReadAsync(dir));
     }
 
-    [Fact]
-    public async Task ReadAsync_MalformedJson_ReturnsNull()
+    [Theory]
+    [InlineData("not json")]
+    [InlineData("{bad")]
+    [InlineData("")]
+    [InlineData("null")]
+    public async Task ReadAsync_AFileThatCannotBeRead_IsNotAbsence(string content)
     {
         var dir = NewProductionDir();
-        await File.WriteAllTextAsync(Path.Combine(dir, ExperimentLayout.MetadataFileName), "{ not valid json");
-        Assert.Null(await ProductionMetadata.ReadAsync(dir));
+        var path = Path.Combine(dir, ExperimentLayout.MetadataFileName);
+        await File.WriteAllTextAsync(path, content);
+
+        var ex = await Assert.ThrowsAsync<UnreadableStateFileException>(() => ProductionMetadata.ReadAsync(dir));
+
+        Assert.Equal(path, ex.Path);
+        Assert.Contains(path, ex.Message, StringComparison.Ordinal);
+        Assert.Contains("mloop promote", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Train and promote a model first", ex.Message, StringComparison.Ordinal);
+
+        // The caller that can go on without the pointer gets the damage as a value.
+        var (value, damage) = await ProductionMetadata.TryReadAsync(dir);
+        Assert.Null(value);
+        Assert.NotNull(damage);
+    }
+
+    [Fact]
+    public async Task TryReadAsync_MissingFile_IsAbsence_NotDamage()
+    {
+        var (value, damage) = await ProductionMetadata.TryReadAsync(NewProductionDir());
+
+        Assert.Null(value);
+        Assert.Null(damage);
     }
 }

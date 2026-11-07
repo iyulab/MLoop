@@ -93,7 +93,12 @@ public enum DataQualityIssueType
     /// <summary>
     /// Date/time format inconsistency.
     /// </summary>
-    DateFormatIssue
+    DateFormatIssue,
+
+    /// <summary>
+    /// No column is left to read as a feature (every one excluded, ignored or given another role) — training refuses it.
+    /// </summary>
+    NoUsableFeatures
 }
 
 /// <summary>

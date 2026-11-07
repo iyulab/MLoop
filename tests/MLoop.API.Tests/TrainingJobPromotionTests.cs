@@ -1,6 +1,7 @@
 using FluentAssertions;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.Models;
+using MLoop.Ops.Interfaces;
 
 namespace MLoop.API.Tests;
 
@@ -39,26 +40,31 @@ public class TrainingJobPromotionTests
             ModelPath = "model.zip"
         };
 
-        await TrainingJobRunner.PromoteIfBetterAsync(registry, config, result, CancellationToken.None);
+        var origin = new PromotionOrigin(PromotionVia.Http, "caller-7");
+        await TrainingJobRunner.PromoteIfBetterAsync(registry, config, result, origin, CancellationToken.None);
 
         registry.PrimaryMetric.Should().Be(expected);
         registry.ExperimentId.Should().Be("exp-002");
+        // The history names who started the job and the door it came through.
+        registry.Origin.Should().Be(origin);
     }
 
     private sealed class RecordingRegistry : IModelRegistry
     {
         public string? PrimaryMetric { get; private set; }
         public string? ExperimentId { get; private set; }
+        public PromotionOrigin? Origin { get; private set; }
 
-        public Task<bool> AutoPromoteAsync(string modelName, string experimentId, string primaryMetric, CancellationToken cancellationToken = default)
+        public Task<bool> AutoPromoteAsync(string modelName, string experimentId, string primaryMetric, PromotionOrigin? origin = null, CancellationToken cancellationToken = default)
         {
             ExperimentId = experimentId;
+            Origin = origin;
             PrimaryMetric = primaryMetric;
             return Task.FromResult(true);
         }
 
         public Task PromoteAsync(string modelName, string experimentId, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task PromoteAsync(string modelName, string experimentId, string action, string? gatePolicyRefusal = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task PromoteAsync(string modelName, string experimentId, string action, string? gatePolicyRefusal = null, PromotionOrigin? origin = null, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task<string?> GatePolicyRefusalAsync(string modelName, string experimentId, CancellationToken cancellationToken = default) => Task.FromResult<string?>(null);
         public Task<ModelInfo?> GetProductionAsync(string modelName, CancellationToken cancellationToken = default) => Task.FromResult<ModelInfo?>(null);
         public Task<IEnumerable<ModelInfo>> ListAsync(string? modelName = null, CancellationToken cancellationToken = default) => Task.FromResult(Enumerable.Empty<ModelInfo>());

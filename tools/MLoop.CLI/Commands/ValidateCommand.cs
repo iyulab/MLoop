@@ -268,6 +268,8 @@ public static class ValidateCommand
         var taskName = model.Task?.Trim() ?? "";
         if (MLoop.CLI.Infrastructure.Configuration.ModelTrainingConfig.EnsembleConflict(model) is { } ensembleProblem)
             errors.Add(new ValidationError($"{prefix}.ensemble", ensembleProblem));
+        if (MLoop.CLI.Infrastructure.Configuration.ModelTrainingConfig.AnomalyThresholdConflict(model) is { } thresholdProblem)
+            errors.Add(new ValidationError($"{prefix}.anomaly_threshold", thresholdProblem));
         if (taskName.Equals("forecasting", StringComparison.OrdinalIgnoreCase) && (model.Horizon ?? 0) <= 0)
         {
             errors.Add(new ValidationError($"{prefix}.horizon",

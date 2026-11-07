@@ -1,0 +1,208 @@
+#!/usr/bin/env python3
+"""Walks the series tasks (forecasting, time-series anomaly) over series of growing length and records, per step, the wall time and the peak
+resident memory of the CLI process.
+
+The lifecycle walk (lifecycle-check.py) uses series of a few hundred points. This script asks a different question: does a step's cost stay
+close to linear in the length of the series, and does a long series still finish. The series is synthetic and learnable (a season of 12, a
+trend and noise; the anomaly series gets a spike every 1,000 points), so a failure is the tool's, not the data's.
+
+  python series-scale.py --mloop "dotnet path/to/mloop.dll" [--rows 10000,100000,1000000] [--tasks forecast,anomaly] [--out series-scale-results.json]
+
+Linux and macOS (peak memory comes from getrusage of a wrapper's child: kilobytes on Linux, bytes on macOS).
+"""
+import argparse, csv, json, math, os, platform, random, shlex, subprocess, sys, tempfile, time
+
+WRAPPER = ("import json,resource,subprocess,sys;p=subprocess.run(sys.argv[1:],capture_output=True,text=True);"
+           "print(json.dumps({'rc':p.returncode,'maxrss':resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss,'out':p.stdout[-4000000:],'err':p.stderr[-2000:]}))")
+STEP_TIMEOUT = 1800
+HEAD = 500
+
+
+WEEKDAYS = (0.0, 0.0, 0.0, 0.0, 0.0, -4.0, -6.0)
+HORIZON = 10
+
+
+SHAPES = ('monthly', 'daily', 'trend', 'walk', 'growth', 'noise')
+
+
+def write_series(path, n, spikes, seed, shape='monthly', horizon=HORIZON, future=0, spike_every=1000, spike_size=40.0, level=100.0):
+    """Writes one series of n points and returns (reference, naive, ahead): the mean absolute error over the last `horizon` points of a forecaster
+    that knew the signal exactly (the noise it still misses), of one that repeats the last value before them, and the `future` points that follow
+    the n written (the truth a forecast of the series is held to).
+
+    monthly: a season of 12. daily: a yearly season of 365 (two harmonics) and a weekly pattern, the shape on which a window shorter than the season
+    is in question. trend: a straight line. walk: a random walk with drift (nothing to learn but the drift; its reference is the naive one).
+    growth: an exponential trend with a season of 12. noise: a constant level.
+    `level` is the value the monthly, trend and noise shapes sit around (the noise stays at standard deviation 1, so it sets how large the level is
+    relative to the noise and to the spikes)."""
+    rng = random.Random(seed)
+    tail, values, drift = [], [], 100.0
+    for t in range(n + future):
+        noise = rng.gauss(0, 1.0)
+        if shape == 'daily':
+            signal = (100.0 + 0.01 * t + 40.0 * math.sin(2 * math.pi * t / 365) + 10.0 * math.sin(4 * math.pi * t / 365 + 1.0) + WEEKDAYS[t % 7])
+        elif shape == 'trend':
+            signal = level + 0.05 * t
+        elif shape == 'walk':
+            drift += 0.05 + noise
+            signal, noise = drift, 0.0
+        elif shape == 'growth':
+            signal = 100.0 * math.exp(0.0008 * t) + 10.0 * math.sin(2 * math.pi * t / 12)
+        elif shape == 'noise':
+            signal = level
+        else:
+            signal = level + 0.00005 * t + 10.0 * math.sin(2 * math.pi * t / 12)
+        v = signal + noise
+        if spikes and t % spike_every == spike_every // 2:
+            v += spike_size
+        if n - horizon <= t < n:
+            tail.append(abs(noise))
+        values.append(round(v, 4))
+    ahead = values[n:]
+    values = values[:n]
+    with open(path, 'w', newline='') as f:
+        w = csv.writer(f)
+        w.writerow(['value'])
+        for v in values:
+            w.writerow([v])
+    naive = sum(abs(values[n - horizon + i] - values[n - horizon - 1]) for i in range(horizon)) / horizon
+    return (round(naive if shape == 'walk' else sum(tail) / len(tail), 3), round(naive, 3), ahead)
+
+
+def step(mloop, name, args, cwd, log, timeout=None):
+    t0 = time.monotonic()
+    try:
+        p = subprocess.run([sys.executable, '-c', WRAPPER, *shlex.split(mloop), *args], cwd=cwd, capture_output=True, text=True, timeout=timeout or STEP_TIMEOUT)
+        wall = time.monotonic() - t0
+        info = json.loads(p.stdout.strip().splitlines()[-1]) if p.stdout.strip() else {'rc': -1, 'maxrss': 0, 'out': '', 'err': p.stderr[-500:]}
+    except subprocess.TimeoutExpired:
+        wall = time.monotonic() - t0
+        info = {'rc': 'timeout', 'maxrss': 0, 'out': '', 'err': f'timeout after {timeout or STEP_TIMEOUT}s'}
+    kb = info['maxrss'] / (1 if platform.system() == 'Linux' else 1024)
+    rec = {'step': name, 'rc': info['rc'], 'wall_s': round(wall, 1), 'peak_mb': round(kb / 1024, 0), 'tail': (info['err'] or info['out'])[-300:].replace('\n', ' '), 'head': (info['err'] or info['out'])[:HEAD].replace('\n', ' '), 'out': info['out'] if name in ('train', 'evaluate') else ''}
+    log.append(rec)
+    print(f"   {name:<9} rc={rec['rc']} wall={rec['wall_s']}s peak={rec['peak_mb']:.0f}MB" + ('' if info['rc'] == 0 else f"  HEAD: {rec['head']}  TAIL: {rec['tail']}"), flush=True)
+    return info
+
+
+def score_future(out, ahead):
+    """The forecast `predict --json` printed against the points that really followed the series: its mean absolute error, and the share of those
+    points inside the interval it gave (None where the output does not parse)."""
+    try:
+        doc = next(json.loads(l) for l in out.splitlines() if l.startswith('{') and '"predictions"' in l)
+        rows = doc['predictions']
+        get = lambda r, k: next(v for key, v in r.items() if key.lower() == k)
+        forecast = [get(r, 'score') for r in rows]
+        lower = [get(r, 'scorelowerbound') for r in rows]
+        upper = [get(r, 'scoreupperbound') for r in rows]
+        k = min(len(forecast), len(ahead))
+        inside = [lower[i] <= ahead[i] <= upper[i] for i in range(k)]
+        # the share inside by third of the horizon: a band that is right near and wrong far shows here, in a mean it does not
+        thirds = [round(sum(inside[a * k // 3:(a + 1) * k // 3]) / max(1, (a + 1) * k // 3 - a * k // 3), 3) for a in range(3)]
+        return {'future_mae': round(sum(abs(forecast[i] - ahead[i]) for i in range(k)) / k, 3), 'interval_coverage': round(sum(inside) / k, 3),
+                'interval_coverage_thirds': thirds,
+                'interval_halfwidth': round(sum((upper[i] - lower[i]) / 2 for i in range(k)) / k, 3)}
+    except Exception as e:  # a missing or unparsable forecast is a result too
+        return {'future_error': repr(e)[:120]}
+
+
+def score_anomaly(out, n, spike_every, keep_scores=False):
+    """The judgements `predict --json` printed for the test series against the spikes written into it (one every `spike_every` points): the share of
+    spikes flagged (a flag within one point of a spike counts) and the share of the other judged points flagged. None where the output does not parse."""
+    try:
+        doc = next(json.loads(l) for l in out.splitlines() if l.startswith('{') and '"predictions"' in l)
+        flags = [next((v for key, v in r.items() if key.lower() == 'isanomaly'), None) for r in doc['predictions']]
+        spikes = [t for t in range(len(flags)) if t % spike_every == spike_every // 2]
+        near = {j for s in spikes for j in (s - 1, s, s + 1)}
+        flagged = {i for i, f in enumerate(flags) if f}
+        judged = [i for i, f in enumerate(flags) if f is not None]
+        others = [i for i in judged if i not in near]
+        extra = {}
+        if keep_scores:
+            # every row's score and verdict, so a threshold other than the model's can be replayed offline (None = not judged)
+            extra = {'anomaly_scores': [next((v for key, v in r.items() if key.lower() == 'anomalyscore'), None) for r in doc['predictions']],
+                     'anomaly_flags': flags}
+        return {**extra, 'anomaly_rows': len(flags), 'anomaly_judged': len(judged), 'anomaly_spikes': len(spikes),
+                'anomaly_recall': round(sum(1 for s in spikes if flagged & {s - 1, s, s + 1}) / max(1, len(spikes)), 3),
+                'anomaly_false_rate': round(sum(1 for i in others if i in flagged) / max(1, len(others)), 4)}
+    except Exception as e:
+        return {'anomaly_error': repr(e)[:120]}
+
+
+def walk(mloop, task, n, time_budget, window=None, timeout=None, seed=1, shape='monthly', horizon=HORIZON, spike_every=1000, spike_size=40.0, level=100.0, keep_scores=False):
+    base = tempfile.mkdtemp(prefix=f'series-scale-{task}-')
+    log = []
+    spikes = task == 'anomaly'
+    oracle, naive, ahead = write_series(os.path.join(base, 'train.csv'), n, spikes, seed * 2 - 1, shape, horizon, horizon if task == 'forecast' else 0, spike_every, spike_size, level)
+    write_series(os.path.join(base, 'test.csv'), n, spikes, seed * 2, shape, horizon, 0, spike_every, spike_size, level)
+    flag = 'forecasting' if task == 'forecast' else 'time-series-anomaly'
+    print(f'== {task} n={n:,} window={window or "default"} seed={seed}  ({base})', flush=True)
+    step(mloop, 'init', ['init', 'proj', '--task', flag, '--label', 'value', '--json'], base, log)
+    proj = os.path.join(base, 'proj')
+    if window or horizon != HORIZON:
+        yaml_path = os.path.join(proj, 'mloop.yaml')
+        text = open(yaml_path).read().replace('    horizon: 10\n', f'    horizon: {horizon}\n' + (f'    window_size: {window}\n' if window else ''), 1)
+        open(yaml_path, 'w').write(text)
+    future = {}
+    tr = step(mloop, 'train', ['train', os.path.join(base, 'train.csv'), '--label', 'value', '--time', str(time_budget), '--json'], proj, log, timeout)
+    if tr['rc'] == 0:
+        if task == 'forecast':
+            pr = step(mloop, 'predict', ['predict', '--json'], proj, log)
+            future = score_future(pr.get('out', ''), ahead)
+        else:
+            pr = step(mloop, 'predict', ['predict', os.path.join(base, 'test.csv'), '--json'], proj, log)
+            future = score_anomaly(pr.get('out', ''), n, spike_every, keep_scores)
+        step(mloop, 'evaluate', ['evaluate', 'exp-001', os.path.join(base, 'test.csv'), '--json'], proj, log)
+    return {'task': task, 'rows': n, 'window': window, 'seed': seed, 'shape': shape, 'level': level, 'horizon': horizon, 'oracle_mae': oracle, 'naive_mae': naive, **future, 'steps': log}
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--mloop', required=True)
+    ap.add_argument('--rows', default='10000,100000,1000000')
+    ap.add_argument('--tasks', default='forecast,anomaly')
+    ap.add_argument('--time', type=int, default=60)
+    ap.add_argument('--windows', default='', help='forecast only: comma-separated SSA window sizes to try at every length (window_size in mloop.yaml); empty = the default')
+    ap.add_argument('--seeds', default='1', help='comma-separated series seeds (the noise differs)')
+    ap.add_argument('--step-timeout', type=int, default=0, help='seconds per step (0 = 1800)')
+    ap.add_argument('--shape', default='monthly', help='comma-separated series shapes: ' + ', '.join(SHAPES) + ' (see write_series)')
+    ap.add_argument('--horizon', default=str(HORIZON), help='comma-separated forecast horizons')
+    ap.add_argument('--spike-every', type=int, default=1000, help='anomaly series: one spike every this many points')
+    ap.add_argument('--spike-size', type=float, default=40.0, help='anomaly series: the spike height, in units of the noise (standard deviation 1)')
+    ap.add_argument('--level', type=float, default=100.0, help='the value the monthly, trend and noise shapes sit around (noise standard deviation stays 1)')
+    ap.add_argument('--scores', action='store_true', help='anomaly: keep every test row\'s score and verdict in the results (for replaying other thresholds offline)')
+    ap.add_argument('--vary', default='', help='NAME=v1,v2,...: runs every cell once per value with that environment variable set (recorded as variant)')
+    ap.add_argument('--out', default='series-scale-results.json')
+    a = ap.parse_args()
+    windows = [int(w) for w in a.windows.split(',') if w] or [None]
+    var_name, _, var_values = a.vary.partition('=')
+    variants = var_values.split(',') if var_name else [None]
+
+    def cell(v, t, n, w, sd, shape, h):
+        if var_name:
+            os.environ[var_name] = v
+        r = walk(a.mloop, t, int(n), a.time, w if t == 'forecast' else None, a.step_timeout or None, int(sd), shape, int(h), a.spike_every, a.spike_size, a.level, a.scores)
+        r['variant'] = v
+        return r
+
+    results = [cell(v, t, n, w, sd, shape, h)
+               for v in variants for shape in a.shape.split(',') for h in a.horizon.split(',') for t in a.tasks.split(',') for n in a.rows.split(',')
+               for w in (windows if t == 'forecast' else [None]) for sd in a.seeds.split(',')]
+    json.dump(results, open(a.out, 'w'), indent=1)
+    print('\n| task | rows | window | seed | step | rc | wall s | peak MB | mae | oracle mae |\n|---|---|---|---|---|---|---|---|---|---|')
+    for r in results:
+        for s in r['steps']:
+            mae = ''
+            if s['step'] in ('train', 'evaluate') and s.get('out'):
+                try:
+                    ev = [json.loads(l) for l in s['out'].splitlines() if l.startswith('{')]
+                    m = next((e for e in ev if e.get('event') == 'result'), None) or next((e for e in ev if 'testMetrics' in e), {})
+                    mae = ((m.get('metrics') or m.get('testMetrics')) or {}).get('mae', '')
+                except Exception:
+                    mae = '?'
+            print(f"| {r['task']} | {r['rows']:,} | {r.get('window') or 'default'} | {r.get('seed', 1)} | {s['step']} | {s['rc']} | {s['wall_s']} | {s['peak_mb']:.0f} | {mae} | {r.get('oracle_mae', '')} |")
+    return 0 if all(s['rc'] == 0 for r in results for s in r['steps']) else 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

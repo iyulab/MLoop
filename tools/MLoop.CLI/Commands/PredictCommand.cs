@@ -193,9 +193,7 @@ public static partial class PredictCommand
             }
 
             // Resolve model name (defaults to "default")
-            var resolvedModelName = string.IsNullOrWhiteSpace(modelName)
-                ? ConfigDefaults.DefaultModelName
-                : modelName.Trim().ToLowerInvariant();
+            var resolvedModelName = MLoop.Core.Storage.ModelName.Resolve(modelName);
 
             // The model to predict with, and what its experiment record says it was trained on.
             var model = await ResolveModelAsync(modelPath, experiment, resolvedModelName, projectRoot, fileSystem, projectDiscovery);
@@ -262,7 +260,11 @@ public static partial class PredictCommand
                     projectRoot, resolvedModelPath, experimentId, dataFile, output, resolvedModelName, json, fileSystem);
 
             // Resolve data file path (Convention: datasets/predict.csv)
-            var resolvedDataFile = ResolveDataFile(dataFile, projectRoot, taskType, fileSystem);
+            // Read mloop.yaml only when it can matter: no file was named, so data.predict may name one.
+            var userConfig = string.IsNullOrEmpty(dataFile)
+                ? await new ConfigLoader(fileSystem, projectDiscovery).LoadUserConfigAsync()
+                : null;
+            var resolvedDataFile = ResolveDataFile(dataFile, projectRoot, taskType, fileSystem, userConfig);
             if (resolvedDataFile is null)
                 return 1;
 

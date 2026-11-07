@@ -70,6 +70,11 @@ public static class PromoteCommand
             DefaultValueFactory = _ => false
         };
 
+        var byOption = new Option<string?>("--by")
+        {
+            Description = "Who is changing production, recorded in the promotion history (a name or an account; nothing is recorded when it is not given)"
+        };
+
         var command = new Command("promote", "Promote an experiment to production");
         command.Arguments.Add(experimentIdArg);
         command.Options.Add(nameOption);
@@ -80,6 +85,7 @@ public static class PromoteCommand
         command.Options.Add(jsonOption);
         command.Options.Add(decideOnlyOption);
         command.Options.Add(historyOption);
+        command.Options.Add(byOption);
 
         command.SetAction((parseResult) =>
         {
@@ -95,7 +101,7 @@ public static class PromoteCommand
                 return experimentId != null || latest || best || force || decideOnly
                     ? Task.FromResult(HistoryConflict(json))
                     : ShowHistoryAsync(name, json);
-            return ExecuteAsync(experimentId, name, latest, best, force, noBackup, json, decideOnly);
+            return ExecuteAsync(experimentId, name, latest, best, force, noBackup, json, decideOnly, parseResult.GetValue(byOption));
         });
 
         return command;
@@ -109,7 +115,8 @@ public static class PromoteCommand
         bool force,
         bool noBackup,
         bool jsonOutput,
-        bool decideOnly)
+        bool decideOnly,
+        string? by = null)
     {
         // In --json mode stdout must be pure JSON, so narration routes to stderr for the
         // duration — and the scope guarantees stdout still carries a document on an exit
@@ -145,9 +152,7 @@ public static class PromoteCommand
             }
 
             // Resolve model name (defaults to "default")
-            var resolvedModelName = string.IsNullOrWhiteSpace(modelName)
-                ? ConfigDefaults.DefaultModelName
-                : modelName.Trim().ToLowerInvariant();
+            var resolvedModelName = MLoop.Core.Storage.ModelName.Resolve(modelName);
 
             var experimentStore = new ExperimentStore(fileSystem, projectDiscovery);
             var modelRegistry = new ModelRegistry(fileSystem, projectDiscovery, experimentStore);
@@ -253,7 +258,7 @@ public static class PromoteCommand
                 ShowPromotionDetails(resolvedModelName, experiment, autoSelectionReason);
 
             // Check if replacing existing production model
-            var currentProduction = await modelRegistry.GetProductionAsync(resolvedModelName, CancellationToken.None);
+            var currentProduction = await modelRegistry.GetProductionOrNoneAsync(resolvedModelName, CancellationToken.None);
 
             // --decide-only: report the selection verdict without moving the production pointer.
             // Lets a consumer with its own system-of-record delegate mloop's direction-aware
@@ -297,6 +302,7 @@ public static class PromoteCommand
 
             // Create promotion manager for backup + history
             var promotionManager = new FilePromotionManager(projectRoot);
+            var origin = new PromotionOrigin(PromotionVia.Cli, by);
 
             // Backup current production before promotion
             string? backupPath = null;
@@ -307,7 +313,7 @@ public static class PromoteCommand
 
             if (jsonOutput)
             {
-                await modelRegistry.PromoteAsync(resolvedModelName, experimentId, PromotionActions.Promote, policyRefusal, CancellationToken.None);
+                await modelRegistry.PromoteAsync(resolvedModelName, experimentId, PromotionActions.Promote, policyRefusal, origin, CancellationToken.None);
             }
             else
             {
@@ -316,7 +322,7 @@ public static class PromoteCommand
                     .Spinner(Spinner.Known.Dots)
                     .StartAsync("[yellow]Promoting to production...[/]", async ctx =>
                     {
-                        await modelRegistry.PromoteAsync(resolvedModelName, experimentId, PromotionActions.Promote, policyRefusal, CancellationToken.None);
+                        await modelRegistry.PromoteAsync(resolvedModelName, experimentId, PromotionActions.Promote, policyRefusal, origin, CancellationToken.None);
                         ctx.Status("[green]Promotion complete![/]");
                     });
             }
@@ -592,17 +598,7 @@ public static class PromoteCommand
             Console.WriteLine(JsonSerializer.Serialize(new
             {
                 modelName = name,
-                promotions = history.Select(r => new
-                {
-                    experimentId = r.ExperimentId,
-                    previousExperimentId = r.PreviousExperimentId,
-                    action = r.Action,
-                    timestamp = r.Timestamp.ToUniversalTime(),
-                    gate = r.Gate,
-                    gateDetail = r.GateDetail,
-                    metric = r.Metric,
-                    metricValue = r.MetricValue,
-                }),
+                promotions = PromotionHistoryView.Rows(history),
             }, new JsonSerializerOptions { WriteIndented = true }));
             return 0;
         }

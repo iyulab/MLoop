@@ -272,7 +272,7 @@ public class ReadmeCommandContractTests
     /// break that payload into several tokens and report a false parse failure unrelated to the
     /// CLI's actual grammar.
     /// </summary>
-    private static IEnumerable<string> Tokenize(string commandLine)
+    internal static IEnumerable<string> Tokenize(string commandLine)
     {
         var tokens = new List<string>();
         var current = new System.Text.StringBuilder();

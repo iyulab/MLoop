@@ -128,7 +128,7 @@ public class ModelDefinition
     public int? Horizon { get; set; }
 
     /// <summary>
-    /// SSA window size (0 or null = auto: series_length / 4).
+    /// SSA window size (0 or null = auto: a quarter of series_length, at most <c>ForecastingWindow.MaximumDefault</c>).
     /// </summary>
     public int? WindowSize { get; set; }
 
@@ -136,6 +136,12 @@ public class ModelDefinition
     /// Number of past data points for SSA model (0 or null = auto: total rows).
     /// </summary>
     public int? SeriesLength { get; set; }
+
+    /// <summary>
+    /// The score above which a <c>time-series-anomaly</c> model flags a point (spectral-residual score, above 0 and below 1).
+    /// Unset: 0.3, ML.NET's default. A lower value finds smaller spikes and flags more ordinary points; the guide tabulates the trade.
+    /// </summary>
+    public double? AnomalyThreshold { get; set; }
 
     /// <summary>
     /// User column for recommendation task.

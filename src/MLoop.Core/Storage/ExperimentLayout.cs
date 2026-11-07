@@ -57,6 +57,15 @@ public static class ExperimentLayout
     public const string SeriesFileName = "series.csv";
 
     /// <summary>
+    /// A forecasting model's band width, fitted on forecasts of points it had not seen
+    /// (<c>MLoop.Core.Models.ForecastBandCalibration</c>) — the factor on the half-width ML.NET's native band gives, which
+    /// is narrower than the error on points that follow the series. Beside <see cref="ModelFileName"/>, applied where
+    /// the forecast is replayed, and copied on promote like the calibration (a promoted model without one drops the
+    /// previous model's). Absent: the native band.
+    /// </summary>
+    public const string ForecastBandFileName = "forecast-band.json";
+
+    /// <summary>
     /// A binary classifier's decision threshold, when one was chosen for it
     /// (<c>MLoop.Core.Models.DecisionThreshold</c>) — the probability from which it answers the positive
     /// class. Beside <see cref="ModelFileName"/>, read by every path that loads the model, and copied on

@@ -2,6 +2,7 @@ using Microsoft.ML;
 using Microsoft.ML.Data;
 using MLoop.Core.Data;
 using MLoop.Core.Detection;
+using MLoop.Core.Models;
 using MLoop.Core.Storage;
 using MLoop.Core.Training;
 
@@ -168,6 +169,11 @@ public static class ForecastReplayService
             return (null, "Forecast produced 0 values.");
         }
 
+        // The band SSA gives is narrower than the error on points past the series; the width this model was fitted to is
+        // beside it. A model trained before it, or on a series too short to fit one, keeps the native band.
+        if (ForecastBandCalibration.ReadBeside(modelPath) is { } band)
+            forecast = band.Apply(forecast);
+
         if (requestedHorizon.HasValue && requestedHorizon.Value != forecast.ForecastedValues.Length)
         {
             return (null,
@@ -182,7 +188,7 @@ public static class ForecastReplayService
     /// <summary>
     /// Maps a horizon forecast onto the shared structured-prediction row schema (the same
     /// PredictionRow the /predict API and tabular --json emit): Score = forecasted value,
-    /// ScoreLowerBound/Upper = SSA native band, IntervalConfidence = its coverage level.
+    /// ScoreLowerBound/Upper = the band (SSA's, scaled by the model's fitted width when it has one), IntervalConfidence = the level it is fitted to.
     /// Row order is the step order — step = index + 1, matching the CSV output's Step column.
     /// </summary>
     public static List<PredictionRow> BuildForecastRows(ForecastOutput forecast)

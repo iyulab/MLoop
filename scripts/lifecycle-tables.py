@@ -7,6 +7,12 @@ regime); rows above it are regime B, a part of the population the first model ha
 is rewritten (a class becomes the next class, a regression target is mirrored about regime A's mean) — the rule the
 world followed in A no longer holds in B. The input shift is real; the concept shift is injected.
 
+A table with fewer than three numeric features (most business exports are mostly categories) or no numeric column to
+move has its regimes cut on a category instead: the column of 3 to 60 values that tracks the label best (Cramer's V, or
+eta squared for a regression target) is the one that "moves"; its most frequent values, up to 60% of the rows, are regime A and
+the remaining values are regime B — values the first model has never seen. The manifest says which way it was cut
+(`shift_kind`: `numeric` or `category`).
+
 Each table becomes a directory: train_a.csv, new_a.csv (regime A, in-regime rows to predict), train_b.csv, test_b.csv,
 new_b.csv (regime B), and manifest.json. Needs pandas and numpy.
 
@@ -29,6 +35,7 @@ import pandas as pd
 SEED = 20261030
 REGIME_CAP = 6000   # rows per regime; the time a lifecycle takes should not turn on the size of the table
 SHIFT_QUANTILE = 0.6
+MIN_A, MIN_B = 900, 360   # rows a regime must have: A is 300 to predict and the rest to learn from; B is a fifth to predict, a fifth to test and the rest to learn from
 
 
 def hangul(text):
@@ -109,21 +116,71 @@ def cut_at(df, c):
     return None if len(a) == 0 or (a == a.max()).mean() > 0.2 else at
 
 
+CATEGORY_VALUES = (3, 60)   # a column of fewer values has no "rarer part"; one of more is an identifier or free text
+
+
+def category_strength(df, c, label, task):
+    """How much column c says about the label: Cramer's V for a class label, eta squared for a number. 0 when it says nothing."""
+    keep = df[[c, label]].dropna()
+    if len(keep) < 100:
+        return 0.0
+    if task == 'regression':
+        y = pd.to_numeric(keep[label], errors='coerce')
+        total = ((y - y.mean()) ** 2).sum()
+        if not total > 0:
+            return 0.0
+        group = y.groupby(keep[c].astype(str))
+        return float((group.count() * (group.mean() - y.mean()) ** 2).sum() / total)
+    table = pd.crosstab(keep[c].astype(str), keep[label].astype(str))
+    expected = np.outer(table.sum(axis=1), table.sum(axis=0)) / table.values.sum()
+    chi2 = float(((table.values - expected) ** 2 / np.where(expected > 0, expected, 1)).sum())
+    return (chi2 / (table.values.sum() * max(1, min(table.shape) - 1))) ** 0.5
+
+
+def category_cut(df, label, task):
+    """(column, values of regime B) for the category column to move, or (None, None). Regime A holds the most frequent values up to 60% of the
+    rows, regime B the rest; a column whose rest is under a fifth of the rows, or whose first value alone holds more than 60%, cannot be cut so."""
+    best = (0.0, None, None)
+    for c in df.columns:
+        if c == label or pd.api.types.is_numeric_dtype(df[c]):
+            continue
+        n = df[c].nunique()
+        if not CATEGORY_VALUES[0] <= n <= CATEGORY_VALUES[1] or df[c].notna().mean() < 0.5:
+            continue
+        counts = df[c].value_counts()
+        share = counts.cumsum() / counts.sum()
+        in_a = counts.index[: int((share < 0.6).sum()) + 1]
+        rest = [v for v in counts.index if v not in set(in_a)]
+        if not rest or counts[rest].sum() / counts.sum() < 0.2 or counts[in_a[0]] / counts.sum() > 0.6:
+            continue
+        strength = category_strength(df, c, label, task)
+        if strength > best[0]:
+            best = (strength, c, rest)
+    return best[1], best[2]
+
+
 def cut(row, source, out, shape='plain'):
     name, task, label = row['name'], row['task_type'], row['target']
     df = pd.read_csv(os.path.join(source, 'data', row['file']), low_memory=False)
     df = df.dropna(subset=[label]).reset_index(drop=True)
     numeric = [c for c in df.columns if c != label and pd.api.types.is_numeric_dtype(df[c])]
-    if len(numeric) < 3:
-        return f'{name}: skipped (fewer than 3 numeric features)'
-    col, at = next(((c, at) for c in shift_columns(df, label, task) if (at := cut_at(df, c)) is not None), (None, None))
-    if col is None:
-        return f'{name}: skipped (no numeric column to move)'
-    in_b = df[col] > at
+    col, at = next(((c, at) for c in shift_columns(df, label, task) if (at := cut_at(df, c)) is not None), (None, None)) if len(numeric) >= 3 else (None, None)
+    kind = 'numeric'
+    if col is not None:
+        in_b = df[col] > at
+    else:
+        # fewer than three numeric features, or none to move: cut on a category (most business tables are mostly categories)
+        col, values_b = category_cut(df, label, task)
+        if col is None:
+            return f'{name}: skipped (no numeric or category column to move)'
+        kind, at = 'category', values_b
+        in_b = df[col].isin(values_b)
     a = df[~in_b].sample(frac=1.0, random_state=SEED).head(REGIME_CAP)
     b = df[in_b].sample(frac=1.0, random_state=SEED).head(REGIME_CAP)
-    if len(b) < 400 or len(a) < 1500:
-        return f'{name}: skipped (regimes of {len(a)} and {len(b)} rows)'
+    # the first model learns from regime A less the rows to predict, the second from B less its test and prediction rows: both stay as many
+    # rows as the walk's steps can tell models apart on (a fixed 1,500 / 400 turned away tables of 1,300 rows or a regime of 370)
+    if len(b) < MIN_B or len(a) < MIN_A:
+        return f'{name}: skipped (regimes of {len(a)} and {len(b)} rows; the walk needs {MIN_A} and {MIN_B})'
 
     if task == 'regression':
         centre = pd.to_numeric(a[label], errors='coerce').mean()
@@ -152,13 +209,14 @@ def cut(row, source, out, shape='plain'):
     k = df[label].nunique()
     learned = {'binary': ['auc', 0.6], 'multiclass': ['macro_accuracy', round(1 / k + 0.05, 3)], 'regression': ['r_squared', 0.1]}[task]
     manifest = {'name': name, 'task': task, 'label': read[label], 'shift_column': read[col], 'numeric_columns': [read[c] for c in numeric],
-                'n_new_a': n_new_a, 'n_new_b': n_new_b, 'learned': learned, 'regime_cut': float(at),
+                'n_new_a': n_new_a, 'n_new_b': n_new_b, 'learned': learned, 'shift_kind': kind,
+                'regime_cut': float(at) if kind == 'numeric' else [str(v) for v in at],
                 'rows': {key: len(part) for key, part in parts.items()}}
     if shape == 'korean-export':
         manifest['encoding'] = 'cp949'   # lifecycle-check reads the files in this encoding, drops the unnamed index column, and reads a broken header cell with a space
     with open(os.path.join(d, 'manifest.json'), 'w') as f:
         json.dump(manifest, f, indent=2)
-    return f'{name}: {task} label={label} moves={col} rows={manifest["rows"]}'
+    return f'{name}: {task} label={label} moves={col} ({kind}) rows={manifest["rows"]}'
 
 
 SYNTHETIC = ('wide', 'many-classes', 'spelling', 'duplicate-name', 'unique-label')

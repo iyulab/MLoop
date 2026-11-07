@@ -82,6 +82,17 @@ internal class Program
     }
 
     /// <summary>
+    /// A model name that cannot be a directory name — <c>--name ../x</c> — reaches here from whichever command resolved it
+    /// (<see cref="MLoop.Core.Storage.ModelName.Resolve"/> is the gate and throws). One answer for all of them: the reason and
+    /// the way out, not a stack trace.
+    /// </summary>
+    private static int ReportInvalidModelName(MLoop.Core.Storage.InvalidModelNameException ex)
+    {
+        Infrastructure.Diagnostics.ErrorConsole.Error(ex.Message, "Choose a name of lowercase letters, digits and single hyphens, e.g. --name my-model.");
+        return 1;
+    }
+
+    /// <summary>
     /// Parses and dispatches, factored out for the same reason <see cref="BuildRootCommand"/> is:
     /// a test that reached for <c>Parse(args).Invoke()</c> directly would be exercising a
     /// hand-rolled copy of this dispatch, and the exit that only exists here — a command line that
@@ -91,7 +102,16 @@ internal class Program
     {
         var parseResult = rootCommand.Parse(args);
 
-        return ReportIfUnrunnable(parseResult, args) ?? parseResult.Invoke();
+        if (ReportIfUnrunnable(parseResult, args) is { } refused)
+            return refused;
+        try
+        {
+            return parseResult.Invoke();
+        }
+        catch (MLoop.Core.Storage.InvalidModelNameException ex)
+        {
+            return ReportInvalidModelName(ex);
+        }
     }
 
     /// <summary>
@@ -104,7 +124,16 @@ internal class Program
     {
         var parseResult = rootCommand.Parse(args);
 
-        return ReportIfUnrunnable(parseResult, args) ?? await parseResult.InvokeAsync();
+        if (ReportIfUnrunnable(parseResult, args) is { } refused)
+            return refused;
+        try
+        {
+            return await parseResult.InvokeAsync();
+        }
+        catch (MLoop.Core.Storage.InvalidModelNameException ex)
+        {
+            return ReportInvalidModelName(ex);
+        }
     }
 
     /// <summary>

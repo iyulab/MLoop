@@ -96,7 +96,7 @@ public static class TriggerCommand
                 .StartAsync($"Evaluating triggers for {modelName}...", async ctx =>
                 {
                     result = await trigger.EvaluateAsync(
-                        modelName.ToLowerInvariant(),
+                        MLoop.Core.Storage.ModelName.Require(modelName),
                         conditions);
                 });
 

@@ -36,6 +36,42 @@ The `Engine compare` workflow (`workflow_dispatch`) runs one job per split seed 
 
 `summarize` ends with a per-seed table when the rows hold `mloop` and `flaml` or `mloop-ensemble`: the sign of each split seed (`+` the first system is better, `-` worse, `=` the same value) next to the verdict, the number of runs that took longer than the budget plus the larger of 2 s and 20 %, and the held-out expected calibration error of the MLoop rows. `ensemble where run vs flaml` counts a blend where `--ensemble` was run (binary, regression) and the single model where it was not (multiclass), so its tally covers every table.
 
+## Reading one execution against an earlier one (`regress`)
+
+`run.py regress --base <results> --candidate <results>` answers whether the search has got worse between two executions of this harness. Two executions run on
+different machines at different times, so an absolute metric would carry the runner. The rule therefore reads each execution against a reference system that
+ran in the same execution (`--reference`, FLAML by default): per table the verdict of `mloop` against it, as `summarize` prints it. It reports `WATCH` for a
+table that was ahead or equal in the baseline and is behind by at least two standard errors in the candidate (or when the number of tables where `mloop` is behind rose by two),
+and `REGRESSION` (exit status 1) when that number rose by three or more - with five seeds a table whose true gap is nil is read "behind" about 19 % of the time, which
+makes a rise of two a coin-toss-sized event across sixteen tables and a rise of three rare (about 1 % for identical code, simulated). The rule was fixed before the code was written; `test_regress.py` builds a flip, a machine that is slower for
+both systems, and a new draw of noise around the same gaps, and checks the status of each. A table that sits on the boundary between equal and behind can flip on
+noise alone - that is why one flip is only a watch.
+
+The `Benchmarks scheduled` workflow runs the comparison (systems `mloop`, `flaml`, `lightgbm`; split seeds 0-4) and the lifecycle walk on a weekly schedule and reads
+each comparison against the previous successful run.
+
+## Ranking against the old AutoML (`rank.py`)
+
+`rank.py` answers the same question as the table sweep for the ranking task, which `run.py` does not cover. For each split seed
+`rank-tables.py` cuts MSLR-WEB10K (the validation fold, 2,000 queries of up to 100-odd documents with 136 features) into a train file of
+600 queries and a test file of 150 other queries; `mloop train --group-column qid` and `mloop evaluate` are scored against
+`automl-legacy`'s ranking experiment (the same time budget, the same files) by ML.NET's own ranking evaluator, so both numbers are NDCG at 10 with the
+same gains. `summarize` reads the pair as `run.py summarize` does. Build `automl-legacy/` first; needs pandas, numpy and pyarrow.
+
+```bash
+python benchmarks/engine-compare/rank.py run --mloop "dotnet tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" --source validation.parquet --seeds 0,1,2,3,4 --budget 60 --out rank.jsonl
+python benchmarks/engine-compare/rank.py summarize rank.jsonl
+```
+
+`run` takes `--systems` (run one side only; a later row of the same system and seed replaces an earlier one in `summarize`) and `--mloop-name` (record
+MLoop under another name, to keep two builds apart). Read the pair with the legacy search's own noise in mind: its search is multi-threaded and
+bound by the clock, so repeating a seed gives another model - seed 3 scored 0.4731 and, run again, 0.4494 - and one run per seed carries about 0.02 of NDCG
+at 10. A gap of 0.008 over five seeds is inside what a repeat of the legacy side alone can move; more seeds or repeated legacy runs are needed to call it.
+
+The ranking evaluator groups consecutive rows with the same query key. A key mapping fitted on the train file alone turns every unseen test
+query into the missing key and the evaluator then scores the whole test file as one list (NDCG at 10 of 0.61 instead of 0.46 on the same model) -
+`automl-legacy` fits its mapping on both files for that reason.
+
 ## Learner parity and the cost of a large model
 
 `parity/` answers two questions that a gap between systems raises. `parity.py` trains one fixed set of hyperparameters with the LightGBM

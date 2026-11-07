@@ -19,6 +19,11 @@ population and their label is rewritten):
  11  rollback                 the slot returns to the model it replaced and the history records that
  12  retrain, paired gate     with gate.data (current-regime rows) and gate.no_worse_than_production, the same retraining is promoted by
                               the row-by-row comparison and the history records the gate as passed
+ 12b yaml only (binary, regression, generated tables)
+                           a second project states its files (`data.train/test/predict`, none named as a command defaults to), `ensemble`
+                           and a `gate` in mloop.yaml and is given nothing on the command line: `train`, `evaluate` and `predict` read the
+                           declared files, the experiment records the ensemble switch, the gate refuses what its limit forbids when
+                           `promote` is asked, and keeps a first model out of production when `train` promotes by itself
  13+ serve                   `mloop serve` over HTTP: /health, /predict (logged, with ids), /logs, /feedback, /drift, /trigger, an admin /promote
                               that the next /predict sees (the model cache reloads), /rollback, /promotions, and an async /train job
                               that finishes and reports whether it was promoted;
@@ -437,6 +442,90 @@ def public_tables(src, base):
     return {**desc, 'public': True}
 
 
+def yaml_declared_steps(run, base, task, label, n_score):
+    """A project that says everything in mloop.yaml and names nothing on the command line.
+
+    The steps above hand every file to the command that reads it, so they cannot see a setting that mloop.yaml states and a command
+    copies, reads or ignores: `ensemble` and `gate` were dropped on the way from the file to the trainer, and `data.test` and
+    `data.predict` were never read. Here the files carry names no command defaults to, and `train`, `evaluate` and `predict` are given
+    none - the model reads its files, its ensemble switch and its gate from the project, or the step fails."""
+    proj = os.path.join(base, 'proj_yaml')
+    rc, init = run.json_of('init', 'proj_yaml', '--task', TASK_FLAG[task], '--label', label, '--json')
+    if not run.check('yaml_declared_init', rc == 0 and bool(init), f'rc={rc}'):
+        return
+    datasets = os.path.join(proj, 'datasets')
+    os.makedirs(datasets, exist_ok=True)
+    for source, name in (('train_a', 'fit'), ('test_b', 'holdout'), ('new_a', 'score')):
+        shutil.copy(os.path.join(base, source + '.csv'), os.path.join(datasets, name + '.csv'))
+    config_path = os.path.join(proj, 'mloop.yaml')
+    text = open(config_path).read()
+    marker = '    description: '
+    at = text.index(marker)
+    eol = text.index('\n', at) + 1
+    text = text[:eol] + '    ensemble: true\n' + text[eol:]
+    # the project's own data paths: none of them is a file name a command looks for when the yaml is silent
+    text = text[:text.index('\ndata:')] + '\ndata:\n  train: datasets/fit.csv\n  test: datasets/holdout.csv\n  predict: datasets/score.csv\n'
+    open(config_path, 'w').write(text)
+    assert not os.path.exists(os.path.join(datasets, 'train.csv')) and not os.path.exists(os.path.join(datasets, 'test.csv'))
+
+    rc, evs = run.events('train', '--json', *run.budget_args(), cwd=proj)
+    result = next((e for e in evs if e.get('event') == 'result'), {})
+    promo = next((e for e in evs if e.get('event') == 'promotion'), {})
+    try:
+        recorded = json.load(open(os.path.join(proj, 'models', 'default', 'staging', 'exp-001', 'config.json')))
+    except (OSError, ValueError):
+        recorded = {}
+    run.check('yaml_declared_train', rc == 0 and result.get('experimentId') == 'exp-001' and promo.get('promoted') is True
+              and str(recorded.get('dataFile', '')).endswith('fit.csv') and recorded.get('ensemble') is True,
+              f'rc={rc} {result.get("experimentId")} promoted={promo.get("promoted")} file={os.path.basename(str(recorded.get("dataFile")))} ensemble={recorded.get("ensemble")}')
+
+    rc, ev = run.json_of('evaluate', '--json', cwd=proj)
+    run.check('yaml_declared_evaluate', rc == 0 and str((ev or {}).get('testDataFile', '')).endswith('holdout.csv'),
+              f'rc={rc} test file={os.path.basename(str((ev or {}).get("testDataFile")))}')
+
+    rc, pr = run.json_of('predict', '--json', cwd=proj)
+    run.check('yaml_declared_predict', rc == 0 and (pr or {}).get('count') == n_score, f'rc={rc} rows={(pr or {}).get("count")} want {n_score}')
+
+    if task != 'binary':
+        run.skip('yaml_declared_gate_refuses', 'limits judge the classes of a classifier')
+        return
+    # A limit no model meets: the second experiment is refused by the gate the yaml states, whatever its own score. holdout.csv is the
+    # shifted regime, where a model of the first regime answers 1 for nearly every row - so the rate that cannot be zero is the one
+    # of the rows labelled 0 answered 1 (the other way round it would be zero and every limit would pass).
+    gate = ("    gate:\n      data: datasets/holdout.csv\n      limits:\n        - actual: ['0']\n          predicted: ['1']\n          max: 0.0001\n")
+    text = open(config_path).read()
+    at = text.index(marker)
+    eol = text.index('\n', at) + 1
+    open(config_path, 'w').write(text[:eol] + gate + text[eol:])
+    rc, evs = run.events('train', '--json', *run.budget_args(), cwd=proj)
+    second = next((e for e in evs if e.get('event') == 'result'), {}).get('experimentId')
+    rc, refused = run.json_of('promote', second or 'exp-002', '--json', cwd=proj)
+    run.check('yaml_declared_gate_refuses', rc != 0 and 'gate policy' in str((refused or {}).get('error', '')),
+              f'rc={rc} {second}: {str((refused or {}).get("error"))[:110]}')
+
+    # The gate also judges what `train` promotes by itself. `promote` reads mloop.yaml again, so a gate lost on the way to `train` shows
+    # only here: a project whose first model cannot meet the limit keeps it in staging, and says it was the gate.
+    gated = os.path.join(base, 'proj_gate')
+    rc, init = run.json_of('init', 'proj_gate', '--task', TASK_FLAG[task], '--label', label, '--json')
+    if not run.check('yaml_declared_gate_init', rc == 0 and bool(init), f'rc={rc}'):
+        return
+    os.makedirs(os.path.join(gated, 'datasets'), exist_ok=True)
+    shutil.copy(os.path.join(base, 'train_a.csv'), os.path.join(gated, 'datasets', 'fit.csv'))
+    shutil.copy(os.path.join(base, 'test_b.csv'), os.path.join(gated, 'datasets', 'holdout.csv'))
+    gate_config = os.path.join(gated, 'mloop.yaml')
+    text = open(gate_config).read()
+    at = text.index(marker)
+    eol = text.index('\n', at) + 1
+    text = text[:eol] + gate + text[eol:]
+    text = text[:text.index('\ndata:')] + '\ndata:\n  train: datasets/fit.csv\n'
+    open(gate_config, 'w').write(text)
+    rc, evs = run.events('train', '--json', *run.budget_args(), cwd=gated)
+    promo = next((e for e in evs if e.get('event') == 'promotion'), {})
+    reason = str(promo.get('keptInStagingReason') or '')
+    run.check('yaml_declared_gate_judges_train', rc == 0 and promo.get('promoted') is False and 'gate' in reason.lower(),
+              f'rc={rc} promoted={promo.get("promoted")} reason={reason[:110]}')
+
+
 def scenario(mloop, task, budget, keep, expected, serve, soak=0, trials=0, bench=0, src=None):
     base = tempfile.mkdtemp(prefix=f'lifecycle-{task}-')
     run = Run(mloop, task, base, budget, expected, trials)
@@ -570,6 +659,9 @@ def scenario(mloop, task, budget, keep, expected, serve, soak=0, trials=0, bench
         last = changes[-1] if changes else {}
         run.check('retrain_with_paired_gate', rc == 0 and promo.get('promoted') is True and last.get('experimentId') == result.get('experimentId')
                   and last.get('gate') == 'passed', f'{result.get("experimentId")} promoted={promo.get("promoted")} reason={promo.get("keptInStagingReason")} history last={last.get("experimentId")}/{last.get("gate")}')
+
+        if not table['public'] and task in ('binary', 'regression'):
+            yaml_declared_steps(run, base, task, label, table['n_new_a'])
 
         if serve:
             serve_steps(run, proj, base, task, budget, table, soak, bench)
@@ -872,6 +964,29 @@ def anomaly_scenario(mloop, budget, keep, expected):
         run.check('explicit_promote', (pr or {}).get('status') in ('promoted', 'already-production'), f'rc={rc} status={(pr or {}).get("status")}')
         rc, rb = run.json_of('rollback', '--json', cwd=proj)
         run.check('rollback', (rb or {}).get('status') == 'rolled-back' and (rb or {}).get('experimentId') == 'exp-001', f'status={(rb or {}).get("status")} to={(rb or {}).get("experimentId")}')
+
+        # The score above which a point is flagged is the model's own, stated in mloop.yaml: it must reach the detector, and the trial
+        # record of the experiment says which one was used. A value that is not a score is refused, not fitted.
+        config_path = os.path.join(proj, 'mloop.yaml')
+        text = open(config_path).read()
+        marker = '    description: '
+        eol = text.index('\n', text.index(marker)) + 1
+        open(config_path, 'w').write(text[:eol] + '    anomaly_threshold: 0.2\n' + text[eol:])
+        rc, evs = run.events('train', os.path.join(base, 'train_a.csv'), '--label', 'value', *run.budget_args(), '--json', cwd=proj)
+        stated = next((e for e in evs if e.get('event') == 'result'), {}).get('experimentId')
+        used = []
+        try:
+            with open(os.path.join(proj, 'models', 'default', 'staging', stated or 'exp-003', 'trials.ndjson')) as trials:
+                for line in trials:
+                    trial = json.loads(line)
+                    if (trial.get('trainer') or {}).get('name') == 'SrCnnAnomaly':
+                        used.append(float(trial['trainer']['params']['threshold']))
+        except (OSError, ValueError, KeyError):
+            pass
+        run.check('yaml_anomaly_threshold_reaches_the_detector', rc == 0 and used == [0.2], f'rc={rc} {stated} detector thresholds in the trial record={used}')
+        open(config_path, 'w').write(text[:eol] + '    anomaly_threshold: 1.5\n' + text[eol:])
+        rc, out, err = run.cli('train', os.path.join(base, 'train_a.csv'), '--label', 'value', *run.budget_args(), cwd=proj)
+        run.check('yaml_anomaly_threshold_that_is_no_score_is_refused', rc != 0 and 'score threshold' in out + err, f'rc={rc} {(out + err).strip()[-140:]}')
     except Exception as ex:
         run.check('scenario', False, f'{type(ex).__name__}: {ex}')
     finally:

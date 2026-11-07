@@ -36,6 +36,18 @@ public interface IDataProvider
         DataKind? labelKind = null);
 
     /// <summary>
+    /// Loads the second file of a pre-split run - the test file after the training file - laid out the way the most recent
+    /// <see cref="LoadData"/> laid out its file: the same columns read as the same types, the same merged vectors. Inference from
+    /// each file does not agree with the other's: a column of numbers with one word in it is numbers in the file without the word
+    /// and text in the file with it, and the two views then have different columns. A loader with no layout to share loads the
+    /// file as <see cref="LoadData"/> does.
+    /// </summary>
+    IDataView LoadDataSharingLayout(string filePath, string? labelColumn = null, string? taskType = null,
+        IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null,
+        DataKind? labelKind = null)
+        => LoadData(filePath, labelColumn, taskType, preserveColumns, featureExclusions, labelKind);
+
+    /// <summary>
     /// Validates that the label column exists in the data
     /// </summary>
     bool ValidateLabelColumn(IDataView data, string labelColumn);

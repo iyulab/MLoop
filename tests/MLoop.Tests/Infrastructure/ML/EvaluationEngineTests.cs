@@ -384,6 +384,25 @@ public class EvaluationEngineTests : IDisposable
     }
 
     [Fact]
+    public async Task EvaluateAsync_Ranking_CountsTheQueriesOfTheFile_NotTheOnesTheModelSaw()
+    {
+        // The model's group key is fitted on the queries it trained on; a query it never saw maps to the missing key, so a
+        // file of held-out queries was scored as ONE list of all its rows. The same rows under ids the model never saw must
+        // be scored exactly as under the ids it did - the metrics describe the file's queries, not the model's memory of ids.
+        var (modelPath, seenPath) = TrainSimpleRankingModel();
+        var unseenPath = Path.Combine(_testDir, "ranking_test_unseen.csv");
+        var lines = File.ReadAllLines(seenPath, new System.Text.UTF8Encoding(true));
+        File.WriteAllLines(unseenPath, lines.Select((l, i) => i == 0 ? l : $"{1000 + int.Parse(l.Split(',')[0], System.Globalization.CultureInfo.InvariantCulture)}{l[l.IndexOf(',')..]}"));
+
+        var seen = (await _engine.EvaluateAsync(modelPath, seenPath, "Label", "ranking", groupColumn: "QueryId")).Metrics;
+        var unseen = (await _engine.EvaluateAsync(modelPath, unseenPath, "Label", "ranking", groupColumn: "QueryId")).Metrics;
+
+        Assert.Equal(seen.Keys.OrderBy(k => k, StringComparer.Ordinal), unseen.Keys.OrderBy(k => k, StringComparer.Ordinal));
+        foreach (var (name, value) in seen)
+            Assert.True(Math.Abs(value - unseen[name]) < 1e-9, $"{name}: {value} for the ids the model saw, {unseen[name]} for ids it did not");
+    }
+
+    [Fact]
     public async Task EvaluateAsync_Recommendation_PreservesUserItemColumns_ReturnsMetrics()
     {
         // The user/item half: a recommendation model maps the user and item columns to keys

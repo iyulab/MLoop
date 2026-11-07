@@ -609,6 +609,98 @@ public class ExperimentStoreTests : IDisposable
         Assert.DoesNotContain("weightColumn", await File.ReadAllTextAsync(indexPath));
     }
 
+    // A damaged index is not an empty one: the folders under staging/ are the record, the index a list of them.
+
+    private string IndexPathOf(string modelName = DefaultModelName) =>
+        Path.Combine(_testProjectRoot, ExperimentLayout.ModelsDirectory, modelName, ExperimentLayout.IndexFileName);
+
+    private async Task TrainTwoAsync()
+    {
+        foreach (var n in new[] { 1, 2 })
+        {
+            var id = await _experimentStore.GenerateIdAsync(DefaultModelName, CancellationToken.None);
+            await _experimentStore.SaveAsync(DefaultModelName, CreateExperimentData(id), CancellationToken.None);
+        }
+    }
+
+    [Theory]
+    [InlineData("{bad")]
+    [InlineData("")]
+    [InlineData("<<<<<<< HEAD\n{\"version\":2}\n=======\n{}\n>>>>>>> branch")]
+    [InlineData("null")]
+    public async Task ADamagedIndex_StillListsTheExperimentsOnDisk(string damage)
+    {
+        await TrainTwoAsync();
+        await File.WriteAllTextAsync(IndexPathOf(), damage);
+
+        var listed = (await _experimentStore.ListAsync(DefaultModelName, CancellationToken.None)).ToList();
+
+        Assert.Equal(["exp-001", "exp-002"], listed.Select(e => e.ExperimentId).OrderBy(i => i, StringComparer.Ordinal));
+        // A reader repairs nothing: the file is as it was.
+        Assert.Equal(damage, await File.ReadAllTextAsync(IndexPathOf()));
+    }
+
+    [Fact]
+    public async Task ADamagedIndex_IsRewrittenByTheNextId_AndTheDamagedBytesAreKept()
+    {
+        await TrainTwoAsync();
+        // A train killed before it saved leaves a folder with an id and no record: that id is taken too.
+        Directory.CreateDirectory(_experimentStore.GetExperimentPath(DefaultModelName, "exp-003"));
+        await File.WriteAllTextAsync(IndexPathOf(), "{bad");
+
+        var next = await _experimentStore.GenerateIdAsync(DefaultModelName, CancellationToken.None);
+
+        Assert.Equal("exp-004", next);
+        var kept = Directory.GetFiles(Path.GetDirectoryName(IndexPathOf())!, ExperimentLayout.IndexFileName + ".corrupt-*");
+        Assert.Single(kept);
+        Assert.Equal("{bad", await File.ReadAllTextAsync(kept[0]));
+        // The index is whole again and lists what was found.
+        var listed = (await _experimentStore.ListAsync(DefaultModelName, CancellationToken.None)).Select(e => e.ExperimentId);
+        Assert.Equal(["exp-001", "exp-002"], listed.OrderBy(i => i, StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task ASavedExperiment_RepairsADamagedIndexToo()
+    {
+        await TrainTwoAsync();
+        await File.WriteAllTextAsync(IndexPathOf(), "{bad");
+
+        await _experimentStore.SaveAsync(DefaultModelName, CreateExperimentData("exp-003"), CancellationToken.None);
+
+        var listed = (await _experimentStore.ListAsync(DefaultModelName, CancellationToken.None)).Select(e => e.ExperimentId);
+        Assert.Equal(["exp-001", "exp-002", "exp-003"], listed.OrderBy(i => i, StringComparer.Ordinal));
+    }
+
+    [Fact]
+    public async Task AnExperimentFolderTheIndexLacks_IsListed()
+    {
+        await TrainTwoAsync();
+        // The record of exp-003 was written, the index update after it never ran (a full disk, a kill).
+        await _experimentStore.SaveAsync(DefaultModelName, CreateExperimentData("exp-003"), CancellationToken.None);
+        var index = await File.ReadAllTextAsync(IndexPathOf());
+        var without = System.Text.RegularExpressions.Regex.Replace(index, @"\{[^{}]*""experimentId"":\s*""exp-003""[^{}]*\},?", "");
+        Assert.NotEqual(index, without);
+        await File.WriteAllTextAsync(IndexPathOf(), without);
+
+        var listed = (await _experimentStore.ListAsync(DefaultModelName, CancellationToken.None)).Select(e => e.ExperimentId);
+
+        Assert.Equal(["exp-001", "exp-002", "exp-003"], listed.OrderBy(i => i, StringComparer.Ordinal));
+        // ... and its id is not given out again.
+        Assert.Equal("exp-004", await _experimentStore.GenerateIdAsync(DefaultModelName, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task AFolderWithoutARecord_IsNotListed_ButItsIdIsTaken()
+    {
+        await TrainTwoAsync();
+        Directory.CreateDirectory(_experimentStore.GetExperimentPath(DefaultModelName, "exp-003"));
+
+        var listed = (await _experimentStore.ListAsync(DefaultModelName, CancellationToken.None)).Select(e => e.ExperimentId);
+
+        Assert.Equal(["exp-001", "exp-002"], listed.OrderBy(i => i, StringComparer.Ordinal));
+        Assert.Equal("exp-004", await _experimentStore.GenerateIdAsync(DefaultModelName, CancellationToken.None));
+    }
+
     private ExperimentData CreateExperimentData(string experimentId, string status = "Completed", double? metric = 0.85, string? modelName = null, ExperimentResult? result = null, string? weightColumn = null)
     {
         return new ExperimentData

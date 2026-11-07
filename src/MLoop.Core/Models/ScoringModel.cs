@@ -43,7 +43,7 @@ public static class ScoringModel
             RuntimeManager.EnsureRuntimeForTask(task);
         // A classifier that scores with logits answers in probabilities first, whatever the layers: they are what the
         // model means, and a calibration — fitted with no layers — reads them.
-        var model = ClassScores.AsProbabilities(mlContext, mlContext.Model.Load(modelPath, out inputSchema));
+        var model = ClassScores.AsProbabilities(mlContext, LoadArchive(mlContext, modelPath, out inputSchema));
         if (layers.HasFlag(ScoringLayers.Calibration))
             model = ProbabilityCalibration.ApplyBeside(mlContext, model, modelPath);
         if (layers.HasFlag(ScoringLayers.DecisionThreshold))
@@ -51,6 +51,36 @@ public static class ScoringModel
         // In front of the model, whatever the layers: the text columns it reads as sentence vectors are how it reads its
         // input at all, not a change to its answer.
         return Models.TextEncodings.ApplyBeside(mlContext, model, modelPath);
+    }
+
+    /// <summary>
+    /// The saved model, or - when the file is there but is not a whole model archive (cut short, empty) - an
+    /// <see cref="UnreadableStateFileException"/> that names the file and the way back. ML.NET's own text ("Failed to open a zip
+    /// archive / End of Central Directory record could not be found") names neither.
+    /// </summary>
+    private static ITransformer LoadArchive(MLContext mlContext, string modelPath, out DataViewSchema inputSchema)
+    {
+        try
+        {
+            return mlContext.Model.Load(modelPath, out inputSchema);
+        }
+        catch (Exception ex) when (File.Exists(modelPath) && IsBadArchive(ex))
+        {
+            throw new UnreadableStateFileException(modelPath, "not a complete model archive",
+                "If this is the production model, 'mloop promote <experiment-id>' copies a staged model again and 'mloop rollback' returns to the previous one; otherwise train again.", ex);
+        }
+    }
+
+    private static bool IsBadArchive(Exception ex)
+    {
+        for (var e = ex; e is not null; e = e.InnerException!)
+        {
+            if (e is InvalidDataException)
+                return true;
+            if (e.InnerException is null)
+                return false;
+        }
+        return false;
     }
 
     /// <inheritdoc cref="Load(MLContext, string, out DataViewSchema, string?, ScoringLayers)"/>

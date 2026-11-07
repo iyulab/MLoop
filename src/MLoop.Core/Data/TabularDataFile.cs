@@ -77,6 +77,8 @@ public static class TabularDataFile
             return path;
         if (!NeedsConversion(path))
             return ComposedCopy(path);
+        if (!isFolder && new FileInfo(path).Length == 0)
+            throw new EmptyTableFileException($"{Path.GetFileName(path)} is empty: it has no content, so there is no header row and no data.");
 
         var key = isFolder
             ? (Path.GetFullPath(path) + "#" + jsonRecordPath, LastWriteTimeOf(path).ToUniversalTime(), (long)DataFileFormats.FilesIn(path).Count)
@@ -99,9 +101,32 @@ public static class TabularDataFile
             throw new InvalidDataException($"{ex.Message} Pass the path with --records.", ex);
         }
         await pipeline.ToCsvAsync(csv).ConfigureAwait(false);
+        if (IsBlank(csv))
+        {
+            File.Delete(csv);
+            throw new EmptyTableFileException(
+                $"{Path.GetFileName(Path.TrimEndingDirectorySeparator(path))} is empty: it holds no cells, so there is no header row and no data.");
+        }
 
         Converted[key] = csv;
         return csv;
+    }
+
+    /// <summary>Whether <paramref name="path"/> holds nothing but white space (and a byte-order mark).</summary>
+    private static bool IsBlank(string path)
+    {
+        using var reader = new StreamReader(path, Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        var buffer = new char[4096];
+        int read;
+        while ((read = reader.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            for (var i = 0; i < read; i++)
+            {
+                if (!char.IsWhiteSpace(buffer[i]) && buffer[i] != '\uFEFF')
+                    return false;
+            }
+        }
+        return true;
     }
 
     /// <summary>

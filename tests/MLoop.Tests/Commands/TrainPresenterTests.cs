@@ -42,4 +42,13 @@ public class TrainPresenterTests : IDisposable
         Assert.Equal("3", Rows(Summary("x,y\n1,a\n2,b\n3,a\n\n\n")));
         Assert.Equal("3", Rows(Summary("x,y\n1,a\n\n2,b\n3,a\n")));
     }
+
+    [Fact]
+    public void TheFeatureCount_IsCalledWhatItIs_TheColumnsBesideTheLabelBeforeAnyExclusion()
+    {
+        var summary = Summary("x,z,y\n1,2,a\n3,4,b\n");
+
+        Assert.Matches(@"Candidate features\s*│\s*2", summary);
+        Assert.DoesNotMatch(@"│\s*Features\s*│", summary);
+    }
 }

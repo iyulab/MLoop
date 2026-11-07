@@ -44,7 +44,7 @@ public class ModelRegistry : IModelRegistry
         string modelName,
         string experimentId,
         CancellationToken cancellationToken = default)
-        => PromoteAsync(modelName, experimentId, MLoop.Ops.Interfaces.PromotionActions.Promote, null, cancellationToken);
+        => PromoteAsync(modelName, experimentId, MLoop.Ops.Interfaces.PromotionActions.Promote, null, null, cancellationToken);
 
     /// <inheritdoc />
     public async Task PromoteAsync(
@@ -52,10 +52,16 @@ public class ModelRegistry : IModelRegistry
         string experimentId,
         string action,
         string? gatePolicyRefusal = null,
+        MLoop.Ops.Interfaces.PromotionOrigin? origin = null,
         CancellationToken cancellationToken = default)
     {
         var resolvedName = ResolveModelName(modelName);
-        var previous = (await ProductionMetadata.ReadAsync(GetProductionPath(resolvedName), cancellationToken))?.ExperimentId;
+        // Promoting is what rewrites a pointer that cannot be read, so a damaged one is reported and not an obstacle:
+        // there is no previous experiment to record, and the files it pointed at are replaced below.
+        var (previousPointer, damagedPointer) = await ProductionMetadata.TryReadAsync(GetProductionPath(resolvedName), cancellationToken);
+        if (damagedPointer is not null)
+            Console.Error.WriteLine($"Warning: {damagedPointer.Path} cannot be read ({damagedPointer.Reason}); promoting without a previous experiment on record.");
+        var previous = previousPointer?.ExperimentId;
 
         // Verify experiment exists
         if (!_experimentStore.ExperimentExists(resolvedName, experimentId))
@@ -108,6 +114,7 @@ public class ModelRegistry : IModelRegistry
         {
             ExperimentLayout.DecisionThresholdFileName, ExperimentLayout.CalibrationFileName, ExperimentLayout.TextEncodersFileName,
             ExperimentLayout.ImageAnomalyFileName, ExperimentLayout.PatchBankFileName, ExperimentLayout.SeriesFileName,
+            ExperimentLayout.ForecastBandFileName,
         })
         {
             var sourceLayerPath = _fileSystem.CombinePath(experimentPath, layer);
@@ -134,11 +141,13 @@ public class ModelRegistry : IModelRegistry
             experiment.Metrics,
             experiment.Task,
             BestTrainer = experiment.Result?.BestTrainer,
-            LabelColumn = experiment.Config.LabelColumn
+            LabelColumn = experiment.Config.LabelColumn,
+            // What the slot holds, as the promotion left it: a later load compares the file with this (ModelIntegrity).
+            ModelSha256 = MLoop.Core.Models.ModelFingerprint.Sha256(targetModelPath),
         }, cancellationToken);
 
         await new MLoop.Ops.Services.FilePromotionManager(_projectRoot)
-            .RecordAsync(HistoryRecord(resolvedName, experiment, previous, action, gatePolicyRefusal), cancellationToken);
+            .RecordAsync(HistoryRecord(resolvedName, experiment, previous, action, gatePolicyRefusal, origin), cancellationToken);
     }
 
     /// <summary>
@@ -147,7 +156,8 @@ public class ModelRegistry : IModelRegistry
     /// A gate refusal on a promotion that went ahead means it was forced; a rollback is not gated.
     /// </summary>
     internal static MLoop.Ops.Interfaces.PromotionRecord HistoryRecord(
-        string modelName, ExperimentData experiment, string? previous, string action, string? gatePolicyRefusal = null)
+        string modelName, ExperimentData experiment, string? previous, string action, string? gatePolicyRefusal = null,
+        MLoop.Ops.Interfaces.PromotionOrigin? origin = null)
     {
         var metric = experiment.Metrics is { Count: > 0 } metrics
             ? MetricPolicy.ResolveCanonicalMetricKey(experiment.Config?.Metric ?? MetricNames.Auto, experiment.Task, metrics.Keys)
@@ -172,7 +182,7 @@ public class ModelRegistry : IModelRegistry
         return new MLoop.Ops.Interfaces.PromotionRecord(
             modelName, experiment.ExperimentId, previous, action,
             $"{action}: {experiment.ExperimentId} (previous: {previous ?? "none"})",
-            DateTimeOffset.UtcNow, gate, detail, metric, value);
+            DateTimeOffset.UtcNow, gate, detail, metric, value, MLoop.Ops.Interfaces.PromotionOrigin.Clean(origin?.By), origin?.Via);
     }
 
     /// <inheritdoc />
@@ -235,6 +245,11 @@ public class ModelRegistry : IModelRegistry
                     {
                         models.Add(model);
                     }
+                }
+                catch (UnreadableStateFileException damage)
+                {
+                    // Listed without a production entry, with the damage said: not as a model that has none.
+                    Console.Error.WriteLine($"Warning: {damage.Path} cannot be read ({damage.Reason}); '{name}' is left out of the production list.");
                 }
                 catch
                 {
@@ -304,7 +319,7 @@ public class ModelRegistry : IModelRegistry
         if (QualityGateRefusal(experiment, primaryMetric) is { } gateRefusal)
             return $"the quality gate refuses it: {gateRefusal}";
 
-        var production = await GetProductionAsync(resolvedName, cancellationToken);
+        var production = await this.GetProductionOrNoneAsync(resolvedName, cancellationToken);
         if (await ShouldPromoteOnMetricsAsync(resolvedName, experimentId, primaryMetric, cancellationToken))
             return await GatePolicyRefusalAsync(resolvedName, experimentId, cancellationToken) is { } policyRefusal
                 ? $"the gate policy refuses it: {policyRefusal}"
@@ -352,7 +367,7 @@ public class ModelRegistry : IModelRegistry
         var metricKey = MetricPolicy.ResolveCanonicalMetricKey(primaryMetric, experiment.Task, experiment.Metrics.Keys);
 
         // Get current production model
-        var currentProduction = await GetProductionAsync(resolvedName, cancellationToken);
+        var currentProduction = await this.GetProductionOrNoneAsync(resolvedName, cancellationToken);
 
         if (currentProduction?.Metrics == null)
         {
@@ -548,11 +563,12 @@ public class ModelRegistry : IModelRegistry
         string modelName,
         string experimentId,
         string primaryMetric,
+        MLoop.Ops.Interfaces.PromotionOrigin? origin = null,
         CancellationToken cancellationToken = default)
     {
         if (await ShouldPromoteAsync(modelName, experimentId, primaryMetric, cancellationToken))
         {
-            await PromoteAsync(modelName, experimentId, MLoop.Ops.Interfaces.PromotionActions.AutoPromote, null, cancellationToken);
+            await PromoteAsync(modelName, experimentId, MLoop.Ops.Interfaces.PromotionActions.AutoPromote, null, origin, cancellationToken);
             return true;
         }
 
@@ -561,8 +577,6 @@ public class ModelRegistry : IModelRegistry
 
     private static string ResolveModelName(string? name)
     {
-        return string.IsNullOrWhiteSpace(name)
-            ? ConfigDefaults.DefaultModelName
-            : name.Trim().ToLowerInvariant();
+        return MLoop.Core.Storage.ModelName.Resolve(name);
     }
 }

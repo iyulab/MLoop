@@ -215,4 +215,29 @@ public class ConfigKeyAuditTests
         public void EnsureProjectRoot() { }
         public string GetMLoopDirectory(string projectRoot) => Path.Combine(root, ".mloop");
     }
+
+    [Fact]
+    public void AKeyWrittenTwiceInOneMapping_IsReported_WithItsLine()
+    {
+        // The deserializer lets the later of two equal keys win; the file said both, so the reader of the file cannot tell which took effect.
+        const string Twice = "project: demo\ndata:\n  train: a.csv\n  test: b.csv\n  test: c.csv\nmodels:\n  default:\n    task: regression\n    label: y\n";
+
+        var found = Assert.Single(ConfigKeyAudit.Find<MLoopConfig>(Twice));
+
+        Assert.True(found.Repeated);
+        Assert.Contains("test", found.Path, StringComparison.Ordinal);
+        Assert.Contains("line 5", found.Path, StringComparison.Ordinal);
+        Assert.Contains("written twice", found.Describe(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheSameKeyUnderTwoMappings_IsNotRepeated_AndAMalformedFileStillSaysNothing()
+    {
+        // The partners: `train` under a model's training and a column's override can share a name without sharing a mapping.
+        const string Fine = "project: demo\nmodels:\n  a:\n    task: regression\n    label: y\n  b:\n    task: regression\n    label: y\n";
+        const string Broken = "project: demo: oops\n";
+
+        Assert.Empty(ConfigKeyAudit.Find<MLoopConfig>(Fine));
+        Assert.Empty(ConfigKeyAudit.Find<MLoopConfig>(Broken));
+    }
 }

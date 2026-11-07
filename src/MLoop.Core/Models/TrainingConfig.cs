@@ -210,6 +210,12 @@ public record TrainingConfig
     public int SeriesLength { get; init; } = 0;
 
     /// <summary>
+    /// The spectral-residual score above which a <c>time-series-anomaly</c> model flags a point;
+    /// <see langword="null"/> for <c>TrainingRunner.DefaultAnomalyThreshold</c>. Fixed when the model is trained — it is part of the saved detector.
+    /// </summary>
+    public double? AnomalyThreshold { get; init; }
+
+    /// <summary>
     /// User column name for recommendation task
     /// </summary>
     public string? UserColumn { get; init; }

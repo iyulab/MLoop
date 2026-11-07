@@ -19,6 +19,63 @@ on:
       trials:
         description: 'Trials of the trainer search per training (0 = the time budget alone)'
         default: '10'
+      series_rows:
+        description: 'Also walk the series tasks over series of these lengths (scripts/series-scale.py; comma-separated, empty = skip)'
+        default: ''
+      series_tasks:
+        description: 'Series tasks for that walk (forecast, anomaly)'
+        default: 'forecast,anomaly'
+      series_windows:
+        description: 'Forecast SSA window sizes to try at every length (comma-separated, empty = the default)'
+        default: ''
+      series_seeds:
+        description: 'Series seeds for that walk (comma-separated; the noise differs)'
+        default: '1'
+      series_timeout:
+        description: 'Seconds allowed to each step of the series walk (0 = 1800)'
+        default: '0'
+      series_vary:
+        description: 'NAME=v1,v2,... runs the series walk once per value with that environment variable set'
+        default: ''
+      series_spike_every:
+        description: 'Anomaly series: one spike every this many points'
+        default: '1000'
+      series_spike_size:
+        description: 'Anomaly series: the spike height in units of the noise (standard deviation 1)'
+        default: '40'
+      series_level:
+        description: 'The value the monthly, trend and noise series sit around (noise standard deviation stays 1)'
+        default: '100'
+      series_scores:
+        description: 'Anomaly series: keep every test row score and verdict in the results (true/false)'
+        default: 'false'
+      series_shape:
+        description: 'Comma-separated shapes of the walked series (monthly, daily, trend, walk, growth, noise; see scripts/series-scale.py)'
+        default: 'monthly'
+      series_horizon:
+        description: 'Comma-separated forecast horizons for the series walk'
+        default: '10'
+      table_rows:
+        description: 'Also walk the tabular tasks over tables of these row counts (scripts/table-scale.py; comma-separated, empty = skip)'
+        default: ''
+      table_tasks:
+        description: 'Tabular tasks for that walk (binary, multiclass, regression)'
+        default: 'binary,multiclass,regression'
+      table_classes:
+        description: 'Class counts for that walk (2 = binary, the others multiclass)'
+        default: '2,10,100'
+      table_features:
+        description: 'Numeric column counts for that walk (comma-separated)'
+        default: '20'
+      table_time:
+        description: 'Training time ceiling in seconds for that walk'
+        default: '60'
+      table_seeds:
+        description: 'Table seeds for that walk (comma-separated)'
+        default: '1'
+      table_signal:
+        description: "The tables' label function for that walk: linear, or interactions (sums of products of column pairs, a score that keeps rising with the rows)"
+        default: 'linear'
 
 concurrency:
   group: lifecycle-check-${{ github.ref }}
@@ -46,7 +103,7 @@ jobs:
       run: dotnet build tools/MLoop.CLI -c Release
 
     - name: Time-series prerequisite
-      if: contains(inputs.tasks, 'forecast') || contains(inputs.tasks, 'anomaly')
+      if: contains(inputs.tasks, 'forecast') || contains(inputs.tasks, 'anomaly') || inputs.series_rows != ''
       # ML.NET's MKL native links an Intel-ABI OpenMP runtime that Linux leaves to the system (TimeSeriesNativeSupport)
       run: |
         sudo apt-get install -y libomp5
@@ -60,6 +117,7 @@ jobs:
       run: dotnet build tools/MLoop.API -c Release
 
     - name: Walk
+      if: inputs.tasks != ''
       env:
         TASKS: ${{ inputs.tasks }}
         TRIALS: ${{ inputs.trials }}
@@ -70,6 +128,39 @@ jobs:
         python3 scripts/lifecycle-check.py --mloop "dotnet $PWD/tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" \
           --tasks "$TASKS" --trials "$TRIALS" --time 300 $([ "$SERVE" = true ] || echo --no-serve) --expected-failures "$EXPECTED" --server-log server.log --out lifecycle-results.json
 
+    - name: Walk the series tasks over growing lengths
+      if: inputs.series_rows != ''
+      env:
+        ROWS: ${{ inputs.series_rows }}
+        TASKS: ${{ inputs.series_tasks }}
+        WINDOWS: ${{ inputs.series_windows }}
+        STEP_TIMEOUT: ${{ inputs.series_timeout }}
+        SEEDS: ${{ inputs.series_seeds }}
+        SHAPE: ${{ inputs.series_shape }}
+        HORIZON: ${{ inputs.series_horizon }}
+        SPIKE_EVERY: ${{ inputs.series_spike_every }}
+        SPIKE_SIZE: ${{ inputs.series_spike_size }}
+        LEVEL: ${{ inputs.series_level }}
+        SCORES: ${{ inputs.series_scores }}
+        VARY: ${{ inputs.series_vary }}
+      run: |
+        python3 scripts/series-scale.py --mloop "dotnet $PWD/tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" --rows "$ROWS" --tasks "$TASKS" --windows "$WINDOWS" --step-timeout "$STEP_TIMEOUT" --seeds "$SEEDS" --shape "$SHAPE" --horizon "$HORIZON" --spike-every "$SPIKE_EVERY" --spike-size "$SPIKE_SIZE" --level "$LEVEL" $([ "$SCORES" = true ] && echo --scores) --vary "$VARY" --out series-scale-results.json | tee series-scale.log
+        echo '```' >> "$GITHUB_STEP_SUMMARY"; tail -n 60 series-scale.log >> "$GITHUB_STEP_SUMMARY"; echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Walk the tabular tasks over growing tables
+      if: inputs.table_rows != ''
+      env:
+        ROWS: ${{ inputs.table_rows }}
+        TASKS: ${{ inputs.table_tasks }}
+        CLASSES: ${{ inputs.table_classes }}
+        FEATURES: ${{ inputs.table_features }}
+        TIME: ${{ inputs.table_time }}
+        SEEDS: ${{ inputs.table_seeds }}
+        SIGNAL: ${{ inputs.table_signal }}
+      run: |
+        python3 scripts/table-scale.py --mloop "dotnet $PWD/tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" --rows "$ROWS" --tasks "$TASKS" --classes "$CLASSES" --features "$FEATURES" --time "$TIME" --seeds "$SEEDS" --signal "$SIGNAL" --out table-scale-results.json | tee table-scale.log
+        echo '```' >> "$GITHUB_STEP_SUMMARY"; tail -n 60 table-scale.log >> "$GITHUB_STEP_SUMMARY"; echo '```' >> "$GITHUB_STEP_SUMMARY"
+
     - name: Upload the results
       if: always()
       uses: actions/upload-artifact@v4
@@ -78,5 +169,9 @@ jobs:
         path: |
           lifecycle-results.json
           server.log
+          series-scale-results.json
+          series-scale.log
+          table-scale-results.json
+          table-scale.log
         if-no-files-found: ignore
         retention-days: 30

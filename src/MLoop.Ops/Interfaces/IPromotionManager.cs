@@ -85,6 +85,13 @@ public static class RollbackTarget
 /// <param name="GateDetail">Why the gate refused (when forced), or the warning it passed with; else <c>null</c>.</param>
 /// <param name="Metric">The project metric the gate judged by.</param>
 /// <param name="MetricValue">The newcomer's value of <paramref name="Metric"/>.</param>
+/// <param name="By">
+/// Who changed the slot: the <c>sub</c> of the token that called <c>POST /promote</c> or <c>POST /rollback</c>, or what
+/// <c>--by</c> said on the command line. <c>null</c> when nobody was named (a command run without <c>--by</c>) and in
+/// records written before this was recorded. The login name of the machine is never written on its own: a project
+/// folder goes into git, and a person's name must be given, not picked up.
+/// </param>
+/// <param name="Via">The way in — <see cref="PromotionVia"/>; <c>null</c> in older records.</param>
 public record PromotionRecord(
     string ModelName,
     string ExperimentId,
@@ -95,7 +102,51 @@ public record PromotionRecord(
     string? Gate = null,
     string? GateDetail = null,
     string? Metric = null,
-    double? MetricValue = null);
+    double? MetricValue = null,
+    string? By = null,
+    string? Via = null);
+
+/// <summary>Who changed the production slot and through which door (<see cref="PromotionRecord.By"/> · <see cref="PromotionRecord.Via"/>).</summary>
+/// <param name="Via">One of <see cref="PromotionVia"/>.</param>
+/// <param name="By">The person or token, when known.</param>
+public sealed record PromotionOrigin(string Via, string? By = null)
+{
+    /// <summary>The value of <see cref="By"/> with surrounding white space gone; <c>null</c> when nothing is left.</summary>
+    public static string? Clean(string? by) => string.IsNullOrWhiteSpace(by) ? null : by.Trim();
+}
+
+/// <summary>The values of <see cref="PromotionRecord.Via"/>.</summary>
+public static class PromotionVia
+{
+    /// <summary>A command of the <c>mloop</c> tool (<c>promote</c>, <c>rollback</c>, or the promotion at the end of <c>train</c>).</summary>
+    public const string Cli = "cli";
+
+    /// <summary>The HTTP server (<c>POST /promote</c>, <c>POST /rollback</c>, or the promotion at the end of a <c>POST /train</c> job).</summary>
+    public const string Http = "http";
+}
+
+/// <summary>
+/// The promotion history as a client reads it — <c>mloop promote --history --json</c> and <c>GET /promotions</c> list the
+/// same rows, made here so a field added to a record reaches both (each used to build its own copy of the row).
+/// </summary>
+public static class PromotionHistoryView
+{
+    /// <summary>The rows of <paramref name="history"/>, oldest first as given.</summary>
+    public static IReadOnlyList<object> Rows(IEnumerable<PromotionRecord> history)
+        => [.. history.Select(r => (object)new
+        {
+            experimentId = r.ExperimentId,
+            previousExperimentId = r.PreviousExperimentId,
+            action = r.Action,
+            timestamp = r.Timestamp.ToUniversalTime(),
+            gate = r.Gate,
+            gateDetail = r.GateDetail,
+            metric = r.Metric,
+            metricValue = r.MetricValue,
+            by = r.By,
+            via = r.Via,
+        })];
+}
 
 /// <summary>The values of <see cref="PromotionRecord.Gate"/>.</summary>
 public static class PromotionGate

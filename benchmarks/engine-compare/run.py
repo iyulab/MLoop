@@ -520,6 +520,78 @@ def summarize(paths):
         seed_view(by, meta, wall, budget, ece, verdict)
 
 
+def pair_verdict(a, b, direction):
+    """The first system against the second over the seeds both ran: ('ahead' | 'equal' | 'behind' | 'n/a', mean paired difference, its standard error).
+    A positive difference means the first is better (`direction` is +1 when higher is better, -1 when lower is). Equal = within one standard error,
+    the rule `summarize` and `pair` use."""
+    import numpy as np
+    seeds = sorted(set(a) & set(b))
+    if len(seeds) < 2:
+        return 'n/a', float('nan'), float('nan')
+    diffs = np.array([(a[s] - b[s]) * direction for s in seeds])
+    se = diffs.std(ddof=1) / math.sqrt(len(diffs))
+    mean = float(diffs.mean())
+    return ('equal' if abs(mean) <= se else ('ahead' if mean > 0 else 'behind')), mean, float(se)
+
+
+def regress(base_paths, candidate_paths, system='mloop', reference='flaml', margin=2.0, count_rise=3):
+    """Has the search got worse between two runs of this harness? Pre-registered rule (stated before the code was written):
+
+    A run is read against a reference system that ran in the same execution (FLAML by default) - the pair verdict of `system` against `reference`
+    per table, as `summarize` prints it. Two executions run on different machines at different times, so an absolute metric would carry the runner;
+    the reference carries it too and the difference between the two verdicts does not.
+
+      WATCH       a table whose verdict was ahead or equal in the baseline and is behind in the candidate by at least `margin` standard errors,
+                  or the number of tables where `system` is behind rose by two
+      REGRESSION  that number rose by `count_rise` (three) or more
+      OK          neither
+
+    Why three: a table whose true gap is nil is read "behind" about 19 % of the time with five split seeds (the one-standard-error rule), so with
+    four such tables among sixteen two executions of identical code differ by two or more in 8 % of the pairs and by three or more in 1 % (simulated,
+    normal noise); a rise of three is still found in about half the pairs when three tables truly get worse by one noise standard deviation or more.
+    Returns the status; `main` turns REGRESSION into a non-zero exit. Tables run in only one of the two executions are listed and not judged."""
+    def load(paths):
+        rows = collections.defaultdict(lambda: collections.defaultdict(dict))
+        for path in paths:
+            for line in open(path):
+                r = json.loads(line)
+                value = (r.get('test') or {}).get(PRIMARY[r['task']][0])
+                if value is not None and r['system'] in (system, reference):
+                    rows[r['dataset']][r['system']][r['seed']] = value
+                    rows[r['dataset']]['_task'] = r['task']
+        return rows
+
+    base, cand = load(base_paths), load(candidate_paths)
+    print('| dataset | metric | base verdict | candidate verdict | candidate diff (SE) | flag |')
+    print('|---|---|---|---|---|---|')
+    behind_base = behind_cand = judged = 0
+    watched, skipped = [], []
+    for name in sorted(set(base) | set(cand)):
+        if name not in base or name not in cand:
+            skipped.append(name)
+            continue
+        task = cand[name]['_task']
+        metric, direction = PRIMARY[task]
+        vb, _, _ = pair_verdict(base[name][system], base[name][reference], direction)
+        vc, mean, se = pair_verdict(cand[name][system], cand[name][reference], direction)
+        if 'n/a' in (vb, vc):
+            skipped.append(name)
+            continue
+        judged += 1
+        behind_base += vb == 'behind'
+        behind_cand += vc == 'behind'
+        flag = ''
+        if vb != 'behind' and vc == 'behind' and mean <= -margin * se:
+            flag = 'WATCH'
+            watched.append(name)
+        print(f'| {name} | {metric} | {vb} | {vc} | {mean:+.4g} ({se:.3g}) | {flag} |')
+    rise = behind_cand - behind_base
+    status = 'REGRESSION' if rise >= count_rise else ('WATCH' if watched or rise >= 2 else 'OK')
+    print(f'\n{system} behind {reference}: baseline {behind_base}/{judged} -> candidate {behind_cand}/{judged}; watched: {", ".join(watched) or "none"}; not judged: {", ".join(skipped) or "none"}')
+    print(f'STATUS: {status}')
+    return status
+
+
 def pair(base_paths, variant_paths, system='mloop'):
     """A variant of the search read against a baseline run of the same system: the two result sets share dataset, seed, budget and harness, differ
     in the build. Per table the verdict (the variant's mean paired difference within its standard error = equal), the trials each ran, the runs
@@ -641,11 +713,18 @@ def main():
     q.add_argument('--base', nargs='+', required=True, help='result files of the baseline')
     q.add_argument('--variant', nargs='+', required=True, help='result files of the variant')
     q.add_argument('--system', default='mloop')
+    g = sub.add_parser('regress', help='has the search got worse between two executions? (verdict against a same-run reference system; exit 1 on REGRESSION)')
+    g.add_argument('--base', nargs='+', required=True, help='result files of the baseline execution')
+    g.add_argument('--candidate', nargs='+', required=True, help='result files of the execution under test')
+    g.add_argument('--system', default='mloop')
+    g.add_argument('--reference', default='flaml')
     args = parser.parse_args()
     if args.cmd == 'run':
         run_all(args)
     elif args.cmd == 'pair':
         pair(args.base, args.variant, args.system)
+    elif args.cmd == 'regress':
+        sys.exit(1 if regress(args.base, args.candidate, args.system, args.reference) == 'REGRESSION' else 0)
     else:
         summarize(args.results)
 

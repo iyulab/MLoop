@@ -63,33 +63,24 @@ public class ExperimentStore : IExperimentStore
     {
         var resolvedName = ResolveModelName(modelName);
 
-        // Atomic ID generation with retry logic for concurrent access
-        const int maxRetries = 5;
-        const int retryDelayMs = 100;
-
-        for (int retry = 0; retry < maxRetries; retry++)
+        // The read, the increment and the write are one step under the index lock. Without it two processes (two
+        // `mloop train` on one project, a train beside a serve job) read the same NextId and both were given
+        // exp-001; one then failed on the other's model.zip, and without that collision the later writer overwrote
+        // the earlier experiment's records without a word.
+        return await WithIndexLockAsync(resolvedName, async () =>
         {
-            try
-            {
-                var index = await LoadOrCreateIndexAsync(resolvedName, cancellationToken);
-                var experimentId = $"exp-{index.NextId:D3}";
+            var index = await LoadOrCreateIndexAsync(resolvedName, cancellationToken, repair: true);
 
-                // Update index
-                index.NextId++;
-                await SaveIndexAsync(resolvedName, index, cancellationToken);
+            // A folder that exists names an id that is taken, whatever the index says: an index restored from git, merged,
+            // or rebuilt may be behind the folders (a train killed mid-run leaves its folder behind too).
+            var next = Math.Max(index.NextId, 1);
+            while (_fileSystem.DirectoryExists(GetExperimentPath(resolvedName, $"exp-{next:D3}")))
+                next++;
 
-                return experimentId;
-            }
-            catch (IOException) when (retry < maxRetries - 1)
-            {
-                // Another process may have locked the file, retry
-                await Task.Delay(retryDelayMs, cancellationToken);
-            }
-        }
-
-        throw new InvalidOperationException(
-            $"Failed to generate experiment ID for model '{resolvedName}' after multiple retries. " +
-            "This may indicate high concurrent access.");
+            index.NextId = next + 1;
+            await SaveIndexAsync(resolvedName, index, cancellationToken);
+            return $"exp-{next:D3}";
+        }, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -428,7 +419,8 @@ public class ExperimentStore : IExperimentStore
         return _fileSystem.CombinePath(modelPath, IndexFileName);
     }
 
-    private async Task<ExperimentIndex> LoadOrCreateIndexAsync(string modelName, CancellationToken cancellationToken)
+    private async Task<ExperimentIndex> LoadOrCreateIndexAsync(
+        string modelName, CancellationToken cancellationToken, bool repair = false)
     {
         var indexPath = GetIndexPath(modelName);
 
@@ -450,11 +442,119 @@ public class ExperimentStore : IExperimentStore
             return newIndex;
         }
 
-        var index = await _fileSystem.ReadJsonAsync<ExperimentIndex>(indexPath, cancellationToken);
+        ExperimentIndex index;
+        try
+        {
+            index = await _fileSystem.ReadJsonAsync<ExperimentIndex>(indexPath, cancellationToken);
+        }
+        catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidOperationException)
+        {
+            // The file exists and cannot be read - a merge conflict's markers, a cut write, a hand edit. That is not "no
+            // experiments": the folders under staging/ are the record and the index only a list of them, so the list is
+            // rebuilt from them. A writer then keeps the damaged bytes beside it and writes the rebuilt index; a reader
+            // only says so.
+            return await RebuildIndexAsync(modelName, indexPath, ex, repair, cancellationToken);
+        }
         if (index.Version < ExperimentIndex.CurrentVersion)
             await UpgradeIndexAsync(modelName, index, cancellationToken);
+        await AddExperimentsMissingFromAsync(index, modelName, cancellationToken);
         return index;
     }
+
+    /// <summary>
+    /// The index lists the experiment folders under staging/, and a folder with a readable record that it does not list is
+    /// still an experiment: a train that failed writing the index (a full disk, a kill) after its record, or the folders of
+    /// two branches that each trained joined by a merge that kept one side's index lines. They are added in memory, so every
+    /// reader sees them; a writer's next save keeps them.
+    /// </summary>
+    private async Task AddExperimentsMissingFromAsync(ExperimentIndex index, string modelName, CancellationToken cancellationToken)
+    {
+        var stagingPath = _fileSystem.CombinePath(_fileSystem.CombinePath(_modelsPath, modelName), StagingDirectory);
+        if (!_fileSystem.DirectoryExists(stagingPath))
+            return;
+
+        var known = index.Experiments.Select(e => e.ExperimentId).ToHashSet(StringComparer.Ordinal);
+        var highest = 0;
+        foreach (var directory in Directory.GetDirectories(stagingPath).OrderBy(d => d, StringComparer.Ordinal))
+        {
+            var id = Path.GetFileName(directory);
+            var number = System.Text.RegularExpressions.Regex.Match(id, @"^exp-(\d+)$");
+            if (!number.Success)
+                continue;
+            highest = Math.Max(highest, int.Parse(number.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture));
+            if (known.Contains(id))
+                continue;
+            try
+            {
+                index.Experiments.Add(SummaryOf(modelName, await LoadAsync(modelName, id, cancellationToken)));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                           or System.Text.Json.JsonException or InvalidOperationException)
+            {
+                // A folder without a readable record (a train killed before it saved) is an id taken, not an experiment.
+            }
+        }
+        // A listed id is never given again, whatever NextId says.
+        index.NextId = Math.Max(index.NextId, highest + 1);
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> ReportedDamage = new();
+
+    private async Task<ExperimentIndex> RebuildIndexAsync(
+        string modelName, string indexPath, Exception cause, bool repair, CancellationToken cancellationToken)
+    {
+        var rebuilt = new ExperimentIndex
+        {
+            Version = ExperimentIndex.CurrentVersion,
+            NextId = 1,
+            Experiments = new List<ExperimentSummary>()
+        };
+
+        var stagingPath = _fileSystem.CombinePath(_fileSystem.CombinePath(_modelsPath, modelName), StagingDirectory);
+        var highest = 0;
+        if (_fileSystem.DirectoryExists(stagingPath))
+        {
+            foreach (var directory in Directory.GetDirectories(stagingPath).OrderBy(d => d, StringComparer.Ordinal))
+            {
+                var id = Path.GetFileName(directory);
+                var number = System.Text.RegularExpressions.Regex.Match(id, @"^exp-(\d+)$");
+                if (!number.Success)
+                    continue;
+                highest = Math.Max(highest, int.Parse(number.Groups[1].Value, System.Globalization.CultureInfo.InvariantCulture));
+                try
+                {
+                    rebuilt.Experiments.Add(SummaryOf(modelName, await LoadAsync(modelName, id, cancellationToken)));
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                               or System.Text.Json.JsonException or InvalidOperationException)
+                {
+                    // A folder with no readable record (a train killed before it saved) holds an id but no experiment to list.
+                }
+            }
+        }
+        rebuilt.NextId = highest + 1;
+
+        string? kept = null;
+        if (repair)
+        {
+            kept = indexPath + ".corrupt-" + TimestampKeys.Stamp(DateTime.Now);
+            File.Copy(indexPath, kept, overwrite: true);
+            await SaveIndexAsync(modelName, rebuilt, cancellationToken);
+        }
+
+        if (ReportedDamage.TryAdd(indexPath + (repair ? "|repaired" : "|read"), 0))
+        {
+            Console.Error.WriteLine(
+                $"Warning: {indexPath} cannot be read ({FirstLine(cause.Message)}). " +
+                $"Using the {rebuilt.Experiments.Count} experiment(s) found under {StagingDirectory}/ instead." +
+                (kept is null
+                    ? " The next mloop train rewrites the file and keeps the damaged one beside it."
+                    : $" The damaged file is kept as {Path.GetFileName(kept)}."));
+        }
+        return rebuilt;
+    }
+
+    private static string FirstLine(string text) => text.Split('\n', 2)[0].TrimEnd();
 
     /// <summary>
     /// Fills what an older index did not record from each experiment's own record, in memory — a
@@ -491,23 +591,54 @@ public class ExperimentStore : IExperimentStore
         await _fileSystem.WriteJsonAsync(indexPath, index, cancellationToken);
     }
 
-    private async Task UpdateIndexWithExperimentAsync(
+    /// <summary>
+    /// Runs <paramref name="step"/> with the model's index locked against every other process: the index is read, changed
+    /// and written back, and a second writer in between would lose the first one's change.
+    /// </summary>
+    private async Task<T> WithIndexLockAsync<T>(string modelName, Func<Task<T>> step, CancellationToken cancellationToken)
+    {
+        using var held = await ExclusiveFileLock.AcquireAsync(
+            ExclusiveFileLock.PathFor(_projectRoot, $"{modelName}-{Path.GetFileNameWithoutExtension(IndexFileName)}"),
+            cancellationToken: cancellationToken);
+        return await step();
+    }
+
+    private Task UpdateIndexWithExperimentAsync(
+        string modelName,
+        ExperimentData experiment,
+        CancellationToken cancellationToken) =>
+        WithIndexLockAsync<object?>(modelName, async () =>
+        {
+            await UpdateIndexWithExperimentLockedAsync(modelName, experiment, cancellationToken);
+            return null;
+        }, cancellationToken);
+
+    private async Task UpdateIndexWithExperimentLockedAsync(
         string modelName,
         ExperimentData experiment,
         CancellationToken cancellationToken)
     {
-        var index = await LoadOrCreateIndexAsync(modelName, cancellationToken);
+        var index = await LoadOrCreateIndexAsync(modelName, cancellationToken, repair: true);
 
         // Remove old entry if exists
         var experiments = index.Experiments
             .Where(e => e.ExperimentId != experiment.ExperimentId)
             .ToList();
 
+        experiments.Add(SummaryOf(modelName, experiment));
+
+        index.Experiments = experiments;
+        await SaveIndexAsync(modelName, index, cancellationToken);
+    }
+
+    /// <summary>The index's line for an experiment - one place, so the index a train writes and the one rebuilt from the folders agree.</summary>
+    private static ExperimentSummary SummaryOf(string modelName, ExperimentData experiment)
+    {
         // The value and the name come from one resolution, so the entry names the metric it holds.
         var best = TaskMetadata.ResolvePrimaryMetric(
             experiment.Metrics, experiment.Config.Metric, experiment.Task);
 
-        experiments.Add(new ExperimentSummary
+        return new ExperimentSummary
         {
             ModelName = modelName,
             ExperimentId = experiment.ExperimentId,
@@ -520,16 +651,11 @@ public class ExperimentStore : IExperimentStore
             MetricName = best?.Name ?? experiment.Config.Metric,
             TrainingTimeSeconds = experiment.Result?.TrainingTimeSeconds,
             WeightColumn = experiment.Config.WeightColumn
-        });
-
-        index.Experiments = experiments;
-        await SaveIndexAsync(modelName, index, cancellationToken);
+        };
     }
 
     private static string ResolveModelName(string? name)
     {
-        return string.IsNullOrWhiteSpace(name)
-            ? ConfigDefaults.DefaultModelName
-            : name.Trim().ToLowerInvariant();
+        return MLoop.Core.Storage.ModelName.Resolve(name);
     }
 }

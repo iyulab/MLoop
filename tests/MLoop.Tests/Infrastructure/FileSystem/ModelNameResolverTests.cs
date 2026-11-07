@@ -1,5 +1,6 @@
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.FileSystem;
+using MLoop.Core.Storage;
 
 namespace MLoop.Tests.Infrastructure.FileSystem;
 
@@ -199,8 +200,10 @@ public class ModelNameResolverTests : IDisposable
     {
         var definition = new ModelDefinition { Task = "regression", Label = "price" };
 
-        await Assert.ThrowsAsync<ArgumentException>(
+        // InvalidModelNameException is an ArgumentException: Resolve is the gate, and it says why.
+        var ex = await Assert.ThrowsAnyAsync<ArgumentException>(
             () => _resolver.CreateAsync("1invalid", definition));
+        Assert.IsType<InvalidModelNameException>(ex);
     }
 
     [Fact]

@@ -234,7 +234,7 @@ public static class SampleCommand
             }
 
             var fileSystem = new FileSystemManager();
-            var columns = await FeedbackSamples.ColumnsAsync(fileSystem, new ProjectDiscovery(fileSystem), modelName.ToLowerInvariant());
+            var columns = await FeedbackSamples.ColumnsAsync(fileSystem, new ProjectDiscovery(fileSystem), MLoop.Core.Storage.ModelName.Require(modelName));
             if (columns is null)
             {
                 ErrorConsole.Error(Markup.Escape(FeedbackSamples.NoLabelError(modelName)), FeedbackSamples.NoLabelGuidance);
@@ -252,7 +252,7 @@ public static class SampleCommand
                 .StartAsync($"Sampling {sampleSize} entries from {modelName}...", async ctx =>
                 {
                     var result = await sampler.SampleAsync(
-                        modelName.ToLowerInvariant(),
+                        MLoop.Core.Storage.ModelName.Require(modelName),
                         sampleSize,
                         strategy.Value,
                         outputPath,
@@ -304,7 +304,7 @@ public static class SampleCommand
             if (projectRoot == null) return 1;
 
             var sampler = new FileDataSampler(projectRoot);
-            var stats = await sampler.GetStatisticsAsync(modelName.ToLowerInvariant());
+            var stats = await sampler.GetStatisticsAsync(MLoop.Core.Storage.ModelName.Require(modelName));
 
             // Same as logs: an empty history is an ordinary state, and --json must still report it
             // as a payload (all-zero stats) instead of prose on stdout.

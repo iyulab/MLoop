@@ -55,3 +55,103 @@ public class ProjectPathsTests
         Assert.False(ProjectPaths.IsWithin(other, Root));
     }
 }
+
+/// <summary>
+/// <see cref="ProjectPaths.IsWithin"/> compares the spelling of a path, so a symbolic link in the project that points out of it
+/// stayed "within" — <c>POST /train</c> read the file the link named. <see cref="ProjectPaths.IsWithinReal"/> follows the links.
+/// </summary>
+public class ProjectPathsSymlinkTests : IDisposable
+{
+    private readonly string _base = Path.Combine(Path.GetTempPath(), $"mloop-links-{Guid.NewGuid():N}");
+    private string Project => Path.Combine(_base, "proj");
+    private string Outside => Path.Combine(_base, "outside");
+
+    public ProjectPathsSymlinkTests()
+    {
+        Directory.CreateDirectory(Path.Combine(Project, "datasets"));
+        Directory.CreateDirectory(Outside);
+        File.WriteAllText(Path.Combine(Outside, "secret.csv"), "a,b\n1,2\n");
+        File.WriteAllText(Path.Combine(Project, "datasets", "real.csv"), "a,b\n1,2\n");
+    }
+
+    public void Dispose()
+    {
+        try { Directory.Delete(_base, recursive: true); } catch (IOException) { }
+        GC.SuppressFinalize(this);
+    }
+
+    private void Link(string link, string target, bool directory)
+    {
+        try
+        {
+            if (directory)
+                Directory.CreateSymbolicLink(link, target);
+            else
+                File.CreateSymbolicLink(link, target);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        {
+            Assert.Skip($"this machine cannot create symbolic links here: {ex.Message}");
+        }
+    }
+
+    [Fact]
+    public void ALinkedFile_ThatLeavesTheProject_IsOutside_ThoughItsSpellingIsInside()
+    {
+        var link = Path.Combine(Project, "datasets", "link.csv");
+        Link(link, Path.Combine(Outside, "secret.csv"), directory: false);
+
+        Assert.True(ProjectPaths.IsWithin(link, Project));            // the spelling: the lexical check cannot see it
+        Assert.False(ProjectPaths.IsWithinReal(link, Project));       // the place it names
+    }
+
+    [Fact]
+    public void ALinkedDirectory_ThatLeavesTheProject_IsOutside_ForEveryFileUnderIt()
+    {
+        var link = Path.Combine(Project, "datasets", "shared");
+        Link(link, Outside, directory: true);
+
+        Assert.False(ProjectPaths.IsWithinReal(Path.Combine(link, "secret.csv"), Project));
+        Assert.False(ProjectPaths.IsWithinReal(Path.Combine(link, "not-yet.csv"), Project));   // a path that does not exist yet
+    }
+
+    [Fact]
+    public void ALink_ThatStaysInsideTheProject_IsInside()
+    {
+        var link = Path.Combine(Project, "datasets", "alias.csv");
+        Link(link, Path.Combine(Project, "datasets", "real.csv"), directory: false);
+
+        Assert.True(ProjectPaths.IsWithinReal(link, Project));
+    }
+
+    [Fact]
+    public void AProjectRoot_ReachedThroughALink_StillContainsItsFiles()
+    {
+        var alias = Path.Combine(_base, "alias");
+        Link(alias, Project, directory: true);
+
+        Assert.True(ProjectPaths.IsWithinReal(Path.Combine(alias, "datasets", "real.csv"), alias));
+        Assert.True(ProjectPaths.IsWithinReal(Path.Combine(Project, "datasets", "real.csv"), alias));
+    }
+
+    [Fact]
+    public void LinksThatLeadBackToThemselves_AreRefused_NotFollowedForever()
+    {
+        var a = Path.Combine(Project, "a");
+        var b = Path.Combine(Project, "b");
+        Link(a, b, directory: true);
+        Link(b, a, directory: true);
+
+        Assert.False(ProjectPaths.IsWithinReal(Path.Combine(a, "x.csv"), Project));
+    }
+
+    [Fact]
+    public void WithoutLinks_RealPathIsThePath()
+    {
+        var file = Path.Combine(Project, "datasets", "real.csv");
+
+        Assert.True(ProjectPaths.IsSame(file, ProjectPaths.RealPath(file)) || OperatingSystem.IsMacOS());   // /var → /private/var on macOS
+        Assert.True(ProjectPaths.IsWithinReal(file, Project));
+        Assert.False(ProjectPaths.IsWithinReal(Path.Combine(Outside, "secret.csv"), Project));
+    }
+}

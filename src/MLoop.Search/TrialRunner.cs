@@ -26,6 +26,10 @@ namespace MLoop.Search;
 /// returned (<see cref="SearchResult.OutOfFold"/>) — what a calibration of the refit model is fitted on. Costs one more
 /// pass over each validated part; trials whose score falls well outside the top's standard error drop theirs.
 /// </param>
+/// <param name="SampleLargeTables">
+/// Probe a table of <see cref="SearchSample.ProbeRows"/> rows or more, and search a sample of it when the first trial on all the rows
+/// would take more than a tenth of the budget (<see cref="SearchSample"/>). Off, the search is on all the rows whatever the first trial costs.
+/// </param>
 /// <param name="KeepTopOutOfFold">
 /// Also keep the answers of the best this-many trials, whatever their distance from the top, and return them with the
 /// pipelines that made them (<see cref="SearchResult.Retained"/>) — what an ensemble of the best trials is chosen and weighted
@@ -43,7 +47,8 @@ public sealed record SearchRequest(
     int? MaxTrials = null,
     IEstimator<ITransformer>? Preprocess = null,
     bool KeepOutOfFold = false,
-    int KeepTopOutOfFold = 0);
+    int KeepTopOutOfFold = 0,
+    bool SampleLargeTables = true);
 
 /// <summary>A trial whose answers on its validated parts were kept beyond the winner's (<see cref="SearchRequest.KeepTopOutOfFold"/>).</summary>
 /// <param name="Trial">The trial.</param>
@@ -76,6 +81,7 @@ public sealed record RetainedTrial(
 /// <param name="Retained">
 /// The best <see cref="SearchRequest.KeepTopOutOfFold"/> trials with their answers, best first; <see langword="null"/> when none were asked for.
 /// </param>
+/// <param name="Sampling">How many rows the search ran on and the model was fitted on, when the table was probed (<see cref="SearchSample"/>); null below it.</param>
 public sealed record SearchResult(
     IReadOnlyList<TrialResult> Trials,
     TrialResult Best,
@@ -85,7 +91,19 @@ public sealed record SearchResult(
     FoldPlan Folds,
     TrialResult TopScoring,
     OutOfFoldScores? OutOfFold = null,
-    IReadOnlyList<RetainedTrial>? Retained = null);
+    IReadOnlyList<RetainedTrial>? Retained = null,
+    SamplingOutcome? Sampling = null);
+
+/// <summary>What probing a large table decided (<see cref="SearchSample"/>).</summary>
+/// <param name="Rows">Rows of the training partition.</param>
+/// <param name="SearchRows">Rows the trials ran on — <paramref name="Rows"/> unless the table was sampled.</param>
+/// <param name="RefitRows">Rows the model was fitted on: <paramref name="Rows"/>, or the sample when a refit on all of them would not fit the time budget.</param>
+/// <param name="ProbeSeconds">How long the probe took, the search's clock included.</param>
+public sealed record SamplingOutcome(int Rows, int SearchRows, int RefitRows, double ProbeSeconds)
+{
+    /// <summary>Whether the trials ran on fewer rows than the table has.</summary>
+    public bool Sampled => SearchRows < Rows;
+}
 
 /// <summary>No trial of a search produced a score. <see cref="Trials"/> says why each failed.</summary>
 public sealed class SearchFailedException(IReadOnlyList<TrialResult> trials, string message, bool allTrainersRetired = false) : Exception(message)
@@ -184,19 +202,50 @@ public sealed class TrialRunner
         ArgumentNullException.ThrowIfNull(roles);
         var clock = Stopwatch.StartNew();
         var settings = _request.Settings;
-        var plan = FoldPlan.For(train, roles.Label, _request.Stratify, settings.Seed);
+        var keys = FoldPlan.LabelKeys(train, roles.Label);
         // Every fold of every trial reads the training rows several times, and from a file each read parses them again — measured, a
         // linear or SDCA trial of a few seconds took a fifth of that once the rows were in memory, and sixteen public tables made 28 %
         // more trials in the same minute. Kept in memory when they fit (about four bytes a numeric cell, a kilobyte a text one); a table past the limit is
         // read from its source as before.
-        if (KeepsRowsInMemory(plan.FoldOf.Count, train.Schema.Count, roles.Of(ColumnRole.Text).Count))
+        var textColumns = roles.Of(ColumnRole.Text).Count;
+        var trainInMemory = KeepsRowsInMemory(keys.Length, train.Schema.Count, textColumns);
+        if (trainInMemory)
             train = RowCache.Of(new MLContext(settings.Seed), train);
         var columns = new TrainerColumns(roles.Label, "Features", _request.Weight);
         var withMissingValues = Featurizer.ColumnsWithMissingValues(train, roles);
 
         var schemas = _request.Candidates.Select(c => (Id: c.Name, Candidate: c)).ToList();
-        var proposer = new EciSchemaProposer([.. schemas.Select(s => (s.Id, s.Candidate.InitialCost))], settings.Seed);
+        // A trainer that fits a model per class costs the more the more classes there are (TrainerCandidate.CostFor): the proposer
+        // starts from that, so a label of a hundred classes does not open with a trainer that takes seconds a fold on a few thousand rows.
+        var classes = _request.Stratify ? keys.Distinct(StringComparer.Ordinal).Count() : 1;
+        var proposer = new EciSchemaProposer([.. schemas.Select(s => (s.Id, s.Candidate.CostFor(classes)))], settings.Seed);
         var tuners = schemas.ToDictionary(s => s.Id, s => new CostFrugalTuner(s.Candidate.Space, settings.Seed, startingPoints: [.. s.Candidate.StartingPoints.Select(s.Candidate.Space.PointOf)]), StringComparer.Ordinal);
+
+        // A large table is probed: the first trial on a sample says what one trial on all the rows would cost, and when that is
+        // more than the search can spend, the search runs on a sample (SearchSample). Below the threshold none of this runs.
+        var searchTrain = train;
+        var searchKeys = (IReadOnlyList<string>)keys;
+        SamplingOutcome? sampling = null;
+        if (_request.SampleLargeTables && keys.Length >= SearchSample.ProbeRows)
+        {
+            var probe = ProbeSeconds(train, roles, keys, schemas, classes, withMissingValues, columns, trainInMemory, clock, cancellationToken);
+            var probeSeconds = probe?.Seconds;
+            // A probe cut short says even the smallest sample's first trial is over the allowance: the search runs on that sample.
+            var searchRows = probe is not { } timed ? keys.Length
+                : timed.Cut ? Math.Min(SearchSample.ProbeSample, keys.Length)
+                : SearchSample.RowsToSearch(keys.Length, _request.Budget.TotalSeconds, timed.Seconds, SearchSample.ProbeSample);
+            if (searchRows < keys.Length)
+            {
+                var keep = SearchSample.Stratified(keys, _request.Stratify, searchRows, settings.Seed);
+                searchTrain = SearchSample.Rows(new MLContext(settings.Seed), train, keep,
+                    cache: trainInMemory ? searchRows * SearchSample.CopyBelow <= keys.Length : KeepsRowsInMemory(searchRows, train.Schema.Count, textColumns));
+                searchKeys = [.. keys.Where((_, i) => keep[i])];
+            }
+            sampling = new SamplingOutcome(keys.Length, searchRows, keys.Length, probeSeconds ?? 0);
+        }
+        var plan = FoldPlan.ForKeys(searchKeys, _request.Stratify, settings.Seed);
+        // What a refit of the winner costs against the fit the trial measured: on all the rows, the sample's fit scaled by the rows.
+        var scale = (double)keys.Length / searchKeys.Count;
 
         var trials = new List<TrialResult>();
         var lastSeconds = new Dictionary<string, double>(StringComparer.Ordinal);
@@ -208,7 +257,7 @@ public sealed class TrialRunner
         for (var trialId = 0; ; trialId++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var reserve = best is null ? 0 : Choose(scored, best).FitSeconds * plan.Parts / Math.Max(plan.Parts - 1, 1);
+            var reserve = best is null ? 0 : RefitReserve(Choose(scored, best).FitSeconds * plan.Parts / Math.Max(plan.Parts - 1, 1), scale);
             var deadline = _request.Budget.TotalSeconds - reserve;
             if (best is not null && clock.Elapsed.TotalSeconds >= deadline)
                 break;
@@ -225,13 +274,7 @@ public sealed class TrialRunner
             var trialContext = new MLContext(settings.Seed);
             // The trial's pipeline, made in a given context — the trial's own, and again for the refit, whose
             // context must not be one a budget cut has stopped (FitCancellation marks the context, not the fit).
-            IEstimator<ITransformer> PipelineIn(MLContext context)
-            {
-                var featurizer = Featurizer.Build(context, train.Schema, roles, withMissingValues, columns.Features)
-                    ?? throw new InvalidOperationException("No column is a feature: every column is the label or ignored.");
-                var featurized = _request.Preprocess is { } preprocess ? preprocess.Append(featurizer) : featurizer;
-                return featurized.Append(schema.Candidate.Build(context, point, columns, settings));
-            }
+            IEstimator<ITransformer> PipelineIn(MLContext context) => PipelineFor(context, train.Schema, roles, withMissingValues, columns, schema.Candidate, point, plan.FoldOf.Count);
 
             // Past the first success, a trial that would eat the refit's time stops inside its fit
             // (FitCancellation): one fit can be most of a budget, so stopping between folds is not enough.
@@ -258,7 +301,7 @@ public sealed class TrialRunner
             {
                 // Built inside the trial: a trainer that cannot even be constructed is a failed trial, not a failed search.
                 pipeline = PipelineIn(trialContext);
-                var score = Validator.Validate(trialContext, train, plan, pipeline, _request.Score, budgetCut.Token,
+                var score = Validator.Validate(trialContext, searchTrain, plan, pipeline, _request.Score, budgetCut.Token,
                     _request.KeepOutOfFold ? Keep : null);
                 var seconds = (clock.Elapsed - started).TotalSeconds;
                 Took(seconds);
@@ -277,8 +320,8 @@ public sealed class TrialRunner
                 if (_request.Metric.TryScore(trial, out var value))
                 {
                     var loss = _request.Metric.HigherIsBetter ? -value : value;
-                    tuners[schemaId].Update(trialId, point, loss, schema.Candidate.InitialCost);
-                    proposer.Update(schemaId, loss, schema.Candidate.InitialCost);
+                    tuners[schemaId].Update(trialId, point, loss, schema.Candidate.CostFor(classes));
+                    proposer.Update(schemaId, loss, schema.Candidate.CostFor(classes));
                     var entry = new Scored(trial, value, score, PipelineIn, seconds / plan.Folds, TrainerCandidate.ModelSize(point))
                     {
                         OutOfFold = outOfFold,
@@ -290,8 +333,8 @@ public sealed class TrialRunner
                 }
                 else
                 {
-                    tuners[schemaId].Update(trialId, point, double.MaxValue, schema.Candidate.InitialCost);
-                    proposer.Update(schemaId, double.NaN, schema.Candidate.InitialCost);
+                    tuners[schemaId].Update(trialId, point, double.MaxValue, schema.Candidate.CostFor(classes));
+                    proposer.Update(schemaId, double.NaN, schema.Candidate.CostFor(classes));
                 }
                 _sink?.Completed(trial, _request.Metric.Name);
             }
@@ -314,8 +357,8 @@ public sealed class TrialRunner
                 Took(seconds);
                 var failed = new TrialResult { Trainer = schema.Candidate.Name, Parameters = parameters, RuntimeSeconds = seconds, Error = ex.GetBaseException().Message };
                 trials.Add(failed);
-                tuners[schemaId].Update(trialId, point, double.MaxValue, schema.Candidate.InitialCost);
-                proposer.Update(schemaId, double.NaN, schema.Candidate.InitialCost);
+                tuners[schemaId].Update(trialId, point, double.MaxValue, schema.Candidate.CostFor(classes));
+                proposer.Update(schemaId, double.NaN, schema.Candidate.CostFor(classes));
                 _sink?.Completed(failed, _request.Metric.Name);
                 // A trainer that has not scored once and keeps failing is retired; one that has scored is not (see FailuresToRetire).
                 if (!scored.Any(t => t.Trial.Trainer == schema.Candidate.Name)
@@ -337,6 +380,11 @@ public sealed class TrialRunner
 
         cancellationToken.ThrowIfCancellationRequested();
         var winner = Choose(scored, top);
+        // The model is fitted on all the rows unless the search ran on a sample and a refit on all of them would take more than
+        // the share of the budget SearchSample allows — then on the sample, which is what the time bought.
+        var refitRows = scale > 1 && !SearchSample.RefitsOnAllRows(
+            keys.Length, searchKeys.Count, winner.FitSeconds * plan.Parts / Math.Max(plan.Parts - 1, 1), _request.Budget.TotalSeconds)
+            ? searchKeys.Count : keys.Length;
         string? fallback = null;
         ITransformer model;
         // The refit fits in a context of its own: the winner's trial context may carry the budget's cut, set as
@@ -346,21 +394,80 @@ public sealed class TrialRunner
         using var stopRefit = FitCancellation.Register(refitContext, cancellationToken);
         try
         {
-            model = winner.Pipeline(refitContext).Fit(train);
+            model = winner.Pipeline(refitContext).Fit(refitRows == keys.Length ? train : searchTrain);
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
         {
             // The pipeline fitted on four fifths of the rows; refit on all of them did not. Its first fold's model stands in.
             fallback = $"Refit on the whole training partition failed ({ex.GetBaseException().Message}); the model is the best trial's first fold.";
-            var view = new HoldoutView(train, plan.FoldOf, plan.Validated[0]);
+            var view = new HoldoutView(searchTrain, plan.FoldOf, plan.Validated[0]);
             var fallbackContext = new MLContext(settings.Seed);
             model = winner.Pipeline(fallbackContext).Fit(fallbackContext.Data.FilterRowsByColumn(view, HoldoutView.ColumnName, 0, 0.5));
         }
         IReadOnlyList<RetainedTrial>? retained = _request.KeepTopOutOfFold > 0
             ? [.. BestFirst(scored).Where(e => e.OutOfFold is not null).Take(_request.KeepTopOutOfFold)
-                .Select(e => new RetainedTrial(e.Trial, e.OutOfFold!, e.Pipeline, e.FitSeconds * plan.Parts / Math.Max(plan.Parts - 1, 1)))]
+                .Select(e => new RetainedTrial(e.Trial, e.OutOfFold!, e.Pipeline, e.FitSeconds * plan.Parts / Math.Max(plan.Parts - 1, 1) * scale))]
             : null;
-        return new SearchResult(trials, winner.Trial, winner.Score, model, fallback, plan, top.Trial, winner.OutOfFold, retained);
+        return new SearchResult(trials, winner.Trial, winner.Score, model, fallback, plan, top.Trial, winner.OutOfFold, retained,
+            sampling is null ? null : sampling with { RefitRows = refitRows });
+    }
+
+    // The refit the search reserves time for: on all the rows (the sample's fit scaled by the rows) when that is within the share of
+    // the budget SearchSample allows, else the sample's own.
+    private double RefitReserve(double sampleRefitSeconds, double scale)
+        => scale > 1 && sampleRefitSeconds * scale <= SearchSample.RefitShare * _request.Budget.TotalSeconds ? sampleRefitSeconds * scale : sampleRefitSeconds;
+
+    private IEstimator<ITransformer> PipelineFor(
+        MLContext context, DataViewSchema schema, ColumnRoles roles, IReadOnlySet<string> withMissingValues, TrainerColumns columns,
+        TrainerCandidate candidate, SearchPoint point, int rows)
+    {
+        var featurizer = Featurizer.Build(context, schema, roles, withMissingValues, columns.Features)
+            ?? throw new InvalidOperationException("No column is a feature: every column is the label or ignored.");
+        var featurized = _request.Preprocess is { } preprocess ? preprocess.Append(featurizer) : featurizer;
+        return featurized.Append(candidate.Build(context, TrainerCandidate.FittedToRows(point, rows), columns, _request.Settings));
+    }
+
+    // The search's own first trial — the cheapest schema at its starting setting — on a stratified sample of SearchSample.ProbeSample rows,
+    // timed; null when the trial fails (the search then runs on all the rows and records the failure itself). Made from a twin of the
+    // proposer and the tuner, so the search proposes exactly what it would have; the probe's time is on the search's clock. A probe
+    // is stopped at SearchSample.ProbeCutShare of the allowance for a first trial — a table so wide or a trainer so slow that 10,000 rows
+    // already pass the allowance would otherwise spend the budget on measuring it — and reports that it was cut.
+    private (double Seconds, bool Cut)? ProbeSeconds(
+        IDataView train, ColumnRoles roles, string[] keys, List<(string Id, TrainerCandidate Candidate)> schemas, int classes,
+        IReadOnlySet<string> withMissingValues, TrainerColumns columns, bool trainInMemory, Stopwatch clock, CancellationToken cancellationToken)
+    {
+        var settings = _request.Settings;
+        var keep = SearchSample.Stratified(keys, _request.Stratify, SearchSample.ProbeSample, settings.Seed);
+        var probeKeys = keys.Where((_, i) => keep[i]).ToArray();
+        var started = clock.Elapsed;
+        try
+        {
+            var data = SearchSample.Rows(new MLContext(settings.Seed), train, keep, cache: !trainInMemory);
+            var probePlan = FoldPlan.ForKeys(probeKeys, _request.Stratify, settings.Seed);
+            var first = new EciSchemaProposer([.. schemas.Select(s => (s.Id, s.Candidate.CostFor(classes)))], settings.Seed).Propose();
+            var schema = schemas.First(s => s.Id == first);
+            var point = new CostFrugalTuner(schema.Candidate.Space, settings.Seed, startingPoints: [.. schema.Candidate.StartingPoints.Select(schema.Candidate.Space.PointOf)]).Propose(0);
+            var context = new MLContext(settings.Seed);
+            var pipeline = PipelineFor(context, train.Schema, roles, withMissingValues, columns, schema.Candidate, point, probeKeys.Length);
+            var fitStarted = clock.Elapsed;
+            var cutAfter = SearchSample.ProbeCutShare * SearchSample.FirstTrialShare * _request.Budget.TotalSeconds;
+            using var cut = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cut.CancelAfter(TimeSpan.FromSeconds(cutAfter));
+            try
+            {
+                Validator.Validate(context, data, probePlan, pipeline, _request.Score, cut.Token);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException && !cancellationToken.IsCancellationRequested && cut.IsCancellationRequested)
+            {
+                return ((clock.Elapsed - fitStarted).TotalSeconds, true);   // stopped inside its fit (or failed because it was)
+            }
+            var seconds = (clock.Elapsed - fitStarted).TotalSeconds;
+            return (seconds, seconds >= cutAfter);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
+        {
+            return null;
+        }
     }
 
     private sealed record Scored(

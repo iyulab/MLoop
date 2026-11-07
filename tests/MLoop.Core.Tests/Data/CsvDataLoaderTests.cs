@@ -405,6 +405,29 @@ public class CsvDataLoaderTests : IDisposable
     }
 
     [Fact]
+    public void FlattenMultiLineHeaders_AQuoteInsideAColumnName_IsTheNamesAndJoinsNoLines()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "inch_header.csv");
+        File.WriteAllText(csvPath, "Pipe 5\" long,B,C\n1,2,3\n4,5,6\n");
+
+        var result = CsvDataLoader.FlattenMultiLineHeaders(csvPath);
+
+        Assert.Equal(csvPath, result); // the header is the first line, as written
+    }
+
+    [Fact]
+    public void FlattenMultiLineHeaders_AQuotedNameThatNeverCloses_IsRefused()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "unclosed_header.csv");
+        File.WriteAllText(csvPath, "\"Col A,B,C\n1,2,3\n4,5,6\n");
+
+        var error = Assert.Throws<UnterminatedQuoteException>(() => CsvDataLoader.FlattenMultiLineHeaders(csvPath));
+
+        Assert.Contains("unclosed_header.csv", error.Message, StringComparison.Ordinal);
+        Assert.Contains("header row", error.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void FlattenMultiLineHeaders_MultiLineHeader_ReturnsFlattenedFile()
     {
         var csvPath = Path.Combine(_tempDirectory, "multi_line.csv");
@@ -558,6 +581,111 @@ public class CsvDataLoaderTests : IDisposable
         var result = CsvDataLoader.FlattenMultiLineQuotedFields(csvPath);
 
         Assert.Equal(csvPath, result);
+    }
+
+    [Theory]
+    [InlineData("12\" pipe,3,1")]                  // a quote inside an unquoted field is part of the text
+    [InlineData("say \"hi\" now,3,1")]            // so are balanced ones
+    [InlineData("5\",3,1")]                        // and one that ends the field
+    [InlineData("a;\"b,3,1")]                      // a delimiter-looking character of another kind in front of it
+    public void FlattenMultiLineQuotedFields_AQuoteInsideAnUnquotedField_IsTheTextsAndJoinsNoLines(string row)
+    {
+        var csvPath = Path.Combine(_tempDirectory, "stray_quote.csv");
+        File.WriteAllText(csvPath, "size,x2,y\n1,2,0\n" + row + "\n3,4,0\n4,5,1\n");
+
+        var result = CsvDataLoader.FlattenMultiLineQuotedFields(csvPath);
+
+        Assert.Equal(csvPath, result); // no line ends inside a quoted field: the file is read as written
+    }
+
+    [Fact]
+    public void FlattenMultiLineQuotedFields_AQuotedFieldAfterADelimiterOrLeadingSpaceOrBom_StillFlattens()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "quoted_starts.csv");
+        File.WriteAllText(csvPath, "\uFEFF\"a\nb\",x,y\n1,  \"c\nd\",2\n3,4,\"e\nf\"\n", new System.Text.UTF8Encoding(false));
+
+        var result = CsvDataLoader.FlattenMultiLineQuotedFields(csvPath);
+
+        Assert.NotEqual(csvPath, result);
+        var lines = File.ReadAllLines(result);
+        Assert.Equal(3, lines.Length);
+        Assert.Contains("a b", lines[0], StringComparison.Ordinal);
+        Assert.Contains("c d", lines[1], StringComparison.Ordinal);
+        Assert.Contains("e f", lines[2], StringComparison.Ordinal);
+        File.Delete(result);
+    }
+
+    [Fact]
+    public void FlattenMultiLineQuotedFields_AQuotedFieldThatNeverCloses_IsRefused_NamingTheLineAndTheFile()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "unclosed.csv");
+        var lines = new List<string> { "x1,x2,y" };
+        lines.AddRange(Enumerable.Range(1, 9).Select(i => $"{i},{i % 5},{i % 2}"));
+        lines.Add("\"7,3,1");                          // line 11: opens at the start of a field and never closes
+        lines.AddRange(Enumerable.Range(10, 30).Select(i => $"{i},{i % 5},{i % 2}"));
+        File.WriteAllLines(csvPath, lines);
+
+        var error = Assert.Throws<UnterminatedQuoteException>(() => CsvDataLoader.FlattenMultiLineQuotedFields(csvPath, reportedAs: "people.xlsx"));
+
+        Assert.Contains("people.xlsx", error.Message, StringComparison.Ordinal);
+        Assert.Contains("line 11", error.Message, StringComparison.Ordinal);
+        Assert.Contains("30 line(s)", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("unclosed.csv", error.Message, StringComparison.Ordinal); // the user's name, not the copy's
+    }
+
+    private static string Describe(Microsoft.ML.IDataView view)
+        => string.Join(",", view.Schema.Where(c => !c.IsHidden).Select(c => c.Name + ":" + c.Type));
+
+    private (string Train, string Test) MixedColumnPair()
+    {
+        // One column of numbers; the one word that spoils it is in the test file only (an in-memory split puts it wherever it falls).
+        string Rows(int from, int to, string? word) => string.Join("\n", Enumerable.Range(from, to - from + 1)
+            .Select(i => $"{(word is not null && i == from ? word : i.ToString())},{(i * 7) % 13},{((i * 7) % 13 > 6 ? 1 : 0)}"));
+        var train = Path.Combine(_tempDirectory, "mixed_train.csv");
+        var test = Path.Combine(_tempDirectory, "mixed_test.csv");
+        File.WriteAllText(train, "size,x2,y\n" + Rows(1, 32, null) + "\n");
+        File.WriteAllText(test, "size,x2,y\n" + Rows(33, 40, "abc") + "\n");
+        return (train, test);
+    }
+
+    [Fact]
+    public void LoadDataSharingLayout_ReadsTheTestFileWithTheTrainingFilesColumns()
+    {
+        var (train, test) = MixedColumnPair();
+        var loader = new CsvDataLoader(new Microsoft.ML.MLContext(1));
+
+        var trainView = loader.LoadData(train, "y", "binary-classification");
+        var testView = loader.LoadDataSharingLayout(test, "y", "binary-classification");
+
+        Assert.Equal(Describe(trainView), Describe(testView));
+    }
+
+    [Fact]
+    public void LoadData_OnEachFileAlone_DoesNotAgree_WhichIsWhatSharingTheLayoutIsFor()
+    {
+        // The control: the test above would pass if the two files laid out alike on their own.
+        var (train, test) = MixedColumnPair();
+        var loader = new CsvDataLoader(new Microsoft.ML.MLContext(1));
+
+        var trainView = loader.LoadData(train, "y", "binary-classification");
+        var testView = loader.LoadData(test, "y", "binary-classification");
+
+        Assert.NotEqual(Describe(trainView), Describe(testView));
+    }
+
+    [Fact]
+    public void LoadDataSharingLayout_OnAFileWithOtherColumns_LaysItOutOnItsOwn()
+    {
+        var (train, _) = MixedColumnPair();
+        var other = Path.Combine(_tempDirectory, "other_columns.csv");
+        File.WriteAllText(other, "a,b,y\n1,2,0\n2,3,1\n3,4,0\n4,5,1\n");
+        var loader = new CsvDataLoader(new Microsoft.ML.MLContext(1));
+        loader.LoadData(train, "y", "binary-classification");
+
+        var view = loader.LoadDataSharingLayout(other, "y", "binary-classification");
+
+        Assert.Contains(view.Schema, c => c.Name == "a" || c.Name == "Features");
+        Assert.DoesNotContain(view.Schema, c => c.Name == "size");
     }
 
     #endregion
