@@ -30,12 +30,14 @@ public interface IModelRegistry
     /// Why the project's gate policy refused the experiment, when the promotion was forced past it
     /// (<see cref="GatePolicyRefusalAsync"/>) — recorded as a forced gate. The fixed gate is judged here.
     /// </param>
+    /// <param name="origin">Who changed the slot and through which door, recorded beside the change; <c>null</c> records neither.</param>
     /// <param name="cancellationToken">Cancellation.</param>
     Task PromoteAsync(
         string modelName,
         string experimentId,
         string action,
         string? gatePolicyRefusal = null,
+        MLoop.Ops.Interfaces.PromotionOrigin? origin = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>
@@ -106,12 +108,14 @@ public interface IModelRegistry
     /// <param name="modelName">The model name</param>
     /// <param name="experimentId">The experiment ID to potentially promote</param>
     /// <param name="primaryMetric">The metric to compare</param>
+    /// <param name="origin">Who ran the training and through which door, recorded when it promotes; <c>null</c> records neither.</param>
     /// <param name="cancellationToken">Cancellation token</param>
     /// <returns>True if promoted, false otherwise</returns>
     Task<bool> AutoPromoteAsync(
         string modelName,
         string experimentId,
         string primaryMetric,
+        MLoop.Ops.Interfaces.PromotionOrigin? origin = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

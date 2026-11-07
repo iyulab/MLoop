@@ -74,8 +74,9 @@ public class TrainingJobRunner : BackgroundService
         IModelRegistry registry,
         TrainingConfig config,
         TrainingResult result,
+        MLoop.Ops.Interfaces.PromotionOrigin? origin,
         CancellationToken cancellationToken)
-        => registry.AutoPromoteAsync(config.ModelName, result.ExperimentId, config.CanonicalMetric, cancellationToken);
+        => registry.AutoPromoteAsync(config.ModelName, result.ExperimentId, config.CanonicalMetric, origin, cancellationToken);
 
     private async Task ProcessJobAsync(TrainingJob job, CancellationToken stoppingToken)
     {
@@ -197,7 +198,8 @@ public class TrainingJobRunner : BackgroundService
                 // A post-train hook that refused the model keeps it from being promoted, as in `mloop train`.
                 keptReason = $"a post-train hook refused it ({hookRefusal})";
             else
-                keptReason = await PromoteIfBetterAsync(registry, config, result, stoppingToken)
+                keptReason = await PromoteIfBetterAsync(registry, config, result,
+                    new MLoop.Ops.Interfaces.PromotionOrigin(MLoop.Ops.Interfaces.PromotionVia.Http, job.RequestedBy), stoppingToken)
                     ? null
                     : await registry.KeptInStagingReasonAsync(config.ModelName, result.ExperimentId, config.CanonicalMetric, stoppingToken)
                       ?? "it does not beat production";

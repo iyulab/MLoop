@@ -776,6 +776,7 @@ public static partial class TrainCommand
             resolvedModelName,
             result.ExperimentId,
             primaryMetric,
+            new MLoop.Ops.Interfaces.PromotionOrigin(MLoop.Ops.Interfaces.PromotionVia.Cli),
             CancellationToken.None);
 
         // Resolve class count for quality gate threshold

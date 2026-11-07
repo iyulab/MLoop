@@ -350,6 +350,10 @@ public class PredictionEngine
         List<string> tempFiles,
         ScoringLayers layers = ScoringLayers.All)
     {
+        // The production model is the file its promotion recorded, or the answers say so below: a warning, not a refusal.
+        if (ModelIntegrity.Mismatch(modelPath) is { } changed)
+            MLoop.CLI.Infrastructure.Diagnostics.WarningConsole.Warn($"{changed}");
+
         // Load the trained model — with its decision threshold, unless the caller converts the saved model
         // itself (ONNX export: the graph carries the trained model, the manifest names the threshold).
         var trainedModel = ScoringModel.Load(_mlContext, modelPath, out var modelSchema, layers: layers);

@@ -156,6 +156,10 @@ public sealed class ModelCache : IModelCache
         if (!File.Exists(modelPath))
             throw new FileNotFoundException($"Model file not found: {modelPath}", modelPath);
 
+        // A statement, not a refusal: the model answers, and the server says once per load that it is not the file its promotion recorded.
+        if (MLoop.Core.Models.ModelIntegrity.Mismatch(modelPath) is { } changed)
+            _logger.LogWarning("{Integrity}", changed);
+
         return MLoop.Core.Models.ScoringModel.Load(_loaderContext, modelPath);
     }
 

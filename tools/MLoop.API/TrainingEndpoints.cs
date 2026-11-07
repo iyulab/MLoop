@@ -33,6 +33,7 @@ public static class TrainingEndpoints
         // Start training job (async, secured)
         app.MapPost("/train", async (
             [FromBody] TrainingJobRequest request,
+            HttpContext http,
             TrainingJobStore jobStore,
             TrainingJobRunner jobRunner,
             ProjectRootPath projectRootPath,
@@ -111,7 +112,7 @@ public static class TrainingEndpoints
             };
 
             // Create job and enqueue for background processing
-            var jobId = jobStore.CreateJob(request);
+            var jobId = jobStore.CreateJob(request, ModelEndpoints.CallerOrigin(http).By);
             jobRunner.EnqueueJob(jobId);
 
             logger.LogInformation("Training job '{JobId}' enqueued for model '{ModelName}' with task '{Task}'",

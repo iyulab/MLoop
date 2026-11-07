@@ -334,6 +334,7 @@ public class ModelRegistryTests : IDisposable
             DefaultModelName,
             experimentId,
             "accuracy",
+            null,
             CancellationToken.None);
 
         // Assert
@@ -817,6 +818,52 @@ public class ModelRegistryTests : IDisposable
         Assert.Equal(MLoop.Ops.Interfaces.PromotionActions.Promote, record.Action);
         Assert.Equal(MLoop.Ops.Interfaces.PromotionGate.Forced, record.Gate);
         Assert.Contains("r_squared", record.GateDetail);
+    }
+
+    [Fact]
+    public async Task APromotion_RecordsWhoChangedTheSlotAndThroughWhichDoor()
+    {
+        var first = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double> { ["r_squared"] = 0.7 });
+        var second = await CreateDummyExperimentAsync(DefaultModelName, "exp-002", new Dictionary<string, double> { ["r_squared"] = 0.9 });
+
+        await _modelRegistry.PromoteAsync(DefaultModelName, first, MLoop.Ops.Interfaces.PromotionActions.Promote, null,
+            new MLoop.Ops.Interfaces.PromotionOrigin(MLoop.Ops.Interfaces.PromotionVia.Cli, "  release-bot  "), CancellationToken.None);
+        await _modelRegistry.PromoteAsync(DefaultModelName, second, MLoop.Ops.Interfaces.PromotionActions.Rollback, null,
+            new MLoop.Ops.Interfaces.PromotionOrigin(MLoop.Ops.Interfaces.PromotionVia.Http), CancellationToken.None);
+        await _modelRegistry.PromoteAsync(DefaultModelName, first, CancellationToken.None);
+
+        var history = await HistoryAsync();
+        // The name is the one that was given, trimmed; nothing is recorded for a caller that named nobody, and nothing is picked up from the machine.
+        Assert.Equal(("release-bot", MLoop.Ops.Interfaces.PromotionVia.Cli), (history[0].By, history[0].Via));
+        Assert.Equal((null, MLoop.Ops.Interfaces.PromotionVia.Http), (history[1].By, history[1].Via));
+        Assert.Equal((null, null), (history[2].By, history[2].Via));
+    }
+
+    [Fact]
+    public async Task APromotionBlankAboutWho_RecordsNobodyRatherThanAnEmptyName()
+    {
+        var first = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double> { ["r_squared"] = 0.7 });
+
+        await _modelRegistry.PromoteAsync(DefaultModelName, first, MLoop.Ops.Interfaces.PromotionActions.Promote, null,
+            new MLoop.Ops.Interfaces.PromotionOrigin(MLoop.Ops.Interfaces.PromotionVia.Cli, "   "), CancellationToken.None);
+
+        Assert.Null(Assert.Single(await HistoryAsync()).By);
+    }
+
+    [Fact]
+    public async Task APromotion_RecordsTheHashOfTheModelItPut_InTheSlotsPointer()
+    {
+        var first = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double> { ["r_squared"] = 0.7 });
+
+        await _modelRegistry.PromoteAsync(DefaultModelName, first, CancellationToken.None);
+
+        var slot = _modelRegistry.GetProductionPath(DefaultModelName);
+        var pointer = await MLoop.Core.Storage.ProductionMetadata.ReadAsync(slot);
+        Assert.Equal(MLoop.Core.Models.ModelFingerprint.Sha256(Path.Combine(slot, "model.zip")), pointer?.ModelSha256);
+        // ...and the load-time comparison finds the slot as it was left, then finds it changed.
+        Assert.Null(MLoop.Core.Models.ModelIntegrity.Mismatch(Path.Combine(slot, "model.zip")));
+        await File.WriteAllBytesAsync(Path.Combine(slot, "model.zip"), [7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7]);
+        Assert.NotNull(MLoop.Core.Models.ModelIntegrity.Mismatch(Path.Combine(slot, "model.zip")));
     }
 
     [Fact]

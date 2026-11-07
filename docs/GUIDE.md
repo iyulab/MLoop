@@ -711,6 +711,18 @@ and `mloop promote --history` lists it: when, which experiment, how (`promote`, 
 each with the experiment it replaced (`previousExperimentId`); `GET /promotions?name=` returns the same. Entries written
 before the gate was recorded carry `null` there.
 
+The history also says **who** changed the slot (`by`) and **through which door** (`via`: `cli` or `http`).
+`mloop promote --by <name>` and `mloop rollback --by <name>` record the name you give; the REST API records the `sub` of the calling
+token, and a `POST /train` job records the `sub` of the token that started it. A change nobody was named for has no `by`:
+the login name of the machine is never written on its own, because the project folder goes into git. Entries written before
+this was recorded have neither field.
+
+Each promotion also records the SHA-256 of the model it put in the slot (`modelSha256` in `production/metadata.json`).
+`mloop predict` and `mloop serve` compare `production/model.zip` with it when they load it and say, once per load, that the
+file was changed after it was promoted (disk damage, a file written over by hand, another tool). It is a warning, not a
+refusal — the model still answers; `mloop promote <experiment-id>` puts a staged model there again and `mloop rollback`
+returns to the previous one. A slot promoted before the hash was recorded has nothing to compare.
+
 ### `mloop threshold`
 
 A binary classifier answers its positive class from a probability of 0.5 unless told otherwise. When

@@ -42,7 +42,7 @@ public class TrainingJobStore
         Load();
     }
 
-    public string CreateJob(TrainingJobRequest request)
+    public string CreateJob(TrainingJobRequest request, string? requestedBy = null)
     {
         var jobId = $"job-{MLoop.Core.Storage.TimestampKeys.Stamp(DateTime.UtcNow)}-{Guid.NewGuid().ToString()[..8]}";
         var job = new TrainingJob
@@ -63,6 +63,7 @@ public class TrainingJobStore
             Weight = request.Weight,
             Balance = request.Balance,
             Promote = request.Promote,
+            RequestedBy = requestedBy,
             Status = JobStatus.Queued,
             CreatedAt = DateTime.UtcNow
         };
@@ -207,6 +208,8 @@ public class TrainingJob
     public string? Balance { get; set; }
     /// <summary>Whether the job may promote its experiment; <c>false</c> is <c>--no-promote</c>.</summary>
     public bool Promote { get; init; } = true;
+    /// <summary>The <c>sub</c> of the token that started the job; the promotion history names it when the job promotes.</summary>
+    public string? RequestedBy { get; init; }
 
     public JobStatus Status { get; set; }
     public string? StatusMessage { get; set; }

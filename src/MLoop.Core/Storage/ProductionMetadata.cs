@@ -27,6 +27,12 @@ public sealed record ProductionMetadata
     public string? BestTrainer { get; init; }
     public string? LabelColumn { get; init; }
 
+    /// <summary>
+    /// The SHA-256 of <c>model.zip</c> as the promotion left it (<see cref="Models.ModelFingerprint"/>), or <c>null</c> for a slot promoted
+    /// before this was recorded. <see cref="Models.ModelIntegrity"/> compares the file with it.
+    /// </summary>
+    public string? ModelSha256 { get; init; }
+
     // Mirrors the writer's serialization (FileSystemManager: camelCase names, case-insensitive) so the
     // typed read cannot drift from the on-disk casing.
     private static readonly JsonSerializerOptions Options = new()

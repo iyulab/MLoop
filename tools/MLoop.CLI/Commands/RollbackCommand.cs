@@ -37,7 +37,13 @@ public static class RollbackCommand
             Description = "Output the result as JSON (machine-readable, non-interactive)"
         };
 
+        var byOption = new Option<string?>("--by")
+        {
+            Description = "Who is changing production, recorded in the promotion history (a name or an account; nothing is recorded when it is not given)"
+        };
+
         var command = new Command("rollback", "Return production to the experiment it held before");
+        command.Options.Add(byOption);
         command.Options.Add(nameOption);
         command.Options.Add(toOption);
         command.Options.Add(jsonOption);
@@ -45,12 +51,13 @@ public static class RollbackCommand
         command.SetAction(parseResult => ExecuteAsync(
             parseResult.GetValue(nameOption),
             parseResult.GetValue(toOption),
-            parseResult.GetValue(jsonOption)));
+            parseResult.GetValue(jsonOption),
+            parseResult.GetValue(byOption)));
 
         return command;
     }
 
-    private static async Task<int> ExecuteAsync(string? modelName, string? to, bool jsonOutput)
+    private static async Task<int> ExecuteAsync(string? modelName, string? to, bool jsonOutput, string? by = null)
     {
         using var machineOutput = jsonOutput ? new JsonOutputScope() : null;
 
@@ -93,7 +100,8 @@ public static class RollbackCommand
             }
 
             var backupPath = await promotionManager.BackupProductionAsync(resolvedModelName);
-            await modelRegistry.PromoteAsync(resolvedModelName, target, MLoop.Ops.Interfaces.PromotionActions.Rollback, cancellationToken: CancellationToken.None);
+            await modelRegistry.PromoteAsync(resolvedModelName, target, MLoop.Ops.Interfaces.PromotionActions.Rollback,
+                origin: new MLoop.Ops.Interfaces.PromotionOrigin(MLoop.Ops.Interfaces.PromotionVia.Cli, by), cancellationToken: CancellationToken.None);
 
             if (jsonOutput)
             {

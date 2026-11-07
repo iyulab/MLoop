@@ -28,6 +28,13 @@ namespace MLoop.API;
 /// </summary>
 public static class ModelEndpoints
 {
+    /// <summary>
+    /// Who is calling and through which door, for the promotion history: the <c>sub</c> of the bearer token (the same claim the request
+    /// limit counts a caller by), <c>null</c> when the token carries none.
+    /// </summary>
+    internal static PromotionOrigin CallerOrigin(HttpContext http)
+        => new(PromotionVia.Http, http.User.Identity?.IsAuthenticated == true ? http.User.FindFirst("sub")?.Value : null);
+
     public static void MapModelEndpoints(this WebApplication app)
     {
         // Model info endpoint (secured)
@@ -169,6 +176,7 @@ public static class ModelEndpoints
         // Promote experiment to production (secured)
         app.MapPost("/promote", async (
             [FromBody] PromoteRequest request,
+            HttpContext http,
             IModelRegistry registry,
             IExperimentStore experimentStore,
             IPromotionManager promotionManager,
@@ -176,6 +184,7 @@ public static class ModelEndpoints
             CancellationToken ct) =>
         {
             var stopwatch = Stopwatch.StartNew();
+            var origin = CallerOrigin(http);
             var modelName = MLoop.Core.Storage.ModelName.Resolve(request.Name);
             if (string.IsNullOrWhiteSpace(request.ExperimentId))
                 return Results.BadRequest(new { error = "experimentId is required: the experiment to promote (see GET /experiments)." });
@@ -183,8 +192,8 @@ public static class ModelEndpoints
 
             try
             {
-                logger.LogInformation("Promoting experiment '{ExperimentId}' for model '{ModelName}'",
-                    experimentId, modelName);
+                logger.LogInformation("Promoting experiment '{ExperimentId}' for model '{ModelName}' (by {By})",
+                    experimentId, modelName, origin.By ?? "unnamed");
 
                 // Verify experiment exists
                 if (!experimentStore.ExperimentExists(modelName, experimentId))
@@ -247,7 +256,7 @@ public static class ModelEndpoints
                 }
 
                 // Promote — the registry records it in the promotion history, gate outcome included.
-                await registry.PromoteAsync(modelName, experimentId, PromotionActions.Promote, policyRefusal, ct);
+                await registry.PromoteAsync(modelName, experimentId, PromotionActions.Promote, policyRefusal, origin, ct);
 
                 logger.LogInformation("Promoted experiment '{ExperimentId}' to production for model '{ModelName}' in {ElapsedMs}ms",
                     experimentId, modelName, stopwatch.ElapsedMilliseconds);
@@ -295,17 +304,7 @@ public static class ModelEndpoints
             return Results.Ok(new
             {
                 modelName,
-                promotions = history.Select(r => new
-                {
-                    experimentId = r.ExperimentId,
-                    previousExperimentId = r.PreviousExperimentId,
-                    action = r.Action,
-                    timestamp = r.Timestamp.ToUniversalTime(),
-                    gate = r.Gate,
-                    gateDetail = r.GateDetail,
-                    metric = r.Metric,
-                    metricValue = r.MetricValue,
-                }),
+                promotions = PromotionHistoryView.Rows(history),
             });
         })
         .WithName("PromotionHistory")
@@ -315,6 +314,7 @@ public static class ModelEndpoints
 
         app.MapPost("/rollback", async (
             [FromBody] RollbackRequest request,
+            HttpContext http,
             IModelRegistry registry,
             IExperimentStore experimentStore,
             IPromotionManager promotionManager,
@@ -333,8 +333,9 @@ public static class ModelEndpoints
                     statusCode: StatusCodes.Status409Conflict);
 
             var backupPath = await promotionManager.BackupProductionAsync(modelName, ct);
-            await registry.PromoteAsync(modelName, target, PromotionActions.Rollback, cancellationToken: ct);
-            logger.LogInformation("Rolled back '{ModelName}' from {Previous} to {Target}", modelName, current, target);
+            var origin = CallerOrigin(http);
+            await registry.PromoteAsync(modelName, target, PromotionActions.Rollback, origin: origin, cancellationToken: ct);
+            logger.LogInformation("Rolled back '{ModelName}' from {Previous} to {Target} (by {By})", modelName, current, target, origin.By ?? "unnamed");
 
             return Results.Ok(new { modelName, experimentId = target, previousExperimentId = current, backupPath });
         })
