@@ -1650,11 +1650,21 @@ public partial class TrainingRunner
                 _logger.Info($"Clustering: {featureColumns.Count} features, searching k=2..{maxK}");
             }
 
+            // k is chosen on the rows the models were fitted on — the index needs no label, so nothing is held out for it — and
+            // the test partition is scored once, by the model that was chosen. Choosing k on the test rows and reporting the
+            // index of the winner there gave the least of nine indices as the result, better than the model by the margin of the choice.
             ITransformer? bestModel = null;
             double bestDbi = double.MaxValue; // DBI: lower is better (considers both separation and cohesion)
+            double bestAvgDistance = double.MaxValue;
             int bestK = kValues[0];
             Dictionary<string, double>? bestMetrics = null;
             var trialChannel = CreateTrialChannel(progress);
+
+            Microsoft.ML.Data.ClusteringMetrics Evaluate(ITransformer model, IDataView set) =>
+                // featureColumnName is REQUIRED for ML.NET to compute the Davies-Bouldin Index — without it DBI comes
+                // back 0, which made `useDbi` below always false so the K-search silently fell back to average_distance
+                // (monotonically decreasing with K) and always picked the largest K.
+                _mlContext.Clustering.Evaluate(model.Transform(set), scoreColumnName: "Score", featureColumnName: "Features");
 
             for (int i = 0; i < kValues.Length; i++)
             {
@@ -1668,14 +1678,7 @@ public partial class TrainingRunner
                         numberOfClusters: k));
 
                 var model = pipeline.Fit(featurizedTrainSet);
-                var predictions = model.Transform(featurizedTestSet);
-
-                // Evaluate. featureColumnName is REQUIRED for ML.NET to compute the Davies-Bouldin
-                // Index — without it DBI comes back 0, which made `useDbi` below always false so the
-                // K-search silently fell back to average_distance (monotonically decreasing with K)
-                // and always picked the largest K. Passing "Features" restores real DBI-based K-search.
-                var clusterMetrics = _mlContext.Clustering.Evaluate(
-                    predictions, scoreColumnName: "Score", featureColumnName: "Features");
+                var clusterMetrics = Evaluate(model, featurizedTrainSet);
                 var avgDistance = double.IsNaN(clusterMetrics.AverageDistance) ? double.MaxValue : clusterMetrics.AverageDistance;
                 var dbi = double.IsNaN(clusterMetrics.DaviesBouldinIndex) ? double.MaxValue : clusterMetrics.DaviesBouldinIndex;
                 var nmi = double.IsNaN(clusterMetrics.NormalizedMutualInformation) ? 0 : clusterMetrics.NormalizedMutualInformation;
@@ -1696,16 +1699,21 @@ public partial class TrainingRunner
                 var useDbi = dbi > 0 && dbi < double.MaxValue;
                 var isBetter = useDbi
                     ? dbi < bestDbi
-                    : (bestDbi == double.MaxValue && avgDistance < (bestMetrics?.GetValueOrDefault("average_distance") ?? double.MaxValue));
+                    : (bestDbi == double.MaxValue && avgDistance < bestAvgDistance);
 
                 if (isBetter || bestModel == null)
                 {
                     bestDbi = useDbi ? dbi : bestDbi;
+                    bestAvgDistance = avgDistance;
                     bestModel = model;
                     bestK = k;
-                    bestMetrics = MetricReport.Describe(clusterMetrics);
-                    bestMetrics["num_clusters"] = k;
                 }
+            }
+
+            if (bestModel != null)
+            {
+                bestMetrics = MetricReport.Describe(Evaluate(bestModel, featurizedTestSet));
+                bestMetrics["num_clusters"] = bestK;
             }
 
             // Add cluster distribution info from best model
