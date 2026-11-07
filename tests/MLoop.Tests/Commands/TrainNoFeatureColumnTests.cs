@@ -112,4 +112,27 @@ public sealed class TrainNoFeatureColumnTests : IDisposable
         Assert.Contains("remove its `type: ignore`", said);
         Assert.DoesNotContain("every trainer failed", said);
     }
+
+    [Fact]
+    public async Task ThePreflight_SaysWhatTrainingWouldRefuse_AndSaysNothingOnceTheRoleIsDeclared()
+    {
+        var data = await ProjectWithTheTableAsync();
+
+        var (exit, output, error) = await CliRunner.RunAsync(
+            "train", data, "--label", "Label", "--max-trials", "3", "--analyze-data");
+
+        Assert.Equal(0, exit);
+        Assert.Contains("CRITICAL", output + error);
+        Assert.Contains("No column is left to train on", output + error);
+
+        const string label = "    label: Label\n";
+        var yaml = await File.ReadAllTextAsync("mloop.yaml");
+        await File.WriteAllTextAsync("mloop.yaml",
+            yaml.Replace(label, label + "    columns:\n      Content:\n        type: text\n", StringComparison.Ordinal));
+
+        var (_, declaredOut, declaredErr) = await CliRunner.RunAsync(
+            "train", data, "--label", "Label", "--max-trials", "3", "--analyze-data");
+
+        Assert.DoesNotContain("No column is left to train on", declaredOut + declaredErr);
+    }
 }

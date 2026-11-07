@@ -396,6 +396,30 @@ public class TrainingEngine : ITrainingEngine
     }
 
     /// <summary>
+    /// <see cref="NoFeatureColumnMessage"/> when the table has columns beside the label and none is left to read as a
+    /// feature once the rules' exclusions (<paramref name="exclusions"/>), the <c>ignore</c> overrides and the other
+    /// roles (weight, group, user, item) are set aside; null otherwise. The one judgment training and
+    /// <c>train --analyze-data</c> both ask, so the preflight and the refusal cannot disagree.
+    /// </summary>
+    internal static string? NoFeatureColumnRefusal(TrainingConfig config, string dataFilePath, IReadOnlyList<ExcludedColumn> exclusions)
+    {
+        if (!File.Exists(dataFilePath)) return null;
+        var ignored = (config.ColumnOverrides ?? [])
+            .Where(kv => string.Equals(kv.Value?.Trim(), "ignore", StringComparison.OrdinalIgnoreCase))
+            .Select(kv => kv.Key)
+            .ToList();
+        var otherRoles = new[] { config.WeightColumn, config.GroupColumn, config.UserColumn, config.ItemColumn }
+            .Where(c => !string.IsNullOrEmpty(c)).Select(c => c!);
+        var left = CsvDataLoader.FeatureColumnsLeft(dataFilePath, config.LabelColumn,
+            exclusions.Select(c => c.Name), ignored.Concat(otherRoles));
+        if (left.Count > 0) return null;
+        // a table of the label alone has no feature to lose — the loader says what is wrong with it
+        return CsvDataLoader.FeatureColumnsLeft(dataFilePath, config.LabelColumn, [], []).Count == 0
+            ? null
+            : NoFeatureColumnMessage(exclusions, ignored);
+    }
+
+    /// <summary>
     /// The refusal when no column is left to read as a feature: each column a rule excluded with its reason, each
     /// one declared <c>ignore</c>, and how to keep one — a type declared under the model's <c>columns:</c> is never
     /// excluded.
@@ -718,19 +742,8 @@ public class TrainingEngine : ITrainingEngine
             // (weight, group, user, item). The search would run each trainer into the same "no column is a feature"
             // and stop after a few trials. Say it now, with what was removed and the way to keep a column (a
             // declared role is never excluded).
-            if (readsFeatures && File.Exists(dataFilePath))
-            {
-                var ignored = (config.ColumnOverrides ?? [])
-                    .Where(kv => string.Equals(kv.Value?.Trim(), "ignore", StringComparison.OrdinalIgnoreCase))
-                    .Select(kv => kv.Key)
-                    .ToList();
-                var otherRoles = new[] { config.WeightColumn, config.GroupColumn, config.UserColumn, config.ItemColumn }
-                    .Where(c => !string.IsNullOrEmpty(c)).Select(c => c!);
-                if (CsvDataLoader.FeatureColumnsLeft(dataFilePath, config.LabelColumn,
-                        featureExclusions.Select(c => c.Name), ignored.Concat(otherRoles)).Count == 0
-                    && CsvDataLoader.FeatureColumnsLeft(dataFilePath, config.LabelColumn, [], []).Count > 0)
-                    throw new InvalidOperationException(NoFeatureColumnMessage(featureExclusions, ignored));
-            }
+            if (readsFeatures && NoFeatureColumnRefusal(config, dataFilePath, featureExclusions) is { } noFeatureRefusal)
+                throw new InvalidOperationException(noFeatureRefusal);
 
             // A column of strictly increasing integers reads as a row number — judged here, on the whole file
             // before the split, as the exclusions are: the shuffled partitions the loader sees no longer

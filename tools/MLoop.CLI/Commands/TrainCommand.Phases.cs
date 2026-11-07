@@ -567,6 +567,13 @@ public static partial class TrainCommand
             var analyzer = new DataQualityAnalyzer(new ConsoleLogger());
             var issues = await analyzer.AnalyzeAsync(resolvedDataFile, effectiveDefinition.Label);
 
+            // What training would refuse is the first thing a preflight owes: the same judgment, on the same exclusions.
+            var checkConfig = ModelTrainingConfig.From(effectiveDefinition, "preflight", resolvedDataFile, 0, 0);
+            if (TrainingRunner.ReadsFeatureColumns(checkConfig.Task)
+                && TrainingEngine.NoFeatureColumnRefusal(checkConfig, resolvedDataFile,
+                    CsvDataLoader.DetermineExcludedColumns(resolvedDataFile, checkConfig.LabelColumn, log: null, checkConfig.ClaimedColumns)) is { } noFeatures)
+                issues.Insert(0, new DataQualityIssue { Type = DataQualityIssueType.NoUsableFeatures, Severity = IssueSeverity.Critical, Description = noFeatures });
+
             TrainPresenter.DisplayDataQualityIssues(issues);
             events?.Analysis(issues);
 
