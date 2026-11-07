@@ -330,6 +330,28 @@ public class CsvDataLoader : DataProviderBase
     }
 
     /// <summary>
+    /// The columns of the CSV file at <paramref name="filePath"/> a model could still read as features once the
+    /// label, the columns the exclusion rules removed (<paramref name="excluded"/>) and the columns whose role is
+    /// not a feature (<paramref name="otherNonFeatures"/>: an <c>ignore</c> override, the weight, a group / user /
+    /// item column) are set aside. Empty when the file's header cannot be read.
+    /// </summary>
+    /// <remarks>
+    /// A table that reaches the trainer search with none left cannot train: every trial fails the same way. A
+    /// caller that finds <paramref name="excluded"/> non-empty and this empty can say so before the first trial,
+    /// naming what was removed, instead of letting the search discover it.
+    /// </remarks>
+    public static IReadOnlyList<string> FeatureColumnsLeft(
+        string filePath, string? labelColumn, IEnumerable<string> excluded, IEnumerable<string> otherNonFeatures)
+    {
+        var apart = new HashSet<string>(excluded.Concat(otherNonFeatures).Select(n => n.Trim()), StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrEmpty(labelColumn)) apart.Add(labelColumn.Trim());
+        return ReadCsvHeaders(filePath)
+            .Select(h => h.Trim())
+            .Where(h => h.Length > 0 && !apart.Contains(h))
+            .ToList();
+    }
+
+    /// <summary>
     /// The single inference schema-reconciliation step that predict and evaluate both run
     /// after <see cref="ColumnLayoutInference"/>. It (1) overrides each non-label column's inferred <c>DataKind</c> to
     /// the type training fitted on — the inferred layout can misdetect types when the inference data is
