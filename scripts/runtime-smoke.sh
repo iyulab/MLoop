@@ -4,7 +4,8 @@
 # installs no TensorFlow or libtorch:
 #
 #   tf     runtime install → image classification training (imbalanced, --balance) → mloop serve → POST /predict with images (base64 and
-#          multipart) → no scratch file left behind
+#          multipart) → no scratch file left behind → a second experiment kept in staging → shadow prediction → promote → rollback,
+#          the served answers and the promotion history following production
 #   torch  runtime install → text classification training → predictions whose probabilities sum to one
 #
 # Usage:
@@ -89,6 +90,29 @@ if [[ " ${RUNTIMES[*]} " == *" tf "* ]]; then
   form=\$(curl -s -X POST localhost:5099/predict -H "Authorization: Bearer \$T" -F a=@/work/data/probe-blue.png -F b=@/work/data/probe-red.png)
   echo "\$form" | grep -q '"predictedLabel":"blue".*"predictedLabel":"red"' || fail "multipart images: \$form"
   [[ \$(ls /tmp | grep -c mloop_predict_image_ || true) == 0 ]] || fail "scratch images left behind"
+  # The lifecycle after the first model: a second experiment kept in staging, a shadow prediction by it, promotion,
+  # the promotion history, rollback - and the served answers follow production each time (the model cache reloads on the
+  # slot's new file).
+  prod() { grep -o '"experimentId": *"exp-[0-9]*"' models/default/production/metadata.json | grep -o 'exp-[0-9]*' | head -1; }
+  [[ \$(prod) == exp-001 ]] || fail "production after the first training is not exp-001: \$(prod)"
+  mloop train --task image-classification datasets/images --balance 2 --no-promote >/tmp/tf-train2.log 2>&1 || { tail -20 /tmp/tf-train2.log; fail "second image classification training"; }
+  [[ \$(prod) == exp-001 ]] || fail "--no-promote moved production to \$(prod)"
+  two='"predictedLabel":"red".*"predictedLabel":"blue"'
+  shadow=\$(curl -s -X POST "localhost:5099/predict?experiment=exp-002" -H "Authorization: Bearer \$T" -H "Content-Type: application/json" -d "{\"images\":[\"\$R\",\"\$B\"]}")
+  echo "\$shadow" | grep -q "\$two" || fail "shadow prediction by exp-002: \$shadow"
+  [[ \$(prod) == exp-001 ]] || fail "a shadow prediction moved production to \$(prod)"
+  mloop promote exp-002 --force --by smoke >/tmp/tf-promote.log 2>&1 || { tail -20 /tmp/tf-promote.log; fail "promote exp-002"; }
+  [[ \$(prod) == exp-002 ]] || fail "production after promote is \$(prod), not exp-002"
+  after=\$(curl -s -X POST localhost:5099/predict -H "Authorization: Bearer \$T" -H "Content-Type: application/json" -d "{\"images\":[\"\$R\",\"\$B\"]}")
+  echo "\$after" | grep -q "\$two" || fail "served answers after promote: \$after"
+  mloop rollback >/tmp/tf-rollback.log 2>&1 || { tail -20 /tmp/tf-rollback.log; fail "rollback"; }
+  [[ \$(prod) == exp-001 ]] || fail "production after rollback is \$(prod), not exp-001"
+  back=\$(curl -s -X POST localhost:5099/predict -H "Authorization: Bearer \$T" -H "Content-Type: application/json" -d "{\"images\":[\"\$R\",\"\$B\"]}")
+  echo "\$back" | grep -q "\$two" || fail "served answers after rollback: \$back"
+  hist=\$(mloop promote --history --json 2>/dev/null)
+  for e in exp-001 exp-002; do echo "\$hist" | grep -q "\"experimentId\": *\"\$e\"" || fail "promotion history lacks \$e: \$hist"; done
+  echo "\$hist" | grep -q '"action": *"rollback"' || fail "promotion history lacks the rollback: \$hist"
+  echo "\$hist" | grep -q '"by": *"smoke"' || fail "promotion history lacks the actor: \$hist"
   echo "tf: ok"
 fi
 
