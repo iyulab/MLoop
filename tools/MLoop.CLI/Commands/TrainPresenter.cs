@@ -53,7 +53,9 @@ internal static class TrainPresenter
 
             table.AddRow("Rows", $"[cyan]{rowCount:N0}[/]");
             table.AddRow("Columns", $"[cyan]{columns}[/]");
-            table.AddRow("Features", $"[cyan]{columns - 1}[/]");
+            // Every column but the label: the columns the exclusion rules and `type: ignore` take out come later, in
+            // their own warnings, so this is the candidates and not what the model will read.
+            table.AddRow("Candidate features", $"[cyan]{columns - 1}[/]");
             table.AddRow("Label", $"[cyan]{Markup.Escape(labelColumn)}[/]");
 
             // Check file size
