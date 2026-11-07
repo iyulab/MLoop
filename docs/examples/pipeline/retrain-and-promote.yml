@@ -1,0 +1,65 @@
+# Reference pipeline: retrain on the data you have now, compare the candidate with production on the same
+# rows, promote it through the project's gate, and leave the deployment to you.
+#
+# Copy this file to .github/workflows/ in a repository that holds an MLoop project (mloop.yaml at its root).
+# What decides the promotion is the `gate:` in mloop.yaml (see README.md next to this file). The workflow only
+# moves the model through the stages and stops at the first command that refuses: a candidate the gate holds
+# back stays in staging and the job fails with the reason.
+name: Retrain and promote
+
+on:
+  schedule:
+    - cron: "0 3 * * 1"   # Mondays, 03:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install mloop
+        run: |
+          dotnet tool install --global mloop
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      - name: Check the project
+        run: |
+          mloop validate
+
+      - name: Train a candidate (it stays in staging)
+        run: |
+          mloop train datasets/train.csv --no-promote --json > train.ndjson
+          echo "CANDIDATE=$(jq -r 'select(.event == "result") | .experimentId' train.ndjson)" >> "$GITHUB_ENV"
+
+      - name: Compare the candidate with production on the same rows
+        run: |
+          mloop evaluate "$CANDIDATE" datasets/recheck.csv --against production --json > comparison.json
+          jq '.comparison.paired' comparison.json
+
+      - name: Promote through the gate
+        run: |
+          mloop promote "$CANDIDATE" --by "ci:${GITHUB_WORKFLOW}:${GITHUB_RUN_ID}" --json
+
+      - name: Keep the evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: retrain-evidence
+          path: |
+            train.ndjson
+            comparison.json
+          retention-days: 30
+
+      # Deployment is yours. `mloop serve` reloads the production model when its file changes, so shipping the
+      # promoted model to the machine that serves it is a copy of models/default/production:
+      #
+      # - name: Deploy
+      #   run: rsync -a models/default/production/ deploy@your-host:/srv/churn/models/default/production/

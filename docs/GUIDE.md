@@ -723,6 +723,10 @@ file was changed after it was promoted (disk damage, a file written over by hand
 refusal — the model still answers; `mloop promote <experiment-id>` puts a staged model there again and `mloop rollback`
 returns to the previous one. A slot promoted before the hash was recorded has nothing to compare.
 
+A complete pipeline that retrains, compares with production on the same rows, promotes through the gate and watches the served model
+with `mloop trigger check` is in [`docs/examples/pipeline`](examples/pipeline/README.md): a GitHub Actions workflow, a cron script and
+the page that explains the stages.
+
 ### `mloop threshold`
 
 A binary classifier answers its positive class from a probability of 0.5 unless told otherwise. When
