@@ -789,7 +789,8 @@ public partial class TrainingRunner
                 {
                     Name = search.Best.Trainer,
                     FallbackReason = search.FallbackReason,
-                    FallbackKind = search.FallbackReason is null ? TrainerFallbackKind.None : TrainerFallbackKind.RefitFailed,
+                    FallbackKind = search.FallbackReason is null ? TrainerFallbackKind.None
+                        : search.RefitNotReproduced ? TrainerFallbackKind.RefitNotReproduced : TrainerFallbackKind.RefitFailed,
                 },
             Model = model,
             Metrics = metrics,

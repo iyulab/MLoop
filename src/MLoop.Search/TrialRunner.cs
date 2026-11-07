@@ -82,6 +82,10 @@ public sealed record RetainedTrial(
 /// The best <see cref="SearchRequest.KeepTopOutOfFold"/> trials with their answers, best first; <see langword="null"/> when none were asked for.
 /// </param>
 /// <param name="Sampling">How many rows the search ran on and the model was fitted on, when the table was probed (<see cref="SearchSample"/>); null below it.</param>
+/// <param name="RefitNotReproduced">
+/// True when the refit of the trial the search chose scored far below its validated score on the rows it learned, so
+/// <paramref name="Best"/> is the trial whose refit stands in (<see cref="FallbackReason"/> says which and why).
+/// </param>
 public sealed record SearchResult(
     IReadOnlyList<TrialResult> Trials,
     TrialResult Best,
@@ -92,7 +96,8 @@ public sealed record SearchResult(
     TrialResult TopScoring,
     OutOfFoldScores? OutOfFold = null,
     IReadOnlyList<RetainedTrial>? Retained = null,
-    SamplingOutcome? Sampling = null);
+    SamplingOutcome? Sampling = null,
+    bool RefitNotReproduced = false);
 
 /// <summary>What probing a large table decided (<see cref="SearchSample"/>).</summary>
 /// <param name="Rows">Rows of the training partition.</param>
@@ -385,32 +390,137 @@ public sealed class TrialRunner
         var refitRows = scale > 1 && !SearchSample.RefitsOnAllRows(
             keys.Length, searchKeys.Count, winner.FitSeconds * plan.Parts / Math.Max(plan.Parts - 1, 1), _request.Budget.TotalSeconds)
             ? searchKeys.Count : keys.Length;
-        string? fallback = null;
-        ITransformer model;
+        var refitData = refitRows == keys.Length ? train : searchTrain;
+
         // The refit fits in a context of its own: the winner's trial context may carry the budget's cut, set as
         // the trial finished — measured on a CI runner, the refit then died with OperationCanceledException.
         // The caller's cancellation stops the refit too; the budget does not — the refit was reserved for.
-        var refitContext = new MLContext(settings.Seed);
-        using var stopRefit = FitCancellation.Register(refitContext, cancellationToken);
-        try
+        ITransformer Refit(Scored trial)
         {
-            model = winner.Pipeline(refitContext).Fit(refitRows == keys.Length ? train : searchTrain);
+            var refitContext = new MLContext(settings.Seed);
+            using var stopRefit = FitCancellation.Register(refitContext, cancellationToken);
+            return trial.Pipeline(refitContext).Fit(refitData);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
+
+        // A trial's score is earned on the rows its folds trained on, and the model is the same pipeline fitted on more of
+        // them. That the two agree is an assumption, and a solver whose result moves with the row count breaks it (a linear
+        // model scored 0.97 on 80-row folds and 0.67 on the 120 rows it was then fitted on, its own training rows). The refit is
+        // scored on the rows it learned: one that falls far short of the validated score did not reproduce what chose it, and
+        // the next-best trial's refit stands in, as long as the time allows.
+        string? fallback = null;
+        var notReproduced = false;
+        ITransformer? model = null;
+        var used = winner;
+        ITransformer? bestEffort = null;
+        Scored? bestEffortOf = null;
+        var bestEffortScore = double.NaN;
+        var doubts = new List<string>();
+        var lastRefitSeconds = 0.0;
+        var winnerLearned = double.NaN;
+        var attempts = new List<Scored> { winner };
+        // The alternatives are the best trial of each other trainer: another setting of the trainer whose refit fell short is
+        // the same solver on the same rows, and no better a bet than the one that failed.
+        attempts.AddRange(BestFirst(scored).Where(e => !ReferenceEquals(e, winner) && e.Trial.Trainer != winner.Trial.Trainer)
+            .DistinctBy(e => e.Trial.Trainer).Take(RefitAlternatives));
+        for (var attempt = 0; attempt < attempts.Count; attempt++)
         {
-            // The pipeline fitted on four fifths of the rows; refit on all of them did not. Its first fold's model stands in.
-            fallback = $"Refit on the whole training partition failed ({ex.GetBaseException().Message}); the model is the best trial's first fold.";
-            var view = new HoldoutView(searchTrain, plan.FoldOf, plan.Validated[0]);
-            var fallbackContext = new MLContext(settings.Seed);
-            model = winner.Pipeline(fallbackContext).Fit(fallbackContext.Data.FilterRowsByColumn(view, HoldoutView.ColumnName, 0, 0.5));
+            var candidate = attempts[attempt];
+            if (attempt > 0 && clock.Elapsed.TotalSeconds + lastRefitSeconds > RefitOverrun * _request.Budget.TotalSeconds)
+                break;
+            var attemptStarted = clock.Elapsed;
+            ITransformer fitted;
+            try
+            {
+                fitted = Refit(candidate);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
+            {
+                if (attempt > 0)
+                    continue;   // an alternative that cannot be refit is not one
+                // The pipeline fitted on four fifths of the rows; refit on all of them did not. Its first fold's model stands in.
+                fallback = $"Refit on the whole training partition failed ({ex.GetBaseException().Message}); the model is the best trial's first fold.";
+                var view = new HoldoutView(searchTrain, plan.FoldOf, plan.Validated[0]);
+                var fallbackContext = new MLContext(settings.Seed);
+                model = winner.Pipeline(fallbackContext).Fit(fallbackContext.Data.FilterRowsByColumn(view, HoldoutView.ColumnName, 0, 0.5));
+                break;
+            }
+            lastRefitSeconds = (clock.Elapsed - attemptStarted).TotalSeconds;
+
+            var learned = ScoreOn(fitted, refitData);
+            if (attempt == 0 && learned is { } first)
+                winnerLearned = first;
+            if (Reproduces(candidate, learned))
+            {
+                model = fitted;
+                used = candidate;
+                notReproduced = attempt > 0;
+                if (notReproduced)
+                    fallback = $"The refit of {winner.Trial.Trainer} scored {Format(winnerLearned)} on the rows it learned, against {Format(winner.Value)} validated; " +
+                        $"the model is the refit of {used.Trial.Trainer} ({Format(learned!.Value)} on the rows it learned, {Format(used.Value)} validated).";
+                break;
+            }
+            doubts.Add(Format(learned!.Value));
+            if (bestEffort is null || _request.Metric.IsBetter(learned.Value, bestEffortScore))
+                (bestEffort, bestEffortOf, bestEffortScore) = (fitted, candidate, learned.Value);
         }
+        if (model is null && bestEffort is not null && bestEffortOf is not null)
+        {
+            // None of the refits reproduced its validated score: the one that learned its rows best stands.
+            model = bestEffort;
+            used = bestEffortOf;
+            notReproduced = true;
+            fallback = $"No refit reproduced its validated score on the rows it learned ({string.Join(", ", doubts)} against " +
+                $"{Format(winner.Value)} validated for {winner.Trial.Trainer}); the model is the refit of {used.Trial.Trainer}.";
+        }
+        if (model is null)
+            throw new SearchFailedException(trials, "No refit produced a model.", false);
         IReadOnlyList<RetainedTrial>? retained = _request.KeepTopOutOfFold > 0
             ? [.. BestFirst(scored).Where(e => e.OutOfFold is not null).Take(_request.KeepTopOutOfFold)
                 .Select(e => new RetainedTrial(e.Trial, e.OutOfFold!, e.Pipeline, e.FitSeconds * plan.Parts / Math.Max(plan.Parts - 1, 1) * scale))]
             : null;
-        return new SearchResult(trials, winner.Trial, winner.Score, model, fallback, plan, top.Trial, winner.OutOfFold, retained,
-            sampling is null ? null : sampling with { RefitRows = refitRows });
+        return new SearchResult(trials, used.Trial, used.Score, model, fallback, plan, top.Trial, used.OutOfFold, retained,
+            sampling is null ? null : sampling with { RefitRows = refitRows }, notReproduced);
     }
+
+    // How many trials beyond the chosen one may be refit when a refit does not reproduce its validated score, and how far past the
+    // budget the search may run to do it (the refits it reserved time for are the first; each further one needs the time of the last).
+    private const int RefitAlternatives = 3;
+    private const double RefitOverrun = 1.5;
+
+    // A refit is scored on the rows it learned and may fall short of the validated score by this many standard errors, or this
+    // share of the score, whichever is wider — a model scored on its own rows does not usually do worse than on rows it never saw.
+    private const double RefitSlackErrors = 4;
+    private const double RefitSlackShare = 0.1;
+
+    // The request's metric of the model on the rows, or null when it has none to judge by.
+    private double? ScoreOn(ITransformer model, IDataView rows)
+    {
+        try
+        {
+            return _request.Score(model.Transform(rows)).TryGetValue(_request.Metric.Name, out var value) && double.IsFinite(value) ? value : null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
+        {
+            return null;
+        }
+    }
+
+    // Whether a refit's score on the rows it learned is close enough to the trial's validated score. No score to judge by: it is.
+    private bool Reproduces(Scored trial, double? learned)
+    {
+        var error = trial.Score.StandardError is { } errors && errors.TryGetValue(_request.Metric.Name, out var se) && double.IsFinite(se) ? se : 0;
+        return RefitReproduces(trial.Value, learned, error, _request.Metric.HigherIsBetter);
+    }
+
+    internal static bool RefitReproduces(double validated, double? learned, double standardError, bool higherIsBetter)
+    {
+        if (learned is not { } value)
+            return true;
+        var shortfall = higherIsBetter ? validated - value : value - validated;
+        return shortfall <= Math.Max(RefitSlackErrors * standardError, RefitSlackShare * Math.Abs(validated));
+    }
+
+    private static string Format(double value) => value.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
 
     // The refit the search reserves time for: on all the rows (the sample's fit scaled by the rows) when that is within the share of
     // the budget SearchSample allows, else the sample's own.
