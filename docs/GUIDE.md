@@ -176,7 +176,9 @@ mloop train data/fraud.csv --label is_fraud --time 180 --test-split 0.3
 
 # Ranking: the held-out share is held out by query. A query's rows are all in training or all in the test,
 # and the test NDCG is that of queries the model has not seen. `mloop evaluate` on a file of new queries
-# scores that file's own queries, whatever ids the model was trained on.
+# scores that file's own queries, whatever ids the model was trained on. The two ranking trainers are compared on
+# queries held out of the training share, and the one reported is the winner fitted again on the whole share and
+# scored once on the test queries (a share of fewer than ten queries has none to spare: the first trainer that fits is used).
 mloop train rank.train --label label --group-column qid --test-split 0.2
 
 # Multi-file training (v0.4.0+)

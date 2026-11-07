@@ -1798,10 +1798,45 @@ public partial class TrainingRunner
                     rowGroupColumnName: "GroupId"))
             };
 
+            // The candidates are chosen on queries held out of the training partition, and the winner is fitted again on the
+            // whole partition: the test partition is scored once, by the model that is reported. Choosing on the test
+            // queries and reporting the same score makes the number better than the model by the margin of the choice.
+            var (fitSet, selectionSet) = SelectionSplit(trainSet, config);
+            var selectsOnHeldOutQueries = selectionSet is not null;
+            if (!selectsOnHeldOutQueries)
+                _logger.Info("Ranking: too few queries to hold some out for choosing the trainer; the first trainer that fits is used.");
+
+            (Dictionary<string, double> Metrics, double Primary) ScoreRanking(ITransformer model, IDataView set)
+            {
+                var predictions = model.Transform(set);
+                // A held-out partition is made of queries the fitted "GroupId" key does not know (RankingQueries).
+                var (queryScored, queryKey) = RankingQueries.Of(_mlContext, predictions, config.GroupColumn);
+                var rankMetrics = _mlContext.Ranking.Evaluate(queryScored,
+                    labelColumnName: config.LabelColumn,
+                    rowGroupColumnName: queryKey);
+
+                var ndcg = rankMetrics.NormalizedDiscountedCumulativeGains;
+                var dcg = rankMetrics.DiscountedCumulativeGains;
+                var metricsDict = new Dictionary<string, double>();
+
+                // Store per-level NDCG (NDCG@1, NDCG@2, ..., NDCG@10)
+                for (int level = 0; level < ndcg.Count; level++)
+                    metricsDict[$"ndcg_at_{level + 1}"] = double.IsNaN(ndcg[level]) ? 0 : ndcg[level];
+                for (int level = 0; level < dcg.Count; level++)
+                    metricsDict[$"dcg_at_{level + 1}"] = double.IsNaN(dcg[level]) ? 0 : dcg[level];
+
+                // Primary metric: NDCG@10 (or last available level)
+                var primaryNdcg = ndcg.Count > 0 ? ndcg[ndcg.Count - 1] : 0;
+                if (double.IsNaN(primaryNdcg)) primaryNdcg = 0;
+                metricsDict["ndcg"] = primaryNdcg;
+                return (metricsDict, primaryNdcg);
+            }
+
+            IEstimator<ITransformer>? bestPipeline = null;
             ITransformer? bestModel = null;
+            Dictionary<string, double>? bestMetrics = null;
             double bestNdcg = double.MinValue;
             string bestTrainerName = trainers[0].Name;
-            Dictionary<string, double>? bestMetrics = null;
             var trialChannel = CreateTrialChannel(progress);
 
             for (int i = 0; i < trainers.Length; i++)
@@ -1812,44 +1847,30 @@ public partial class TrainingRunner
                 try
                 {
                     var fullPipeline = pipeline.Append(trainer);
-                    var model = fullPipeline.Fit(trainSet);
-                    var predictions = model.Transform(testSet);
+                    var model = fullPipeline.Fit(fitSet);
 
-                    // The test partition is made of held-out queries; the fitted "GroupId" key does not know them (RankingQueries).
-                    var (queryScored, queryKey) = RankingQueries.Of(_mlContext, predictions, config.GroupColumn);
-                    var rankMetrics = _mlContext.Ranking.Evaluate(queryScored,
-                        labelColumnName: config.LabelColumn,
-                        rowGroupColumnName: queryKey);
-
-                    var ndcg = rankMetrics.NormalizedDiscountedCumulativeGains;
-                    var dcg = rankMetrics.DiscountedCumulativeGains;
-
-                    var metricsDict = new Dictionary<string, double>();
-
-                    // Store per-level NDCG (NDCG@1, NDCG@2, ..., NDCG@10)
-                    for (int level = 0; level < ndcg.Count; level++)
+                    if (selectionSet is null)
                     {
-                        metricsDict[$"ndcg_at_{level + 1}"] = double.IsNaN(ndcg[level]) ? 0 : ndcg[level];
-                    }
-                    for (int level = 0; level < dcg.Count; level++)
-                    {
-                        metricsDict[$"dcg_at_{level + 1}"] = double.IsNaN(dcg[level]) ? 0 : dcg[level];
+                        // Nothing to choose with: the first trainer that fits is the model, fitted on the whole partition, so
+                        // its score on the test partition is the only score there is.
+                        var (onlyMetrics, onlyNdcg) = ScoreRanking(model, testSet);
+                        trialChannel.ReportCompleted(TrainerDescriptor.Of(trainerName), "ndcg", onlyNdcg, onlyMetrics);
+                        bestPipeline = fullPipeline;
+                        bestModel = model;
+                        bestMetrics = onlyMetrics;
+                        bestTrainerName = trainerName;
+                        break;
                     }
 
-                    // Primary metric: NDCG@10 (or last available level)
-                    var primaryNdcg = ndcg.Count > 0 ? ndcg[ndcg.Count - 1] : 0;
-                    if (double.IsNaN(primaryNdcg)) primaryNdcg = 0;
-                    metricsDict["ndcg"] = primaryNdcg;
-
+                    var (metricsDict, primaryNdcg) = ScoreRanking(model, selectionSet);
                     trialChannel.ReportCompleted(
                         TrainerDescriptor.Of(trainerName), "ndcg", primaryNdcg, metricsDict);
 
                     if (primaryNdcg > bestNdcg)
                     {
                         bestNdcg = primaryNdcg;
-                        bestModel = model;
+                        bestPipeline = fullPipeline;
                         bestTrainerName = trainerName;
-                        bestMetrics = metricsDict;
                     }
                 }
                 catch (Exception ex) when (MLoop.Core.Runtime.NativeLoad.IsMissing(ex))
@@ -1865,15 +1886,22 @@ public partial class TrainingRunner
                 }
             }
 
-            if (bestModel == null)
+            if (bestPipeline == null)
                 throw new InvalidOperationException(
                     "All ranking trainers failed. Check data format and group column. " +
                     "Note: FastTree requires label values 0-4; LightGbm accepts any numeric range.");
 
+            if (selectionSet is not null)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                bestModel = bestPipeline.Fit(trainSet);
+                bestMetrics = ScoreRanking(bestModel, testSet).Metrics;
+            }
+
             return new TrainedModel
             {
                 Trainer = TrainerDescriptor.Of(bestTrainerName),
-                Model = bestModel,
+                Model = bestModel!, // set with bestPipeline: by the refit above, or by the single-trainer path
                 Metrics = bestMetrics ?? new Dictionary<string, double>(),
                 RowCount = RowsIn(trainSet),
                 Trials = trialChannel.Records,
@@ -1881,6 +1909,24 @@ public partial class TrainingRunner
             };
         }, cancellationToken).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// A ranking run's training partition split by query into the rows the candidates are fitted on and the queries they are
+    /// compared on (a fifth of the queries); the second is null when the partition holds too few queries to spare any.
+    /// </summary>
+    private (IDataView Fit, IDataView? Selection) SelectionSplit(IDataView trainSet, TrainingConfig config)
+    {
+        var (keyed, keyColumn) = RankingQueries.Of(_mlContext, trainSet, config.GroupColumn);
+        var queryCount = keyed.GetColumn<uint>(keyColumn).Distinct().Count();
+        if (queryCount < SelectionMinimumQueries)
+            return (trainSet, null);
+
+        var (fit, selection) = GroupedSplit.Of(_mlContext, trainSet, config.GroupColumn!, SelectionFraction);
+        return (fit, selection);
+    }
+
+    private const int SelectionMinimumQueries = 10;
+    private const double SelectionFraction = 0.2;
 
     private async Task<TrainedModel> RunForecastingAsync(
         IDataView trainSet,
