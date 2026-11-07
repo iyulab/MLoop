@@ -5,12 +5,45 @@ using Microsoft.ML.AutoML;
 using Microsoft.ML.Data;
 
 // Runs ML.NET's own AutoML (Microsoft.ML.AutoML) on one train file for a time budget and scores the best model on the test file.
-// args: train.csv test.csv label task(binary|multiclass|regression) budgetSeconds
+// args: train.csv test.csv label task(binary|multiclass|regression|ranking) budgetSeconds [groupColumn]
 // Prints one JSON object: the trainer it picked, how many runs it made, the wall time, and the metric the table reports
-// (binary: auc, multiclass: log_loss, regression: rmse) — the same metric the search was told to optimize.
+// (binary: auc, multiclass: log_loss, regression: rmse, ranking: ndcg at 10 on queries the search never saw) — the same metric
+// the search was told to optimize. A ranking table has one row per document, the rows of a query next to each other, and
+// names its query column as the sixth argument.
 var (trainPath, testPath, label, task, budget) = (args[0], args[1], args[2], args[3], uint.Parse(args[4]));
 
 var ml = new MLContext(seed: 0);
+
+if (task == "ranking")
+{
+    var group = args[5];
+    var information = new ColumnInformation { LabelColumnName = label, GroupIdColumnName = group };
+    var columns = ml.Auto().InferColumns(trainPath, information, groupColumns: false);
+    var rankLoader = ml.Data.CreateTextLoader(columns.TextLoaderOptions);
+    // A query column is a key for the ranking trainers and for the evaluator; the same mapping reads both files, and it is fitted on both:
+    // a query the mapping has not seen becomes the missing key, so fitted on the train file alone every test query would be the same
+    // "query" and the evaluator would score the whole test file as one list.
+    var toKey = ml.Transforms.Conversion.MapValueToKey(group, group).Fit(rankLoader.Load(trainPath, testPath));
+    var rankTrain = toKey.Transform(rankLoader.Load(trainPath));
+    var rankTest = toKey.Transform(rankLoader.Load(testPath));
+    var rankClock = Stopwatch.StartNew();
+    var ranked = ml.Auto().CreateRankingExperiment(new RankingExperimentSettings
+    {
+        MaxExperimentTimeInSeconds = budget,
+        OptimizingMetric = RankingMetric.Ndcg,
+        OptimizationMetricTruncationLevel = 10,
+    }).Execute(rankTrain, columns.ColumnInformation);
+    var evaluated = ml.Ranking.Evaluate(ranked.BestRun.Model.Transform(rankTest), label, group);
+    Console.WriteLine(JsonSerializer.Serialize(new
+    {
+        learner = ranked.BestRun.TrainerName,
+        trials = ranked.RunDetails.Count(),
+        wall_s = Math.Round(rankClock.Elapsed.TotalSeconds, 1),
+        test = new { ndcg_at_10 = evaluated.NormalizedDiscountedCumulativeGains[9] },
+    }));
+    return;
+}
+
 var inferred = ml.Auto().InferColumns(trainPath, label);
 var loader = ml.Data.CreateTextLoader(inferred.TextLoaderOptions);
 var train = loader.Load(trainPath);

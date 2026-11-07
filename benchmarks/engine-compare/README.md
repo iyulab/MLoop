@@ -50,6 +50,23 @@ noise alone - that is why one flip is only a watch.
 The `Benchmarks scheduled` workflow runs the comparison (systems `mloop`, `flaml`, `lightgbm`; split seeds 0-4) and the lifecycle walk on a weekly schedule and reads
 each comparison against the previous successful run.
 
+## Ranking against the old AutoML (`rank.py`)
+
+`rank.py` answers the same question as the table sweep for the ranking task, which `run.py` does not cover. For each split seed
+`rank-tables.py` cuts MSLR-WEB10K (the validation fold, 2,000 queries of up to 100-odd documents with 136 features) into a train file of
+600 queries and a test file of 150 other queries; `mloop train --group-column qid` and `mloop evaluate` are scored against
+`automl-legacy`'s ranking experiment (the same time budget, the same files) by ML.NET's own ranking evaluator, so both numbers are NDCG at 10 with the
+same gains. `summarize` reads the pair as `run.py summarize` does. Build `automl-legacy/` first; needs pandas, numpy and pyarrow.
+
+```bash
+python benchmarks/engine-compare/rank.py run --mloop "dotnet tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" --source validation.parquet --seeds 0,1,2,3,4 --budget 60 --out rank.jsonl
+python benchmarks/engine-compare/rank.py summarize rank.jsonl
+```
+
+The ranking evaluator groups consecutive rows with the same query key. A key mapping fitted on the train file alone turns every unseen test
+query into the missing key and the evaluator then scores the whole test file as one list (NDCG at 10 of 0.61 instead of 0.46 on the same model) -
+`automl-legacy` fits its mapping on both files for that reason.
+
 ## Learner parity and the cost of a large model
 
 `parity/` answers two questions that a gap between systems raises. `parity.py` trains one fixed set of hyperparameters with the LightGBM
