@@ -8,10 +8,12 @@
 #          the served answers and the promotion history following production
 #   torch  runtime install → text classification training → predictions whose probabilities sum to one → object detection: train, a
 #          second experiment in staging, shadow prediction (predict --json), promote, rollback, the history, and the boxes over HTTP
+#   anomaly  onnxruntime + the dinov2-small encoder install -> image anomaly training -> the same lifecycle (staging, shadow prediction, promote,
+#          rollback, history) -> an odd picture scores higher than a normal one, on the CLI and over HTTP
 #
 # Usage:
 #   ./scripts/runtime-smoke.sh            # both
-#   ./scripts/runtime-smoke.sh tf         # one
+#   ./scripts/runtime-smoke.sh tf         # one (tf, torch, anomaly)
 #
 # Needs Docker (on an arm64 machine the container runs emulated — minutes, not seconds) and python3 for the synthetic
 # images and sentences. The CLI is packed from this tree; nothing is published.
@@ -19,7 +21,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-if [[ $# -eq 0 ]]; then RUNTIMES=(tf torch); else RUNTIMES=("$@"); fi
+if [[ $# -eq 0 ]]; then RUNTIMES=(tf torch anomaly); else RUNTIMES=("$@"); fi
 
 # A directory Docker can mount on every host (Docker Desktop shares the home directory, not the temp directory).
 WORK="${HOME}/.cache/mloop-runtime-smoke"
@@ -183,6 +185,46 @@ if [[ " ${RUNTIMES[*]} " == *" torch "* ]]; then
   served=\$(curl -s -X POST localhost:5098/predict -H "Authorization: Bearer \$T" -H "Content-Type: application/json" -d "{\"images\":[\"\$P\"]}")
   echo "\$served" | grep -q '"detections":\[{"label":"box"' || fail "boxes over HTTP: \$served"
   echo "torch: ok"
+fi
+if [[ " ${RUNTIMES[*]} " == *" anomaly "* ]]; then
+  echo "== anomaly"
+  mloop runtime install onnxruntime
+  mloop encoder install dinov2-small >/tmp/ia-encoder.log 2>&1 || { tail -20 /tmp/ia-encoder.log; fail "mloop encoder install dinov2-small"; }
+  cd /tmp && mloop init anom --task image-anomaly >/tmp/ia-init.log 2>&1 || { cat /tmp/ia-init.log; fail "mloop init (image anomaly)"; }
+  cd anom
+  mkdir -p datasets/images && cp /work/data/images/red/*.png datasets/images/
+  mloop train --task image-anomaly datasets/images >/tmp/ia-train.log 2>&1 || { tail -20 /tmp/ia-train.log; fail "image anomaly did not train"; }
+  prod() { grep -o '"experimentId": *"exp-[0-9]*"' models/default/production/metadata.json | grep -o 'exp-[0-9]*' | head -1; }
+  [[ \$(prod) == exp-001 ]] || fail "production after the first image anomaly training is \$(prod)"
+  mloop train --task image-anomaly datasets/images --no-promote >/tmp/ia-train2.log 2>&1 || { tail -20 /tmp/ia-train2.log; fail "second image anomaly training"; }
+  [[ \$(prod) == exp-001 ]] || fail "--no-promote moved production to \$(prod)"
+  mkdir probe && cp /work/data/probe-red.png probe/a-red.png && cp /work/data/probe-blue.png probe/b-blue.png
+  # a picture unlike the normal ones scores higher than one like them
+  score() { grep -o '"score": *[0-9.eE-]*' | grep -o '[0-9.eE-]*\$'; }
+  out=\$(mloop predict probe --json 2>/dev/null) || fail "predict --json (image anomaly)"
+  echo "\$out" | grep -q '"experimentId": *"exp-001"' || fail "predict --json does not name the experiment: \$out"
+  read -r red blue <<<"\$(echo "\$out" | score | tr '\n' ' ')"
+  awk "BEGIN{exit !(\$blue > \$red)}" || fail "the odd picture did not score higher: red \$red, blue \$blue"
+  shadow=\$(mloop predict probe --experiment exp-002 --json 2>/dev/null) || fail "shadow prediction by exp-002"
+  echo "\$shadow" | grep -q '"experimentId": *"exp-002"' || fail "shadow prediction did not use exp-002: \$shadow"
+  [[ \$(prod) == exp-001 ]] || fail "a shadow prediction moved production to \$(prod)"
+  mloop promote exp-002 --force --by smoke >/tmp/ia-promote.log 2>&1 || { tail -20 /tmp/ia-promote.log; fail "promote exp-002 (image anomaly)"; }
+  [[ \$(prod) == exp-002 ]] || fail "production after promote is \$(prod), not exp-002"
+  mloop rollback >/tmp/ia-rollback.log 2>&1 || { tail -20 /tmp/ia-rollback.log; fail "rollback (image anomaly)"; }
+  [[ \$(prod) == exp-001 ]] || fail "production after rollback is \$(prod), not exp-001"
+  hist=\$(mloop promote --history --json 2>/dev/null)
+  for e in exp-001 exp-002; do echo "\$hist" | grep -q "\"experimentId\": *\"\$e\"" || fail "promotion history lacks \$e: \$hist"; done
+  echo "\$hist" | grep -q '"action": *"rollback"' || fail "promotion history lacks the rollback: \$hist"
+  (mloop serve --port 5097 >/tmp/ia-serve.log 2>&1 &)
+  up=0; for _ in \$(seq 1 180); do if curl -sf localhost:5097/health >/dev/null; then up=1; break; fi; sleep 1; done
+  [[ \$up == 1 ]] || { tail -30 /tmp/ia-serve.log; fail "mloop serve (image anomaly) did not come up"; }
+  T=\$(mloop token -q)
+  R=\$(base64 -w0 /work/data/probe-red.png); B=\$(base64 -w0 /work/data/probe-blue.png)
+  served=\$(curl -s -X POST localhost:5097/predict -H "Authorization: Bearer \$T" -H "Content-Type: application/json" -d "{\"images\":[\"\$R\",\"\$B\"]}")
+  echo "\$served" | grep -q '"task":"image-anomaly"' || fail "image anomaly over HTTP: \$served"
+  read -r sred sblue <<<"\$(echo "\$served" | score | tr '\n' ' ')"
+  awk "BEGIN{exit !(\$sblue > \$sred)}" || fail "over HTTP the odd picture did not score higher: red \$sred, blue \$sblue"
+  echo "anomaly: ok"
 fi
 SH
 
