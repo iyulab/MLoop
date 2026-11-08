@@ -445,6 +445,11 @@ public static partial class TrainCommand
                     await ApplyPrepAsync(resolvedDataFile, effectiveDefinition.Prep, mlCtxForPrep, effectiveDefinition.Task);
 
                 allDataFilesUsed.Add(resolvedDataFile);
+                if (TrainingInput.PrepColumnsRefusal(resolvedDataFile, preFeaturizerColumns, reportedAs: namedDataFile) is { } prepColumnsRefusal)
+                {
+                    ErrorConsole.Error(Markup.Escape(prepColumnsRefusal), "Fix the column name under prep: in mloop.yaml (mloop prep plan --remove <type> drops a step) - or train on a file that has the column.");
+                    return PreparedData.Exit(1);
+                }
                 foreach (var w in prepWarnings)
                     AnsiConsole.MarkupLine($"[yellow]![/] {w}");
                 ValueLine.Write("[green]>[/] Preprocessed data: ", Path.GetRelativePath(projectRoot, resolvedDataFile));
@@ -462,7 +467,7 @@ public static partial class TrainCommand
 
         if (TrainingInput.LabelColumnRefusal(resolvedDataFile, effectiveDefinition.Task, effectiveDefinition.Label, reportedAs: namedDataFile) is { } labelRefusal)
         {
-            ErrorConsole.Error(labelRefusal);
+            ErrorConsole.Error(labelRefusal, TrainingInput.LabelColumnGuidance);
             return PreparedData.Exit(1);
         }
 

@@ -228,7 +228,7 @@ ls .mloop/scripts/hooks/
 ls .mloop/scripts/metrics/
 
 # Validate extension compiles
-mloop validate .mloop/scripts/hooks/pre-train.cs
+mloop validate -v
 ```
 
 ### Compilation Errors
@@ -251,8 +251,8 @@ ls .mloop/scripts/hooks/
 # Check hook naming convention
 # pre-train.cs, post-train.cs, pre-predict.cs, post-evaluate.cs
 
-# Enable debug logging
-mloop train data.csv --label target --verbose
+# Compile every script and check what its folder runs
+mloop validate -v
 ```
 
 ### Metric Not Optimizing

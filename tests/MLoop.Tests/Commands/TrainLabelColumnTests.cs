@@ -50,6 +50,8 @@ public sealed class TrainLabelColumnTests : IDisposable
         Assert.Contains($"Label column '{label}' not found", output, StringComparison.Ordinal);
         Assert.Contains("Available columns: x1, x2, y", output, StringComparison.Ordinal);
         Assert.DoesNotContain("only one class", output, StringComparison.Ordinal);
+        // ... and says what to change: the --label option, naming a column the way the header spells it.
+        Assert.Contains("--label <column>", output, StringComparison.Ordinal);
         Assert.False(Directory.Exists(Path.Combine("models", "default", "staging", "exp-001")));
     }
 }

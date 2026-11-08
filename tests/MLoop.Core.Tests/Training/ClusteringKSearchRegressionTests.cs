@@ -121,6 +121,36 @@ public class ClusteringKSearchRegressionTests : IDisposable
         Assert.Equal(3, (int)result.Metrics["num_clusters"]);
     }
 
+    [Fact]
+    public async Task TheReportedIndex_IsTheChosenModelsOnTheTestRows_NotTheScoreK_WasChosenBy()
+    {
+        // k is chosen on the rows the models were fitted on and the test partition is scored once, by the chosen model;
+        // choosing on the test rows and reporting the same index gave the least of the nine as the result.
+        var ctx = new MLContext(seed: 42);
+        var rng = new Random(11);
+        (float, float)[] centers = [(0f, 0f), (12f, 12f), (24f, 0f)];
+        var rows = new List<Point>();
+        for (int c = 0; c < centers.Length; c++)
+            for (int i = 0; i < 200; i++)
+                rows.Add(new Point { F1 = centers[c].Item1 + (float)(rng.NextDouble() * 4 - 2), F2 = centers[c].Item2 + (float)(rng.NextDouble() * 4 - 2) });
+
+        var runner = new TrainingRunner(ctx, new InMemoryDataProvider(ctx, ctx.Data.LoadFromEnumerable(rows)));
+        var result = await runner.RunAsync(new TrainingConfig
+        {
+            ModelName = "test",
+            DataFile = "synthetic",
+            LabelColumn = "",
+            Task = "clustering",
+            TimeLimitSeconds = 30,
+            NumClusters = 0
+        }, cancellationToken: CancellationToken.None);
+
+        var chosen = (int)result.Metrics["num_clusters"];
+        var trial = result.Trials.Single(t => (int)t.Metrics["k"] == chosen);
+        Assert.NotEqual(trial.Metrics["davies_bouldin_index"], result.Metrics["davies_bouldin_index"]);
+        Assert.True(result.Metrics["davies_bouldin_index"] > 0);
+    }
+
     private sealed class CountingRows(List<Point> rows) : IEnumerable<Point>
     {
         public int Enumerations;

@@ -58,7 +58,7 @@ public static partial class PredictCommand
 
         var unknownStrategyOption = new Option<string>("--unknown-strategy")
         {
-            Description = "Strategy for handling unknown categorical values: auto (default), error, use-most-frequent, use-missing",
+            Description = $"Strategy for handling unknown categorical values: {string.Join(", ", UnknownValueStrategies.Names.Select(n => n == "auto" ? "auto (default)" : n))}",
             DefaultValueFactory = _ => "auto"
         };
 
@@ -174,6 +174,13 @@ public static partial class PredictCommand
 
         try
         {
+            // A strategy name that is none of the four used to be read as `auto`; it is refused before anything is loaded.
+            if (UnknownValueStrategies.Refusal(unknownStrategy) is { } unknownStrategyRefusal)
+            {
+                ErrorConsole.Error(Markup.Escape(unknownStrategyRefusal));
+                return 1;
+            }
+
             // Initialize components
             var fileSystem = new FileSystemManager();
             var projectDiscovery = new ProjectDiscovery(fileSystem);
@@ -243,9 +250,12 @@ public static partial class PredictCommand
                     return 1;
                 }
 
+                if (json && OutputBesideJsonRefused(output))
+                    return 1;
+
                 return await PredictObjectDetectionAsync(
                     projectRoot, resolvedModelPath, dataFile, output, resolvedModelName, configLabelColumn, fileSystem,
-                    scoreThreshold ?? DetectionScoreThreshold.Default);
+                    scoreThreshold ?? DetectionScoreThreshold.Default, json, experimentId);
             }
 
             if (scoreThreshold is not null)
@@ -279,14 +289,7 @@ public static partial class PredictCommand
             resolvedDataFile = preparedRows;
 
             // Parse unknown value strategy
-            var strategy = unknownStrategy.ToLowerInvariant() switch
-            {
-                "auto" => UnknownValueStrategy.Auto,
-                "error" => UnknownValueStrategy.Error,
-                "use-most-frequent" => UnknownValueStrategy.UseMostFrequent,
-                "use-missing" => UnknownValueStrategy.UseMissing,
-                _ => UnknownValueStrategy.Auto
-            };
+            var strategy = UnknownValueStrategies.Parse(unknownStrategy) ?? UnknownValueStrategy.Auto;
 
             // Warn for specialized prediction formats
             if (taskType != null && taskType.Equals("time-series-anomaly", StringComparison.OrdinalIgnoreCase))
@@ -856,7 +859,9 @@ public static partial class PredictCommand
         string modelName,
         string? labelColumn,
         FileSystemManager fileSystem,
-        double scoreThreshold)
+        double scoreThreshold,
+        bool json = false,
+        string? experimentId = null)
     {
         // Resolve the input dataset directory (or a direct COCO .json).
         string resolvedDataDir;
@@ -898,9 +903,13 @@ public static partial class PredictCommand
         }
 
         // Resolve output path — the convention itself lives in ProjectLayout, because `status`
-        // reads these names back and used to know only the tabular one.
-        string resolvedOutputPath;
-        if (string.IsNullOrEmpty(output))
+        // reads these names back and used to know only the tabular one. --json writes no file: the detections go to stdout.
+        string resolvedOutputPath = string.Empty;
+        if (json)
+        {
+            // nothing to resolve
+        }
+        else if (string.IsNullOrEmpty(output))
         {
             var predictionsDir = fileSystem.CombinePath(projectRoot, ProjectLayout.PredictionsDirectory);
             await fileSystem.CreateDirectoryAsync(predictionsDir, CancellationToken.None);
@@ -936,11 +945,27 @@ public static partial class PredictCommand
                 ctx.Status("[green]Detection complete![/]");
             });
 
-        var json = System.Text.Json.JsonSerializer.Serialize(detections, new System.Text.Json.JsonSerializerOptions
+        if (json)
+        {
+            var payload = new
+            {
+                model = modelName,
+                experimentId,
+                modelSha256 = ModelFingerprint.Sha256(modelPath),
+                task = "object-detection",
+                count = detections.Count,
+                predictions = detections,
+                warnings = JsonOutputScope.Warnings ?? [],
+            };
+            StreamedJson.WriteLine(Console.Out, payload, PredictJsonOptions);
+            return 0;
+        }
+
+        var detectionsJson = System.Text.Json.JsonSerializer.Serialize(detections, new System.Text.Json.JsonSerializerOptions
         {
             WriteIndented = true
         });
-        await File.WriteAllTextAsync(resolvedOutputPath, json, new System.Text.UTF8Encoding(false));
+        await File.WriteAllTextAsync(resolvedOutputPath, detectionsJson, new System.Text.UTF8Encoding(false));
 
         var totalDetections = detections.Sum(d => d.Detections.Count);
 

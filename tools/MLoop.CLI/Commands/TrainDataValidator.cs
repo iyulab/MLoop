@@ -103,6 +103,10 @@ internal static class TrainDataValidator
         int seed,
         string projectRoot)
     {
+        // A name that is neither strategy used to fall through to random sampling; no caller gets that now.
+        if (SamplingStrategies.Refusal(explicitStrategy) is { } unknownStrategy)
+            throw new ArgumentException(unknownStrategy, nameof(explicitStrategy));
+
         // Remember original directory for output (before any encoding conversion)
         var originalDir = Path.GetDirectoryName(dataFilePath)!;
 
@@ -129,21 +133,21 @@ internal static class TrainDataValidator
         }
 
         // Determine sampling strategy
-        var strategy = explicitStrategy?.ToLowerInvariant();
-        if (string.IsNullOrEmpty(strategy))
+        var strategy = SamplingStrategies.Normalize(explicitStrategy);
+        if (strategy is null)
         {
             // Task-aware default: stratified sampling needs classes it can count in the label
             // column — the same composed question the stratified split asks. The legacy spellings
             // this used to list are folded before they reach here (TaskTypes.Canonical).
             strategy =
                 TrainingRunner.IsClassification(taskType) && !DataLoaderFactory.IsDirectoryBased(taskType)
-                    ? "stratified"
-                    : "random";
+                    ? SamplingStrategies.Stratified
+                    : SamplingStrategies.Random;
         }
 
         // Stratified requires a label column; fall back to random if unavailable
-        if (strategy == "stratified" && string.IsNullOrEmpty(labelColumn))
-            strategy = "random";
+        if (strategy == SamplingStrategies.Stratified && string.IsNullOrEmpty(labelColumn))
+            strategy = SamplingStrategies.Random;
 
         // Use FilePrepper DataPipeline for sampling
         var pipeline = await FilePrepper.Pipeline.DataPipeline.FromCsvAsync(dataFilePath).ConfigureAwait(false);
@@ -153,7 +157,7 @@ internal static class TrainDataValidator
         FilePrepper.Pipeline.DataPipeline sampled;
         string strategyLabel;
 
-        if (strategy == "stratified" && !string.IsNullOrEmpty(labelColumn))
+        if (strategy == SamplingStrategies.Stratified && !string.IsNullOrEmpty(labelColumn))
         {
             // Stratified: proportional sampling per class
             var ratio = (double)maxRows / totalRows;
@@ -194,7 +198,7 @@ internal static class TrainDataValidator
 
             int filterIdx = 0;
             sampled = pipeline.FilterRows(_ => selected.Contains(filterIdx++));
-            strategyLabel = "random";
+            strategyLabel = SamplingStrategies.Random;
         }
 
         // Write sampled data to original directory (not temp if encoding was converted)

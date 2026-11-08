@@ -40,6 +40,26 @@ public static class ImageAnomalyTrainer
     /// </summary>
     internal const long MaxCoresetFloats = 1L << 29;
 
+    /// <summary>
+    /// The size, in numbers, above which a bank that keeps every patch is said to be large (2 GiB of 32-bit floats): training holds all of
+    /// them in memory at once, and the saved bank is as large, so the person is told before the hours go into embedding.
+    /// </summary>
+    internal const long LargeBankFloats = 1L << 29;
+
+    /// <summary>
+    /// What to tell a person whose bank keeps every one of <paramref name="patches"/> patches of <paramref name="dimension"/> numbers
+    /// and would be larger than <paramref name="thresholdFloats"/>: its size and the way to a smaller one. Null when it is not large.
+    /// </summary>
+    internal static string? LargeBankNote(long patches, int dimension, long thresholdFloats = LargeBankFloats)
+    {
+        var floats = patches * dimension;
+        if (floats <= thresholdFloats)
+            return null;
+        var gib = floats * sizeof(float) / (1024.0 * 1024 * 1024);
+        return $"  The bank keeps all {patches:N0} patches: about {gib:F1} GiB in memory while training and again on disk. " +
+               "--bank-size N keeps the N patches that cover the rest (a coreset) in a bank of N patches' size.";
+    }
+
     private static readonly HashSet<string> Extensions = new(StringComparer.OrdinalIgnoreCase)
         { ".jpg", ".jpeg", ".png", ".bmp", ".gif" };
 
@@ -120,6 +140,8 @@ public static class ImageAnomalyTrainer
 
         say($"Embedding {bankImages.Count} images with '{identity.Id}' ({perImage} patches each)" +
             (limited ? $", keeping {bankSize:N0} of {total:N0} patches by {(coreset ? "a coreset" : "a seeded random subsample")} (seed {Seed})." : "."));
+        if (!limited && LargeBankNote(total, identity.Dimension) is { } largeBank)
+            say(largeBank);
         if (limited && !coreset)
             say($"  {total:N0} patches are too many to choose a coreset from in memory; the {bankSize:N0} are a random subsample.");
         var data = new float[checked(selected * identity.Dimension)];

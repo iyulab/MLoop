@@ -32,7 +32,9 @@ This is a **binary classification** problem - predicting one of two outcomes.
 
 ## Dataset
 
-**File**: `datasets/reviews.csv` (25 samples)
+**File**: `datasets/reviews.csv` (201 samples: 98 Positive, 103 Negative)
+
+The reviews are short, generated from pools of opening, middle and closing phrases (plus a few hand-written mixed ones), so they are far easier than real reviews: expect near-perfect scores here and much less on your own text. It is the size that matters for the tutorial — a binary model needs a few dozen rows of each class in its held-out share to be judged at all (with 25 rows it holds out five, and the quality gate refuses to promote a model that cannot beat chance).
 
 **Features**:
 - `Review` - Movie review text
@@ -49,7 +51,7 @@ This is a **binary classification** problem - predicting one of two outcomes.
 
 ```bash
 cd examples/tutorials/sentiment-analysis
-mloop init
+mloop init .
 ```
 
 ---
@@ -66,61 +68,59 @@ mloop train
 3. Tries different binary classification algorithms
 4. Selects best model based on accuracy
 
-**Expected output**:
+**Output** (the end of the run — the search prints a progress line per trial before it):
 ```
-Training Configuration
-─────────────────────
-Model         default
-Task          binary-classification
-Data File     datasets/reviews.csv
-Label Column  Sentiment
-Time Limit    60s
-Metric        accuracy
+── Training Complete! ──────────────────────────────────────────────────────────
 
-Trial 1: SdcaLogisticRegressionBinary - accuracy=0.9200
-Trial 2: FastTreeBinary - accuracy=0.8800
-Trial 3: LightGbmBinary - accuracy=0.9600
-...
+> Model: default
+> Experiment ID: exp-001
+> Best Trainer: LbfgsLogisticRegression
+> Training Time: 60.13s
 
-Training Complete!
-─────────────────
-Best Trainer: LightGbmBinary
-Training Time: 58.32s
+┌────────────────────┬────────┐
+│ Metric             │ Value  │
+├────────────────────┼────────┤
+│ AUC                │ 1.0000 │
+│ AUPRC              │ 1.0000 │
+│ RECALL             │ 1.0000 │
+│ NEGATIVE PRECISION │ 1.0000 │
+│ ACCURACY           │ 0.9756 │
+│ F1 SCORE           │ 0.9756 │
+│ PRECISION          │ 0.9524 │
+│ NEGATIVE RECALL    │ 0.9524 │
+│ ECE                │ 0.0499 │
+└────────────────────┴────────┘
 
-METRIC              VALUE
-ACCURACY            0.9600
-AUC                 0.9850
-F1 SCORE            0.9583
-PRECISION           0.9583
-RECALL              0.9583
-
+Model saved to: models/default/staging/exp-001/model.zip
 Model promoted to production!
 ```
+
+This is one real run; the search is time-limited, so your trainer and numbers will differ a little. The held-out share is 41 reviews, so one wrong answer moves accuracy by about 2.4 points.
 
 ---
 
 ## Step 3: Understand Binary Classification Metrics
 
-### Accuracy (0.96)
-- Overall correctness: 96% of predictions are correct
+### Accuracy (0.9756)
+- Overall correctness: 40 of the 41 held-out reviews were right
 - Good starting point, but not enough for imbalanced data
 
-### AUC - Area Under Curve (0.9850)
-- Measures model's ability to distinguish classes
+### AUC - Area Under Curve (1.0000)
+- Measures model's ability to rank Positive reviews above Negative ones
 - Range: 0.5 (random) to 1.0 (perfect)
-- 0.985 = excellent discrimin ation
+- 1.0 here because the generated reviews are easy to tell apart — real text rarely does this well
 
-### Precision (0.9583)
-- Of all Positive predictions, 95.83% were actually Positive
+### Precision (0.9524)
+- Of all Positive predictions, 95.24% were actually Positive (20 of 21)
 - "How many predicted Positives were correct?"
 - Important when false positives are costly
 
-### Recall (0.9583)
-- Of all actual Positive reviews, 95.83% were correctly identified
+### Recall (1.0000)
+- Of all actual Positive reviews, 100% were correctly identified
 - "How many actual Positives did we find?"
 - Important when missing positives is costly
 
-### F1 Score (0.9583)
+### F1 Score (0.9756)
 - Harmonic mean of Precision and Recall
 - Balanced measure of model performance
 - Use when you care about both false positives and false negatives
@@ -148,21 +148,18 @@ Predict:
 mloop predict predict.csv
 ```
 
-**Output**:
+**Output** (saved to `predictions/default-predictions-<timestamp>.csv`):
 ```
-Predictions
-────────────────────────────────────────────────────────────────
-Review                                              PredictedLabel  Probability
-This film exceeded all my expectations! Loved it.   Positive        0.9823
-Waste of money. Very disappointed with the ending.  Negative        0.9156
-Average movie. Nothing special but not terrible...  Negative        0.6234
-
-Results saved to: predict_predictions.csv
+Review,PredictedLabel,RawScore,Probability,Confidence
+This film exceeded all my expectations! Loved it.,Positive,1.7501705,0.8051615,0.805161
+Waste of money. Very disappointed with the ending.,Negative,-1.7184584,0.15416738,0.845833
+Average movie. Nothing special but not terrible either.,Negative,-3.3455496,0.04045078,0.959549
 ```
 
-**Understanding Probability**:
-- 0.9823: Model is 98.23% confident this is Positive
-- 0.6234: Model is only 62.34% confident this is Negative (borderline case)
+**Understanding the columns**:
+- `Probability` is the chance of the Positive class: 0.805 for the first review, 0.154 for the second
+- `Confidence` is the probability of the class it chose: 0.806 Positive, then 0.846 Negative
+- The third review (neutral wording, labelled Negative in the training data) gets the most confident Negative
 
 ---
 
@@ -187,10 +184,18 @@ These are **ambiguous** because:
 mloop predict ambiguous.csv
 ```
 
-Look at the `Probability` column:
-- High confidence (>0.9): Clear sentiment
-- Low confidence (0.5-0.7): Ambiguous cases
-- Threshold (0.5): Decision boundary
+This is what this model answered:
+```
+Review,PredictedLabel,RawScore,Probability,Confidence
+Not bad for a low-budget film.,Negative,-1.0608093,0.24777502,0.752225
+Could have been better but still enjoyable.,Negative,-1.1378047,0.23508877,0.764911
+I didn't hate it but wouldn't recommend it.,Negative,-1.4277289,0.1914405,0.80856
+```
+
+All three come out Negative, at 75-81% confidence, and the first two read as mildly positive to a person. The model
+only knows the words it was trained on — "not bad" and "enjoyable" never appear in a positive review of the training
+file — so a confident answer is not a correct one. Lower confidence (0.5-0.7) flags the doubtful cases; the threshold
+that turns a probability into a label is 0.5 unless you set one (`mloop threshold`).
 
 ---
 
@@ -200,27 +205,24 @@ Look at the `Probability` column:
 mloop evaluate datasets/reviews.csv
 ```
 
-**Output**:
+**Output** (trimmed):
 ```
-Evaluation Results
-──────────────────
-METRIC              VALUE
-ACCURACY            0.9600
-AUC                 0.9850
-F1 SCORE            0.9583
-PRECISION           0.9583
-RECALL              0.9583
+── Evaluation Results ──────────────────────────────────────────────────────────
 
-Confusion Matrix:
-              Predicted Neg  Predicted Pos
-Actual Neg    13             1
-Actual Pos    0              11
+│ Metric    │ Training │ Test   │ Difference │
+│ f1_score  │ 0.9756   │ 0.9949 │ +0.0193    │
+│ precision │ 0.9524   │ 0.9899 │ +0.0375    │
+│ recall    │ 1.0000   │ 1.0000 │ +0.0000    │
+│ auc       │ 1.0000   │ 1.0000 │ +0.0000    │
 
-True Positives (TP):  11 - Correctly identified Positive
-False Positives (FP): 1  - Incorrectly labeled as Positive
-True Negatives (TN):  13 - Correctly identified Negative
-False Negatives (FN): 0  - Missed Positive reviews
+Confusion (rows: actual · columns: predicted)
+│          │ Negative │ Positive │
+│ Negative │      102 │        1 │
+│ Positive │        0 │       98 │
 ```
+
+The "Test" column here is the whole file, rows the model trained on included, so it reads better than the held-out
+"Training" column above it (which is what the run measured on rows it had not seen).
 
 **Reading the confusion matrix**:
 - Perfect Positive recall (0 false negatives)
@@ -261,7 +263,7 @@ Choose based on your needs:
 ### Issue: Low Accuracy (<70%)
 
 **Possible causes**:
-1. **Insufficient training data** (25 samples is very small)
+1. **Insufficient training data** (a few dozen rows is very small: with 25 the held-out share is five reviews, and a model trained on so few can end up answering one class only)
 2. **Ambiguous labeling** (subjective sentiment)
 3. **Short time limit**
 
@@ -390,7 +392,7 @@ curl -X POST http://localhost:5000/predict \
 ## Summary
 
 **You just**:
-✅ Trained a text classification model (96% accuracy)
+✅ Trained a text classification model (about 98% on a small, generated sample — your own text will score lower)
 ✅ Learned binary classification evaluation metrics
 ✅ Understood precision vs recall trade-offs
 ✅ Made predictions with confidence scores

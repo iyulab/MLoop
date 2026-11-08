@@ -1,3 +1,4 @@
+using FilePrepper.Tasks.NormalizeData;
 using Microsoft.ML;
 using Microsoft.ML.Transforms;
 using MLoop.Core.Preprocessing;
@@ -60,15 +61,20 @@ public class PrepFeaturizerBuilder
     private static IEstimator<ITransformer> BuildOne(MLContext ctx, PrepStep step, string col)
     {
         var type = step.Type.ToLowerInvariant().Replace('_', '-');
-        var method = (step.Method ?? "min-max").ToLowerInvariant().Replace('_', '-');
 
         if (type is "normalize" or "scale")
         {
+            // ML.NET's scalers default to fixZero: true, which keeps zero at zero and so divides by the largest magnitude (min-max) or by
+            // the deviation without subtracting the mean (z-score). The values then differ from what the executor writes for the same
+            // step on the file, and from what the names say; fixZero: false is min-max onto [0, 1] and (x - mean) / deviation.
+            if (!PrepStepRules.TryParseNormalization(step.Method, out var method))
+                throw new InvalidOperationException(
+                    $"Unknown normalization method: '{step.Method}'. Valid methods: {string.Join(", ", PrepStepRules.NormalizationMethods)}");
             return method switch
             {
-                "z-score" => ctx.Transforms.NormalizeMeanVariance(col, col),
-                "robust" => ctx.Transforms.NormalizeRobustScaling(col, col),
-                _ => ctx.Transforms.NormalizeMinMax(col, col) // min-max 기본
+                NormalizationMethod.ZScore => ctx.Transforms.NormalizeMeanVariance(col, col, fixZero: false),
+                NormalizationMethod.Robust => ctx.Transforms.NormalizeRobustScaling(col, col),
+                _ => ctx.Transforms.NormalizeMinMax(col, col, fixZero: false),
             };
         }
 

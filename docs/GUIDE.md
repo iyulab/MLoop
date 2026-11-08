@@ -176,7 +176,9 @@ mloop train data/fraud.csv --label is_fraud --time 180 --test-split 0.3
 
 # Ranking: the held-out share is held out by query. A query's rows are all in training or all in the test,
 # and the test NDCG is that of queries the model has not seen. `mloop evaluate` on a file of new queries
-# scores that file's own queries, whatever ids the model was trained on.
+# scores that file's own queries, whatever ids the model was trained on. The two ranking trainers are compared on
+# queries held out of the training share, and the one reported is the winner fitted again on the whole share and
+# scored once on the test queries (a share of fewer than ten queries has none to spare: the first trainer that fits is used).
 mloop train rank.train --label label --group-column qid --test-split 0.2
 
 # Multi-file training (v0.4.0+)
@@ -2132,27 +2134,34 @@ training data, to know what "all others" are. Use one of the three at a time.
 
 ```bash
 # DateTime feature extraction
-fileprepper datetime -i data.csv -o out.csv -c "OrderDate" -m features --header
+fileprepper datetime -i data.csv -o out.csv -c "OrderDate" -m features -ft Year,Month,Day,Hour,DayOfWeek --header
 
 # Expression calculations
 fileprepper expression -i data.csv -o out.csv -e "total=price*quantity" --header
 
-# Column selection
-fileprepper select -i data.csv -o out.csv -c "id,price,quantity" --header
+# Column removal
+fileprepper remove-columns -i data.csv -o out.csv -c "notes,internal_id" --header
 
 # Filtering
-fileprepper filter -i data.csv -o out.csv -e "price>100" --header
+fileprepper filter-rows -i data.csv -o out.csv -c "price:GreaterThan:100" --header
 ```
 
 ### Performance
 
-FilePrepper is **20x faster** than pandas for common preprocessing tasks:
+FilePrepper is not faster than pandas; it runs in the same order of magnitude, and its reason to be here is
+that preprocessing needs no Python environment. Measured end to end (one process: read the file, apply the
+step, write the result; median of three runs; pandas 2.3.3, one Apple-silicon laptop), on a generated file of
+five columns:
 
-| Operation | pandas | FilePrepper | Speedup |
-|-----------|--------|-------------|---------|
-| DateTime extraction | 2.5s | 0.12s | **20.8x** |
-| Expression eval | 3.1s | 0.15s | **20.7x** |
-| Filtering | 1.8s | 0.09s | **20.0x** |
+| Operation | Rows | pandas | FilePrepper CLI |
+|-----------|-----:|-------:|----------------:|
+| DateTime features (5) | 10,000 | 0.26 s | 0.29 s |
+| DateTime features (5) | 1,000,000 | 1.87 s | 4.13 s |
+| Expression (`price*quantity`) | 1,000,000 | 1.52 s | 3.70 s |
+| Row filter (`price>100`) | 1,000,000 | 1.12 s | 2.27 s |
+
+Below about 10,000 rows the two are level (the CLI starts in about a tenth of a second); at a million rows
+pandas is about twice as fast. Your machine and files will differ — measure before relying on either.
 
 ### Preprocessing Pipeline
 
@@ -2484,7 +2493,7 @@ mloop predict
 
 1. **Test Split**: Use 0.2 for small datasets, 0.1 for large datasets
 2. **Time Budget**: 60s for prototyping, 300-600s for production
-3. **Preprocessing**: Use FilePrepper for 20x speedup on large CSVs
+3. **Preprocessing**: Large CSVs preprocess in seconds with FilePrepper (about a million rows in a few seconds, see Performance above); no Python environment needed
 4. **Parallelization**: Train multiple experiments in parallel (different terminals)
 
 ### Git Integration

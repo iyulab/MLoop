@@ -176,4 +176,11 @@ public enum TrainerFallbackKind
     /// model is the one fitted on the best trial's first fold — on fewer rows than the partition holds.
     /// </summary>
     RefitFailed,
+
+    /// <summary>
+    /// The search chose its model and refit it on the whole training partition, but the refit scored far below the
+    /// trial's validated score on the very rows it learned, so another trial's refit stands in (or, when none did
+    /// better, the one that learned its rows best).
+    /// </summary>
+    RefitNotReproduced,
 }

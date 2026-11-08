@@ -27,7 +27,7 @@ This is a classic **multiclass classification** problem - predicting one of mult
 
 ## Dataset
 
-**File**: `datasets/iris.csv` (30 samples)
+**File**: `datasets/iris.csv` (150 samples: 50 of each species, Fisher's classic Iris data)
 
 **Features**:
 - `SepalLength` - Sepal length in cm
@@ -75,58 +75,61 @@ mloop train datasets/iris.csv --label Species --task multiclass-classification -
 
 **What happens**:
 1. MLoop loads your CSV data
-2. ML.NET AutoML tries different algorithms (30 seconds)
-3. Best model is automatically selected based on accuracy
-4. Model is saved to `.mloop/models/default/staging/exp-XXXXX/`
+2. MLoop's trainer search tries ML.NET trainers on cross-validation folds (30 seconds)
+3. The best trial is fitted again on the whole training share and checked on the rows held out
+4. The model is saved to `models/default/staging/exp-001/` (the project's `models/` folder)
 
-**Expected output**:
+**Output** (the end of the run — the search itself prints a progress line per trial before it):
 ```
-Training Configuration
-─────────────────────
-Model         default
-Task          multiclass-classification
-Data File     datasets/iris.csv
-Label Column  Species
-Time Limit    30s
-Metric        micro_accuracy
+── Training Complete! ──────────────────────────────────────────────────────────
 
-Trial 1: LightGbmMulti - micro_accuracy=0.9333
-Trial 2: FastTreeOva - micro_accuracy=0.9000
-...
+> Model: default
+> Experiment ID: exp-001
+> Best Trainer: FastForestOva [The refit of SdcaMaximumEntropy scored 0.6917 on
+the rows it learned, against 0.9667 validated; the model is the refit of
+FastForestOva (0.9667 on the rows it learned, 0.9583 validated).]
+> Training Time: 30.16s
 
-Training Complete!
-─────────────────
-Model: default
-Experiment ID: exp-20250107-143022
-Best Trainer: LightGbmMulti
-Training Time: 28.45s
+┌────────────────────┬────────┐
+│ Metric             │ Value  │
+├────────────────────┼────────┤
+│ MICRO ACCURACY     │ 0.9333 │
+│ MACRO ACCURACY     │ 0.9333 │
+│ MACRO F1           │ 0.9327 │
+│ LOG LOSS REDUCTION │ 0.9215 │
+│ LOG LOSS           │ 0.0862 │
+│ ECE                │ 0.0627 │
+└────────────────────┴────────┘
 
-METRIC              VALUE
-MICRO ACCURACY      0.9333
-MACRO ACCURACY      0.9286
-LOG-LOSS            0.2145
+Model saved to: models/default/staging/exp-001/model.zip
 
 Model promoted to production!
+   First model for this project — nothing to compare against yet
 ```
+
+This is one real run; the search is time-limited, so your numbers and the winning trainer will differ a little.
+The bracketed note is MLoop checking its own work: the search's top trial was a linear model that scored 0.97 on the
+validation folds, but when fitted again on all the training rows it scored only 0.69 on the very rows it had learned, so
+it did not stand and the best trial of another trainer took its place. You will not always see it.
 
 ---
 
 ## Step 3: Understand Metrics
 
 **Micro Accuracy** (0.9333):
-- Overall accuracy across all 3 classes
-- 93.33% of predictions are correct
+- Overall accuracy across all 3 classes — here 28 of the 30 held-out rows
 - Good for balanced datasets like Iris
 
-**Macro Accuracy** (0.9286):
+**Macro Accuracy** (0.9333):
 - Average accuracy per class
-- Treats all classes equally
-- Useful when class sizes differ
+- Treats all classes equally; the same as micro here because the classes are the same size
 
-**Log-Loss** (0.2145):
-- Measures prediction confidence
-- Lower is better (0 = perfect)
-- Penalizes confident wrong predictions
+**Log Loss** (0.0862) and **Log Loss Reduction** (0.9215):
+- Log loss measures prediction confidence; lower is better (0 = perfect), and wrong answers given with high confidence are punished hardest
+- Log loss reduction is how much of the loss a model that only knows the class shares would have, this model removes
+
+**ECE** (0.0627):
+- Expected calibration error: how far the confidence is from how often it is right (0 = perfectly calibrated)
 
 ---
 
@@ -147,17 +150,15 @@ Predict:
 mloop predict predict.csv
 ```
 
-**Output**:
+**Output** (saved to `predictions/default-predictions-<timestamp>.csv`; the file holds your columns and these):
 ```
-Predictions
-───────────────────────────────
-SepalLength  SepalWidth  PetalLength  PetalWidth  PredictedLabel  Score
-5.1          3.5         1.4          0.3         Setosa          0.9987
-6.2          2.9         4.3          1.3         Versicolor      0.8234
-6.0          3.0         4.8          1.8         Virginica       0.7543
+SepalLength,SepalWidth,PetalLength,PetalWidth,PredictedLabel,Score.Setosa,Score.Versicolor,Score.Virginica,Confidence
+5.1,3.5,1.4,0.3,Setosa,0.989315,0.0047118654,0.005973176,0.989315
+6.2,2.9,4.3,1.3,Versicolor,0.0049155485,0.98616785,0.008916599,0.986168
+6.0,3.0,4.8,1.8,Virginica,0.009208006,0.169544,0.82124805,0.821248
+```
 
-Results saved to: predict_predictions.csv
-```
+`Confidence` is the probability of the predicted class; the third flower, the one nearest the border, is the least sure.
 
 ---
 
@@ -176,14 +177,13 @@ mloop train --time 60
 mloop list
 ```
 
-**Output**:
+**Output** (`mloop list`, trimmed):
 ```
-Experiments for model 'default'
-────────────────────────────────────────────────────────────
-EXP ID              TRAINER       MICRO_ACCURACY  TIME   STATUS
-exp-20250107-143022 LightGbmMulti 0.9333          28.45s PRODUCTION
-exp-20250107-143510 FastTreeOva   0.9000          9.87s  STAGING
+│ Model   │   ID    │ When     │  Status   │ Trainer     │ Metric (micro_accuracy) │ Stage │
+│ default │ exp-002 │ just now │ Completed │ FastForestOva │ 0.9333 │   -   │
+│ default │ exp-001 │ 1m ago   │ Completed │ FastForestOva │ 0.9333 │ prod  │
 ```
+`prod` marks the experiment that serves predictions; a new experiment stays in staging until you promote it (`mloop promote exp-002`) or it beats production by the promotion rules.
 
 ---
 
@@ -197,31 +197,29 @@ mloop evaluate datasets/iris.csv
 # mloop evaluate datasets/test.csv
 ```
 
-**Output**:
+**Output** (trimmed):
 ```
-Evaluation Results
-──────────────────
-Model: default (production)
-Data: datasets/iris.csv
+── Evaluation Results ──────────────────────────────────────────────────────────
 
-METRIC              VALUE
-MICRO ACCURACY      0.9333
-MACRO ACCURACY      0.9286
-LOG-LOSS            0.2145
-LOG-LOSS REDUCTION  0.7855
+│ Metric             │ Training │ Test   │ Difference │
+│ micro_accuracy     │ 0.9333   │ 0.9600 │ +0.0267    │
+│ log_loss           │ 0.0862   │ 0.0803 │ -0.0059    │
+│ ece                │ 0.0627   │ 0.0190 │ -0.0437    │
 
-Confusion Matrix:
-              Setosa  Versicolor  Virginica
-Setosa        10      0           0
-Versicolor    0       9           1
-Virginica     0       0           10
+Confusion (rows: actual · columns: predicted)
+│            │ Setosa │ Versicolor │ Virginica │
+│ Setosa     │     50 │          0 │         0 │
+│ Versicolor │      0 │         49 │         1 │
+│ Virginica  │      0 │          5 │        45 │
 ```
+
+The "Test" column here is the whole file, including the rows the model trained on, so it flatters the model — a real evaluation uses rows it has never seen.
 
 **Reading the confusion matrix**:
 - Rows = actual species
 - Columns = predicted species
 - Diagonal = correct predictions
-- One Versicolor was misclassified as Virginica
+- One Versicolor was called Virginica and five Virginica were called Versicolor — the two species that overlap
 
 ---
 
@@ -230,8 +228,8 @@ Virginica     0       0           10
 ### 1. **Multiclass Classification**
 Predicting one of 3+ categories (vs binary = 2 categories)
 
-### 2. **AutoML**
-ML.NET automatically tries different algorithms and picks the best one
+### 2. **Trainer search**
+MLoop tries several ML.NET trainers within the time limit, scores each on cross-validation folds, and keeps the best
 
 ### 3. **Metrics**
 - **Accuracy**: % of correct predictions
@@ -318,7 +316,7 @@ mloop train --analyze-data
 ### Low Accuracy (<80%)
 
 **Possible reasons**:
-- Dataset too small (30 samples is minimal)
+- Dataset too small (a few dozen rows leaves a held-out share of a handful of rows, so accuracy moves in big steps)
 - Time limit too short
 - Data quality issues
 
@@ -339,7 +337,7 @@ mloop train --time 120
 
 **You just**:
 ✅ Trained a multiclass classification model
-✅ Achieved 93% accuracy in 30 seconds
+✅ Reached about 93% held-out accuracy in 30 seconds on 150 rows (numbers vary a little run to run)
 ✅ Made predictions on new data
 ✅ Understood ML.NET evaluation metrics
 ✅ Learned MLoop experiment tracking

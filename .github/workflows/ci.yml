@@ -96,22 +96,23 @@ jobs:
       run: dotnet build MLoop.slnx --configuration Release --no-restore
 
     - name: Run tests (CI - excludes heavy tests)
-      # Coverage is only uploaded from ubuntu (see Codecov step), so only collect it there —
-      # instrumenting on windows/macOS just slowed those legs for a discarded result.
+      # Coverage is read from the ubuntu leg only (see the summary step): instrumenting on
+      # windows/macOS would slow those legs for a result nobody reads.
       run: |
         # Run only lightweight tests in CI (excludes LLM, Slow, E2E, Database tests)
         # Heavy tests should be run locally with: dotnet test --filter "Category!=LLM&Category!=Slow&Category!=E2E&Category!=Database"
         dotnet test MLoop.slnx --configuration Release --no-build --verbosity normal --max-parallel-test-modules 1 ${{ matrix.os == 'ubuntu-latest' && '--coverage --coverage-output-format cobertura' || '' }} --filter "Category!=LLM&Category!=Slow&Category!=E2E&Category!=Database"
 
-    - name: Upload coverage reports to Codecov
+    - name: Coverage summary and floors
+      # Reads the cobertura reports the step above left (union over test projects), writes the
+      # per-assembly table to the job summary, and fails when an assembly is below its floor in
+      # coverage-floors.json. It replaces a Codecov upload that was rejected on every run
+      # ("Token required") while fail_ci_if_error: false kept the job green — the numbers were
+      # measured and discarded. A hosted service can return once there is a token to give it.
       if: matrix.os == 'ubuntu-latest'
-      uses: codecov/codecov-action@v4
-      with:
-        files: '**/TestResults/**/*.cobertura.xml'
-        flags: unittests
-        name: codecov-mloop
-        fail_ci_if_error: false
-        token: ${{ secrets.CODECOV_TOKEN }}
+      run: |
+        python3 -I scripts/coverage-summary.py --self-test
+        python3 -I scripts/coverage-summary.py --root . --floors coverage-floors.json
 
   lint:
     runs-on: ubuntu-latest

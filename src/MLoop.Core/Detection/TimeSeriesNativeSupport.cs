@@ -30,8 +30,10 @@ namespace MLoop.Core.Detection;
 /// documented, not a bug to report upstream.
 /// </description></item>
 /// <item><description>
-/// <b>macOS on Apple silicon</b> — no <c>osx-arm64</c> native is published at all, so there is
-/// nothing to load and nothing to install. Time-series algorithms are simply unavailable there.
+/// <b>macOS on Apple silicon and Linux on arm64</b> — no <c>osx-arm64</c> or <c>linux-arm64</c> native is
+/// published at all (the redistributable carries <c>linux-x64</c>, <c>osx-x64</c>, <c>win-x64</c> and
+/// <c>win-x86</c> only), so there is nothing to load and nothing to install. Time-series algorithms are
+/// simply unavailable there.
 /// </description></item>
 /// </list>
 /// <para>
@@ -55,8 +57,8 @@ public static class TimeSeriesNativeSupport
         + "Intel-ABI OpenMP runtime to be installed on the system — ML.NET deliberately does not "
         + "bundle one — so install it and expose it under the name it looks for: "
         + "'apt-get install -y libomp5', then symlink libiomp5.so to libomp.so.5. On macOS running "
-        + "Apple silicon, ML.NET publishes no osx-arm64 build of this library at all, so these "
-        + "algorithms are unavailable there and no install resolves it.";
+        + "Apple silicon and on Linux arm64, ML.NET publishes no osx-arm64 or linux-arm64 build of this "
+        + "library at all, so these algorithms are unavailable there and no install resolves it.";
 
     /// <summary>
     /// True when <paramref name="ex"/> is the native library failing to load, rather than a genuine

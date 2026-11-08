@@ -1,0 +1,15 @@
+{
+  "basis": "line coverage, union of the test projects' reports; an assembly below its floor fails the Linux CI leg. Raise a floor by editing this file, never lower it to pass.",
+  "initial": "First Linux numbers (the CI job summary of the first run with this step, 2026-11-08) minus 1 point: API 86.2, Core 91.5, DeepLearning 47.7, DataStore 92.7, Extensibility 27.5, Ops 96.6, Search 95.1, mloop 83.7. A local macOS run reads lower on Core (no MKL or LightGBM there), so these floors are judged on the Linux leg only.",
+  "tolerance": 0.2,
+  "floors": {
+    "MLoop.API": 85.1,
+    "MLoop.Core": 90.4,
+    "MLoop.Core.DeepLearning": 46.6,
+    "MLoop.DataStore": 91.6,
+    "MLoop.Extensibility": 26.4,
+    "MLoop.Ops": 95.5,
+    "MLoop.Search": 94.0,
+    "mloop": 82.6
+  }
+}

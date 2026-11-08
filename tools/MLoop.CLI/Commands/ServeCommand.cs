@@ -117,8 +117,18 @@ public class ServeCommand : Command
 
         try
         {
-            // Verify we're in an MLoop project
-            var projectRoot = projectDiscovery.FindRoot();
+            // Verify we're in an MLoop project. Said as every command says it: the general failure advice below sends a
+            // caller who is merely in the wrong directory to look for MLOOP_API_PATH.
+            string projectRoot;
+            try
+            {
+                projectRoot = projectDiscovery.FindRoot();
+            }
+            catch (InvalidOperationException)
+            {
+                ErrorConsole.Error(ProjectDiscovery.NotInsideProjectCause, ProjectDiscovery.NotInsideProjectGuidance);
+                return 1;
+            }
 
             AnsiConsole.MarkupLine("[bold blue]🚀 Starting MLoop API Server...[/]");
             AnsiConsole.MarkupLine($"[grey]📂 Project: {projectRoot}[/]");

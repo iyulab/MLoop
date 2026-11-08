@@ -32,11 +32,11 @@ Learn:
 - Interpret accuracy metrics
 
 **Features**: 4 numeric features → 3 species categories
-**Accuracy**: 93% with 30 seconds training
+**Accuracy**: about 93% held out, 30 seconds training (150 rows; varies a little run to run)
 
 ```bash
 cd examples/tutorials/iris-classification
-mloop init && mloop train
+mloop init . && mloop train
 ```
 
 ---
@@ -53,11 +53,11 @@ Learn:
 - Work with natural language data
 
 **Features**: Movie review text → Positive/Negative
-**Accuracy**: 96% with 60 seconds training
+**Accuracy**: about 97-98% held out, 60 seconds training (201 generated reviews — easier than real text)
 
 ```bash
 cd examples/tutorials/sentiment-analysis
-mloop init && mloop train
+mloop init . && mloop train
 ```
 
 ---
@@ -74,11 +74,11 @@ Learn:
 - Handle mixed feature types (numeric + categorical)
 
 **Features**: 5 features (sqft, beds, baths, year, location) → Price
-**R-Squared**: 0.91 with 45 seconds training
+**R-Squared**: above 0.9 held out, 45 seconds training (a 20-row sample — indicative only)
 
 ```bash
 cd examples/tutorials/housing-prices
-mloop init && mloop train
+mloop init . && mloop train
 ```
 
 ---
@@ -117,7 +117,7 @@ cp examples/preprocessing-scripts/04_data_cleaning.cs .mloop/scripts/preprocess/
 mloop train
 
 # 3. Or run preprocessing separately
-mloop preprocess --input raw.csv --output cleaned.csv
+mloop preprocess raw.csv -o cleaned.csv
 ```
 
 ---
@@ -325,7 +325,7 @@ MLoop has no built-in agent. An AI agent drives it through [mloop-mcp](https://g
 
 ```bash
 # 1. Initialize
-mloop init
+mloop init .
 
 # 2. Analyze data quality
 mloop train --analyze-data
@@ -366,7 +366,7 @@ my-project/
 
 ```bash
 # Test preprocessing
-mloop preprocess --input test.csv --validate
+mloop preprocess test.csv -o cleaned-test.csv
 
 # Test hooks (dry run)
 # Coming soon: mloop hooks --dry-run
