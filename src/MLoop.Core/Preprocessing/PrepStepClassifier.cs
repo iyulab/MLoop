@@ -61,7 +61,6 @@ public static class PrepStepClassifier
     public static PrepCategory Classify(PrepStep step)
     {
         var type = step.Type.ToLowerInvariant().Replace('_', '-');
-        var method = step.Method?.ToLowerInvariant().Replace('_', '-');
 
         switch (type)
         {
@@ -71,13 +70,17 @@ public static class PrepStepClassifier
                 return PrepCategory.PreFeaturizer;
 
             case "fill-missing":
-                return method switch
-                {
-                    "mean" => PrepCategory.PreFeaturizer,
-                    "median" => PrepCategory.UnsupportedLeakageWarn,
-                    // constant/forward/backward/mode: either no statistical fit or ML.NET unsupported → keep in CSV
-                    _ => PrepCategory.CsvStage
-                };
+                // Read as the executor reads it (no method is the mean, `average` is the mean); a word it does not know stays in the
+                // CSV stage, where it is refused.
+                return PrepStepRules.TryParseFill(step.Method, out var fill)
+                    ? fill switch
+                    {
+                        FilePrepper.Pipeline.FillMethod.Mean => PrepCategory.PreFeaturizer,
+                        FilePrepper.Pipeline.FillMethod.Median => PrepCategory.UnsupportedLeakageWarn,
+                        // constant/forward/backward/mode: either no statistical fit or ML.NET unsupported → keep in CSV
+                        _ => PrepCategory.CsvStage
+                    }
+                    : PrepCategory.CsvStage;
 
             case "rolling":
             case "resample":

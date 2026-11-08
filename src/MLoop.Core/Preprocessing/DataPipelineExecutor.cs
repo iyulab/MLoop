@@ -339,30 +339,17 @@ public class DataPipelineExecutor
             $"Step '{step.Type}' requires 'columns' (list) or 'column' (single) parameter");
     }
 
-    private static FillMethod ParseFillMethod(string method)
-    {
-        return method.ToLowerInvariant() switch
-        {
-            "mean" or "average" => FillMethod.Mean,
-            "median" => FillMethod.Median,
-            "mode" => FillMethod.Mode,
-            "forward" or "ffill" => FillMethod.Forward,
-            "backward" or "bfill" => FillMethod.Backward,
-            "constant" => FillMethod.Constant,
-            _ => throw new InvalidOperationException($"Unknown fill method: '{method}'")
-        };
-    }
+    private static FillMethod ParseFillMethod(string method) =>
+        PrepStepRules.TryParseFill(method, out var parsed)
+            ? parsed
+            : throw new InvalidOperationException(
+                $"Unknown fill method: '{method}'. Valid methods: {string.Join(", ", PrepStepRules.FillMethods)}");
 
-    private static NormalizationMethod ParseNormalizationMethod(string method)
-    {
-        return method.ToLowerInvariant() switch
-        {
-            "min-max" or "min_max" or "minmax" => NormalizationMethod.MinMax,
-            "z-score" or "z_score" or "zscore" or "standard" => NormalizationMethod.ZScore,
-            "robust" => NormalizationMethod.Robust,
-            _ => throw new InvalidOperationException($"Unknown normalization method: '{method}'")
-        };
-    }
+    private static NormalizationMethod ParseNormalizationMethod(string method) =>
+        PrepStepRules.TryParseNormalization(method, out var parsed)
+            ? parsed
+            : throw new InvalidOperationException(
+                $"Unknown normalization method: '{method}'. Valid methods: {string.Join(", ", PrepStepRules.NormalizationMethods)}");
 
     private static AggregationMethod ParseAggregationMethod(string method) =>
         PrepStepRules.TryParseAggregation(method, out var parsed)

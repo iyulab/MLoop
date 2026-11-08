@@ -1,3 +1,5 @@
+using FilePrepper.Pipeline;
+using FilePrepper.Tasks.NormalizeData;
 using FilePrepper.Tasks.WindowOps;
 
 namespace MLoop.Core.Preprocessing;
@@ -48,6 +50,65 @@ public static class PrepStepRules
     {
         method = default;
         return name is not null && AggregationSpellings.TryGetValue(name.Trim(), out method);
+    }
+
+    // The methods of `normalize` and `fill-missing`, by every spelling a config may use. Three places read them — the executor that
+    // runs a step on the file, the builder that fits it inside training, and both validators — and the builder's own switch ended in
+    // a default arm: `zscore` and `standard`, which the executor reads as z-score, were fitted inside training as min-max, and so was
+    // any other word. One table, and a word that is not in it is a problem, not a default.
+    private static readonly Dictionary<string, NormalizationMethod> NormalizationSpellings = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["min-max"] = NormalizationMethod.MinMax,
+        ["min_max"] = NormalizationMethod.MinMax,
+        ["minmax"] = NormalizationMethod.MinMax,
+        ["z-score"] = NormalizationMethod.ZScore,
+        ["z_score"] = NormalizationMethod.ZScore,
+        ["zscore"] = NormalizationMethod.ZScore,
+        ["standard"] = NormalizationMethod.ZScore,
+        ["robust"] = NormalizationMethod.Robust,
+    };
+
+    private static readonly Dictionary<string, FillMethod> FillSpellings = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["mean"] = FillMethod.Mean,
+        ["average"] = FillMethod.Mean,
+        ["median"] = FillMethod.Median,
+        ["mode"] = FillMethod.Mode,
+        ["forward"] = FillMethod.Forward,
+        ["ffill"] = FillMethod.Forward,
+        ["backward"] = FillMethod.Backward,
+        ["bfill"] = FillMethod.Backward,
+        ["constant"] = FillMethod.Constant,
+    };
+
+    /// <summary>The methods <c>normalize</c> takes (<c>method:</c>), in their canonical spelling; none given means <c>min-max</c>.</summary>
+    public static IReadOnlyList<string> NormalizationMethods { get; } = ["min-max", "z-score", "robust"];
+
+    /// <summary>The methods <c>fill-missing</c> takes (<c>method:</c>), in their canonical spelling; none given means <c>mean</c>.</summary>
+    public static IReadOnlyList<string> FillMethods { get; } = ["mean", "median", "mode", "forward", "backward", "constant"];
+
+    /// <summary>Reads a <c>method:</c> of <c>normalize</c>; none given is <c>min-max</c>, a word that is not one of <see cref="NormalizationMethods"/> (or a spelling of it) is false.</summary>
+    public static bool TryParseNormalization(string? name, out NormalizationMethod method)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            method = NormalizationMethod.MinMax;
+            return true;
+        }
+        method = default;
+        return NormalizationSpellings.TryGetValue(name.Trim(), out method);
+    }
+
+    /// <summary>Reads a <c>method:</c> of <c>fill-missing</c>; none given is <c>mean</c>, a word that is not one of <see cref="FillMethods"/> (or a spelling of it) is false.</summary>
+    public static bool TryParseFill(string? name, out FillMethod method)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            method = FillMethod.Mean;
+            return true;
+        }
+        method = default;
+        return FillSpellings.TryGetValue(name.Trim(), out method);
     }
 
     // The filter-rows operators, by every spelling: the first four compare numbers, the rest text.
@@ -112,6 +173,10 @@ public static class PrepStepRules
             case "split-list":
                 if (!hasColumns)
                     yield return $"'{step.Type}' requires 'columns' or 'column'";
+                if (type == "normalize" && !TryParseNormalization(step.Method, out _))
+                    yield return $"'{step.Type}' method '{step.Method}' is not one of: {string.Join(", ", NormalizationMethods)}";
+                if (type == "fill-missing" && !TryParseFill(step.Method, out _))
+                    yield return $"'{step.Type}' method '{step.Method}' is not one of: {string.Join(", ", FillMethods)}";
                 break;
 
             case "rename-columns":
