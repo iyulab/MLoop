@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.50.0] - 2026-11-09
+
 ### Added
 
 - **`CsvDialect` (`MLoop.Core.Data`): how MLoop reads and writes a table with the CSV library, in one place.** `CsvDialect.Reader(hasHeader, separator, trim, refuseMalformedQuotes)` and `CsvDialect.Writer(separator)` return the CsvHelper 34 option records every reader and writer in MLoop uses, and `CsvDialect.Record(reader)` the cells of the current record. The library's own defaults are not ours (it detects the separator from the first lines, recovers from a malformed quote, and refuses a record of another width when writing); a comma file stays a comma file, a short row reads its missing cells as empty, and a row is written as it was given.
