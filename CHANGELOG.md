@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`mloop predict` no longer replaces the file of an earlier run made in the same second.** The default output name (`predictions/<model>-predictions-<stamp>.csv`, and the forecast, detection and image-anomaly names) has the resolution of a second, so a script that ran `predict` twice quickly wrote one file and the second silently replaced the first (a 700-row output became a 60-row one). A name that is taken now gets `-2`, `-3`, ... before the extension; `--output` is unchanged, and `mloop logs` and the other readers find the suffixed files like any other.
+- **The message for a missing time-series library no longer ends in advice about the data.** `forecasting` and `time-series-anomaly` training that cannot load ML.NET's MKL library already named the library and the fix, and then added generic tips ("check the columns", "check data quality") that pointed at a file that was fine; it now adds the one thing that helps, `mloop detect <data-file>`, which needs neither. The install command in the message and in the README is complete on a fresh image (`apt-get update` first; leave out `sudo` as root in a container) and says which way the `libiomp5.so` symlink points.
+
 ## [0.50.0] - 2026-11-09
 
 ### Added

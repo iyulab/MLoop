@@ -1,4 +1,5 @@
 using MLoop.CLI.Infrastructure.Diagnostics;
+using MLoop.Core.Detection;
 using MLoop.Core.Training;
 
 namespace MLoop.Tests.Diagnostics;
@@ -384,4 +385,27 @@ public class ErrorSuggestionsTests
         Assert.DoesNotContain(suggestions, s => s.Contains("mloop train --label", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void GetSuggestions_TheTimeSeriesLibraryMissing_IsNotAdviceAboutTheData()
+    {
+        // The message names the missing library and the way out. The keyword rules read "column" and "data" in text around it and
+        // sent the reader to check the data quality of a file that was fine - a missing OS library is not the file's fault.
+        var cause = new PlatformNotSupportedException(TimeSeriesNativeSupport.UnavailableMessage);
+        var wrapped = new InvalidOperationException($"Training failed for experiment default/exp-001: {cause.Message}", cause);
+
+        var suggestions = ErrorSuggestions.GetSuggestions(wrapped, "training", "forecasting");
+
+        var only = Assert.Single(suggestions);
+        Assert.Contains("mloop detect <data-file>", only, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void GetSuggestions_AnotherFailureOfATimeSeriesTrainingKeepsItsOwnAdvice()
+    {
+        // The rule is for the one message, not for every forecasting run that fails.
+        var ex = new InvalidOperationException("Training failed for experiment default/exp-001: the file has no column named 'value'");
+
+        Assert.Contains(ErrorSuggestions.GetSuggestions(ex, "training", "forecasting"),
+            s => s.Contains("columns", StringComparison.OrdinalIgnoreCase));
+    }
 }

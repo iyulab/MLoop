@@ -140,9 +140,8 @@ public static partial class PredictCommand
     internal static string ForecastOutputPath(string? output, string projectRoot, string modelName, DateTimeOffset at)
         => !string.IsNullOrEmpty(output)
             ? ProjectPaths.Resolve(output, projectRoot)
-            : Path.Combine(
-                projectRoot, ProjectLayout.PredictionsDirectory,
-                ProjectLayout.PredictionFileName(modelName, ProjectLayout.PredictionKind.Forecast, at));
+            : ProjectLayout.AvailablePredictionPath(
+                Path.Combine(projectRoot, ProjectLayout.PredictionsDirectory), modelName, ProjectLayout.PredictionKind.Forecast, at);
 
     private static bool OutputBesideJsonRefused(string? output)
     {
@@ -913,10 +912,8 @@ public static partial class PredictCommand
         {
             var predictionsDir = fileSystem.CombinePath(projectRoot, ProjectLayout.PredictionsDirectory);
             await fileSystem.CreateDirectoryAsync(predictionsDir, CancellationToken.None);
-            resolvedOutputPath = fileSystem.CombinePath(
-                predictionsDir,
-                ProjectLayout.PredictionFileName(
-                    modelName, ProjectLayout.PredictionKind.Detections, DateTimeOffset.Now));
+            resolvedOutputPath = ProjectLayout.AvailablePredictionPath(
+                predictionsDir, modelName, ProjectLayout.PredictionKind.Detections, DateTimeOffset.Now);
         }
         else
         {

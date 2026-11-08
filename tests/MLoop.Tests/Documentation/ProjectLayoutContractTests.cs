@@ -29,6 +29,14 @@ public class ProjectLayoutContractTests
         new(@"-(?:predictions|detections|forecast)-", RegexOptions.Compiled);
 
     /// <summary>
+    /// A caller that asks for a prediction file's name and writes to it. The name has the resolution of a second, so a default path
+    /// built from it alone replaces the file of a run in the same second; the default path is asked for as
+    /// <c>AvailablePredictionPath</c>.
+    /// </summary>
+    private static readonly Regex PredictionNameAsked =
+        new(@"ProjectLayout\s*\.\s*PredictionFileName\s*\(", RegexOptions.Compiled);
+
+    /// <summary>
     /// Code only. A comment that talks about the convention is not a use of it, and a doc comment
     /// naming a parameter <c>predictions</c> is not one either — both were reported as offenders by
     /// the first version of this scan.
@@ -92,6 +100,21 @@ public class ProjectLayoutContractTests
             + "what keeps every writer's output findable by the one reader:\n" + string.Join('\n', offenders));
     }
 
+    [Fact]
+    public void NoDefaultPredictionPathIsBuiltFromTheBareName()
+    {
+        var offenders = Scanned()
+            .Where(f => PredictionNameAsked.IsMatch(CodeOf(f)))
+            .Select(RepoSourceTree.RelativeToRoot)
+            .Order(StringComparer.Ordinal)
+            .ToList();
+
+        Assert.True(offenders.Count == 0,
+            "A default prediction path is " + nameof(ProjectLayout.AvailablePredictionPath) + ", not the bare name of "
+            + nameof(ProjectLayout.PredictionFileName) + ": two runs in one second would write one file and the second "
+            + "would silently replace the first:\n" + string.Join('\n', offenders));
+    }
+
     /// <summary>
     /// Companion to both scans. A pattern that has stopped matching reports a clean tree, which is
     /// the same output as a clean tree — and the more confident of the two.
@@ -113,6 +136,10 @@ public class ProjectLayoutContractTests
         Assert.Matches(PredictionNameLiteral, """var pattern = $"{model}-forecast-*.csv";""");
         Assert.DoesNotMatch(PredictionNameLiteral,
             """ProjectLayout.PredictionFileName(model, ProjectLayout.PredictionKind.Rows, at)""");
+
+        // The bare-name scan: the shape that overwrote a file is found, the shape that avoids it is not.
+        Assert.Matches(PredictionNameAsked, """Path.Combine(dir, ProjectLayout.PredictionFileName(model, ProjectLayout.PredictionKind.Rows, at))""");
+        Assert.DoesNotMatch(PredictionNameAsked, """ProjectLayout.AvailablePredictionPath(dir, model, ProjectLayout.PredictionKind.Rows, at)""");
     }
 
     /// <summary>

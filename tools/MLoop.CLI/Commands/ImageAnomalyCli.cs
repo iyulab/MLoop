@@ -104,8 +104,7 @@ internal static class ImageAnomalyCli
         {
             var dir = fileSystem.CombinePath(projectRoot, ProjectLayout.PredictionsDirectory);
             await fileSystem.CreateDirectoryAsync(dir, CancellationToken.None);
-            outputPath = fileSystem.CombinePath(dir,
-                ProjectLayout.PredictionFileName(modelName, ProjectLayout.PredictionKind.Scores, DateTimeOffset.Now));
+            outputPath = ProjectLayout.AvailablePredictionPath(dir, modelName, ProjectLayout.PredictionKind.Scores, DateTimeOffset.Now);
         }
         else
         {

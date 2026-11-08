@@ -89,6 +89,29 @@ public static class ProjectLayout
     }
 
     /// <summary>
+    /// Where a new prediction file goes: <see cref="PredictionFileName"/> in <paramref name="directory"/>, or the same name with
+    /// <c>-2</c>, <c>-3</c>, ... before the extension when a file of that name is already there. The stamp has the resolution of a
+    /// second, so two runs of a script in the same second were given one name and the second silently replaced the first
+    /// (a 700-row output became a 60-row one). The search patterns still find the suffixed names.
+    /// </summary>
+    public static string AvailablePredictionPath(string directory, string modelName, PredictionKind kind, DateTimeOffset at)
+    {
+        var name = PredictionFileName(modelName, kind, at);
+        var path = Path.Combine(directory, name);
+        if (!File.Exists(path))
+            return path;
+
+        var stem = Path.GetFileNameWithoutExtension(name);
+        var extension = Path.GetExtension(name);
+        for (var n = 2; ; n++)
+        {
+            var candidate = Path.Combine(directory, $"{stem}-{n}{extension}");
+            if (!File.Exists(candidate))
+                return candidate;
+        }
+    }
+
+    /// <summary>
     /// The search patterns that find every prediction file belonging to <paramref name="modelName"/>,
     /// one per kind.
     /// </summary>

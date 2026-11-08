@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.RegularExpressions;
+using MLoop.Core.Detection;
 using MLoop.Core.Training;
 using Spectre.Console;
 
@@ -97,6 +98,19 @@ public static partial class ErrorSuggestions
         return null;
     }
 
+    /// <summary>True when an exception in the chain carries this message (the time-series library's "cannot be loaded here").</summary>
+    internal static bool InChainCarriesMessage(Exception ex, string message)
+    {
+        for (var current = ex; current is not null; current = current.InnerException!)
+        {
+            if (current.Message.Contains(message, StringComparison.Ordinal))
+                return true;
+            if (current.InnerException is null)
+                break;
+        }
+        return false;
+    }
+
     private static bool HasInChain<T>(Exception ex) where T : Exception
     {
         for (Exception? current = ex; current is not null; current = current.InnerException)
@@ -125,6 +139,13 @@ public static partial class ErrorSuggestions
         {
             suggestions.Add("Write the label column as plain numbers in the file you score (1234.5, a point for a decimal mark), or empty where unknown");
             suggestions.Add("See what MLoop reads from the file: [cyan]mloop info <data-file>[/]");
+            return suggestions;
+        }
+        // The time-series native library is missing: the message already names it and the way out, and advice about the data
+        // (the keyword rules below) would point away from the cause. The one thing worth adding is what does not need it.
+        if (InChainCarriesMessage(ex, TimeSeriesNativeSupport.UnavailableMessage))
+        {
+            suggestions.Add("To find anomalies in a series without that library and without training: [cyan]mloop detect <data-file>[/]");
             return suggestions;
         }
         var message = ex.Message.ToLowerInvariant();

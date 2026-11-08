@@ -252,10 +252,8 @@ public static partial class PredictCommand
             var predictionsDir = fileSystem.CombinePath(projectRoot, ProjectLayout.PredictionsDirectory);
             await fileSystem.CreateDirectoryAsync(predictionsDir, CancellationToken.None);
 
-            resolvedOutputPath = fileSystem.CombinePath(
-                predictionsDir,
-                ProjectLayout.PredictionFileName(
-                    resolvedModelName, ProjectLayout.PredictionKind.Rows, DateTimeOffset.Now));
+            resolvedOutputPath = ProjectLayout.AvailablePredictionPath(
+                predictionsDir, resolvedModelName, ProjectLayout.PredictionKind.Rows, DateTimeOffset.Now);
         }
         else
         {

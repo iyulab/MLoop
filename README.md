@@ -152,7 +152,8 @@ runtime it links against — it expects the system to provide one. Everything el
 
 ```bash
 # Debian/Ubuntu — LLVM's runtime is ABI-compatible with the one MKL asks for
-sudo apt-get install -y libomp5
+# (a fresh image has no package lists: run `apt-get update` first; in a container you are usually root, so leave `sudo` out)
+sudo apt-get update && sudo apt-get install -y libomp5
 sudo ln -sf /usr/lib/x86_64-linux-gnu/libomp.so.5 /usr/lib/x86_64-linux-gnu/libiomp5.so
 ```
 

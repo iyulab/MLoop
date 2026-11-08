@@ -56,7 +56,8 @@ public static class TimeSeriesNativeSupport
         + "MKL native library, and it could not be loaded here. On Linux that library expects an "
         + "Intel-ABI OpenMP runtime to be installed on the system — ML.NET deliberately does not "
         + "bundle one — so install it and expose it under the name it looks for: "
-        + "'apt-get install -y libomp5', then symlink libiomp5.so to libomp.so.5. On macOS running "
+        + "'apt-get update && apt-get install -y libomp5', then make libiomp5.so a symlink to libomp.so.5 "
+        + "(in the same directory, as the README shows). On macOS running "
         + "Apple silicon and on Linux arm64, ML.NET publishes no osx-arm64 or linux-arm64 build of this "
         + "library at all, so these algorithms are unavailable there and no install resolves it.";
 

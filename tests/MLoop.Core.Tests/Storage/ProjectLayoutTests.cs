@@ -34,6 +34,65 @@ public class ProjectLayoutTests
         Assert.Contains(utcNoon.ToLocalTime().ToString("yyyyMMdd-HHmmss"), name);
     }
 
+    /// <summary>
+    /// Two runs of a script in one second were given one name and the second replaced the first: a 700-row output was
+    /// silently replaced by a 60-row one. The path asked for is never one that already exists.
+    /// </summary>
+    [Fact]
+    public void AvailablePredictionPath_IsTheConventionalNameWhenFree_AndNeverAnExistingFile()
+    {
+        var dir = Directory.CreateTempSubdirectory("layout-").FullName;
+        try
+        {
+            var at = new DateTimeOffset(2026, 3, 4, 15, 6, 7, TimeSpan.Zero);
+            var name = ProjectLayout.PredictionFileName("churn", ProjectLayout.PredictionKind.Rows, at);
+
+            var first = ProjectLayout.AvailablePredictionPath(dir, "churn", ProjectLayout.PredictionKind.Rows, at);
+            Assert.Equal(Path.Combine(dir, name), first);
+
+            File.WriteAllText(first, "first run");
+            var second = ProjectLayout.AvailablePredictionPath(dir, "churn", ProjectLayout.PredictionKind.Rows, at);
+            File.WriteAllText(second, "second run");
+            var third = ProjectLayout.AvailablePredictionPath(dir, "churn", ProjectLayout.PredictionKind.Rows, at);
+
+            Assert.Equal(Path.Combine(dir, Path.GetFileNameWithoutExtension(name) + "-2.csv"), second);
+            Assert.Equal(Path.Combine(dir, Path.GetFileNameWithoutExtension(name) + "-3.csv"), third);
+            Assert.Equal("first run", File.ReadAllText(first));
+            Assert.Equal("second run", File.ReadAllText(second));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    /// <summary>The reader of prediction files finds the suffixed ones too: the search patterns end in a wildcard before the extension.</summary>
+    [Fact]
+    public void AvailablePredictionPath_SuffixedNamesAreFoundByTheSearchPatterns()
+    {
+        var dir = Directory.CreateTempSubdirectory("layout-").FullName;
+        try
+        {
+            var at = new DateTimeOffset(2026, 3, 4, 15, 6, 7, TimeSpan.Zero);
+            foreach (var kind in Enum.GetValues<ProjectLayout.PredictionKind>())
+            {
+                var first = ProjectLayout.AvailablePredictionPath(dir, "churn", kind, at);
+                File.WriteAllText(first, "x");
+                File.WriteAllText(ProjectLayout.AvailablePredictionPath(dir, "churn", kind, at), "y");
+            }
+
+            var found = ProjectLayout.PredictionSearchPatterns("churn")
+                .SelectMany(pattern => Directory.EnumerateFiles(dir, pattern))
+                .Count();
+
+            Assert.Equal(2 * Enum.GetValues<ProjectLayout.PredictionKind>().Length, found);
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     [Fact]
     public void PredictionFileName_NormalizesTheModelName()
         => Assert.StartsWith(
