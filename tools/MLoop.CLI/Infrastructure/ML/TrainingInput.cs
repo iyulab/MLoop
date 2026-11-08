@@ -405,7 +405,7 @@ public static class TrainingInput
 
     /// <summary>What to check when <see cref="SingleClassRefusal"/> is the answer.</summary>
     public const string SingleClassGuidance =
-        "Check if the correct label column is specified, or if the data contains only one category.";
+        "Check that --label (or the label in mloop.yaml) names the column you meant, or train on a file that holds more than one class.";
 
     /// <summary>
     /// The refusal when a binary-classification task is given a label of more than two values, or null. Every trainer of the

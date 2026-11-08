@@ -161,5 +161,7 @@ public class TimeSeriesNativeSupportContractTests
         Assert.Contains("libiomp5", TimeSeriesNativeSupport.UnavailableMessage, StringComparison.Ordinal);
         Assert.Contains("libomp5", TimeSeriesNativeSupport.UnavailableMessage, StringComparison.Ordinal);
         Assert.Contains("arm64", TimeSeriesNativeSupport.UnavailableMessage, StringComparison.Ordinal);
+        // Linux on arm64 has no build either: the OpenMP recipe above does not make it work there.
+        Assert.Contains("Linux arm64", TimeSeriesNativeSupport.UnavailableMessage, StringComparison.Ordinal);
     }
 }
