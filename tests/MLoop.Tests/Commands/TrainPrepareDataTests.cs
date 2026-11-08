@@ -38,8 +38,11 @@ public sealed class TrainPrepareDataTests : IDisposable
         if (prepYaml is not null)
         {
             // The generated file names its label `Label`; the data below calls it `label`.
+            // `mloop init` writes the platform's line endings (CRLF on Windows), so the line is matched either way.
             var yaml = await File.ReadAllTextAsync("mloop.yaml");
-            await File.WriteAllTextAsync("mloop.yaml", yaml.Replace("    label: Label\n", "    label: label\n" + prepYaml, StringComparison.Ordinal));
+            var edited = System.Text.RegularExpressions.Regex.Replace(yaml, @"    label: Label\r?\n", "    label: label\n" + prepYaml);
+            Assert.NotEqual(yaml, edited);   // the label line was found, so the step is in the file
+            await File.WriteAllTextAsync("mloop.yaml", edited);
         }
         return root;
     }
