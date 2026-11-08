@@ -40,20 +40,8 @@ public static class TrainingInput
     {
         if (string.IsNullOrWhiteSpace(label) || !TrainingRunner.RequiresLabel(task) || DataLoaderFactory.IsDirectoryBased(task))
             return null;
-        if (!dataFile.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) && !dataFile.EndsWith(".tsv", StringComparison.OrdinalIgnoreCase))
+        if (HeaderColumns(dataFile) is not { } columns)
             return null;
-        string? header;
-        // Read in the file's own encoding: a Korean label against a CP949 file (the usual spreadsheet export) is no column
-        // when the header is read as UTF-8, and the refusal listed the columns as replacement characters.
-        try
-        {
-            using var reader = EncodingDetector.OpenReader(dataFile);
-            header = reader.ReadLine()?.TrimStart('\uFEFF');
-        }
-        catch (IOException) { return null; }
-        if (string.IsNullOrEmpty(header))
-            return null;
-        var columns = CsvFieldParser.ParseFields(header);
         if (columns.Any(column => string.Equals(column, label, StringComparison.Ordinal)))
             return null;
         var message = $"Label column '{label}' not found in {Path.GetFileName(reportedAs ?? dataFile)}. Available columns: {string.Join(", ", columns)}.";
@@ -62,6 +50,47 @@ public static class TrainingInput
         return columns.FirstOrDefault(column => string.Equals(column, label, StringComparison.OrdinalIgnoreCase)) is { } sameLetters
             ? $"{message} '{sameLetters}' differs only in case; column names are case-sensitive."
             : message;
+    }
+
+    /// <summary>
+    /// The columns of a CSV/TSV file's header row, read in the file's own encoding: a Korean name against a CP949 file (the usual
+    /// spreadsheet export) is no column when the header is read as UTF-8, and a refusal listed the columns as replacement characters.
+    /// <c>null</c> for any other file, an unreadable one, or one with no header row.
+    /// </summary>
+    private static IReadOnlyList<string>? HeaderColumns(string dataFile)
+    {
+        if (!dataFile.EndsWith(".csv", StringComparison.OrdinalIgnoreCase) && !dataFile.EndsWith(".tsv", StringComparison.OrdinalIgnoreCase))
+            return null;
+        string? header;
+        try
+        {
+            using var reader = EncodingDetector.OpenReader(dataFile);
+            header = reader.ReadLine()?.TrimStart('\uFEFF');
+        }
+        catch (IOException) { return null; }
+        return string.IsNullOrEmpty(header) ? null : CsvFieldParser.ParseFields(header);
+    }
+
+    /// <summary>
+    /// A preprocessing step that is fitted inside training (<c>normalize</c>, <c>scale</c>, <c>fill-missing</c> by mean) names its
+    /// columns in <c>mloop.yaml</c>, and the data has to have them. Before this, a name with no column in the data passed the
+    /// preprocessing stage and the first thing to say so was the trainer search, failing every trainer three times — naming the column
+    /// but not the step, after the setup of a whole run.
+    /// </summary>
+    /// <param name="dataFile">The file training reads, after the steps that change the table have run.</param>
+    /// <param name="stepColumns">Every column the in-training steps name.</param>
+    public static string? PrepColumnsRefusal(string dataFile, IReadOnlyList<string> stepColumns, string? reportedAs = null)
+    {
+        if (stepColumns.Count == 0 || HeaderColumns(dataFile) is not { } columns)
+            return null;
+        var absent = stepColumns.Where(name => !columns.Contains(name, StringComparer.Ordinal)).Distinct(StringComparer.Ordinal).ToList();
+        if (absent.Count == 0)
+            return null;
+        var named = string.Join(", ", absent.Select(name => $"'{name}'"));
+        var message = $"A prep step in mloop.yaml names {(absent.Count == 1 ? "a column" : "columns")} that {Path.GetFileName(reportedAs ?? dataFile)} does not have: {named}. Available columns: {string.Join(", ", columns)}.";
+        var sameLetters = absent.Select(name => columns.FirstOrDefault(column => string.Equals(column, name, StringComparison.OrdinalIgnoreCase)))
+            .FirstOrDefault(column => column is not null);
+        return sameLetters is null ? message : $"{message} '{sameLetters}' differs only in case; column names are case-sensitive.";
     }
 
     /// <summary>
