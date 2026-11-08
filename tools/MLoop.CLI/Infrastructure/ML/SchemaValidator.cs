@@ -62,7 +62,7 @@ public class SchemaValidator
             // If we have saved schema, use it for validation
             if (savedSchema != null)
             {
-                return ValidateWithSavedSchema(savedSchema, readPath);
+                return ValidateWithSavedSchema(savedSchema, readPath, Path.GetFileName(inputDataPath));
             }
 
             // No saved schema: the only honest answer is that nothing was checked.
@@ -121,7 +121,7 @@ public class SchemaValidator
     /// <summary>
     /// Validates using saved schema information from training
     /// </summary>
-    private SchemaValidationResult ValidateWithSavedSchema(InputSchemaInfo savedSchema, string inputDataPath)
+    internal static SchemaValidationResult ValidateWithSavedSchema(InputSchemaInfo savedSchema, string inputDataPath, string? shownAs = null)
     {
         var result = new SchemaValidationResult { IsValid = true };
 
@@ -231,7 +231,9 @@ public class SchemaValidator
                 else
                 {
                     result.ErrorMessage = $"Missing required columns: {string.Join(", ", missingColumns)}";
-                    result.Suggestions.Add("Ensure prediction data contains all Feature columns used during training");
+                    result.Suggestions.Add(
+                        $"Add the missing column(s) to {shownAs ?? Path.GetFileName(inputDataPath)}, spelled as in the training data, " +
+                        "or predict on a file that has them");
                 }
             }
             else if (indexColumns.Any() || extraColumns.Any())

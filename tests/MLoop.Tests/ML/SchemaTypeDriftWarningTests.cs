@@ -134,3 +134,40 @@ public class SchemaTypeDriftWarningTests
         Assert.Equal(reads, SchemaDataTypes.ValueReadsAs(SchemaDataTypes.Numeric, value));
     }
 }
+
+/// <summary>
+/// A prediction file that lacks a column the model was trained on: the refusal names the column and the way out names the file to
+/// change - the file the user typed - not a generic "ensure the data contains" (S1-6, the installer's first mistakes).
+/// </summary>
+public class SchemaMissingColumnGuidanceTests
+{
+    [Fact]
+    public void AMissingColumn_IsNamed_AndTheTipNamesTheFileToChange()
+    {
+        var schema = new InputSchemaInfo
+        {
+            CapturedAt = DateTime.UtcNow,
+            Columns =
+            [
+                new ColumnSchema { Name = "age", DataType = SchemaDataTypes.Numeric, Purpose = "Feature" },
+                new ColumnSchema { Name = "income", DataType = SchemaDataTypes.Numeric, Purpose = "Feature" },
+            ],
+        };
+        var path = Path.Combine(Path.GetTempPath(), $"mloop-missing-{Guid.NewGuid():N}.csv");
+        File.WriteAllText(path, "age\n30\n41\n");
+        try
+        {
+            var result = SchemaValidator.ValidateWithSavedSchema(schema, path, shownAs: "customers-2026.csv");
+
+            Assert.False(result.IsValid);
+            Assert.Equal(["income"], result.MissingColumns);
+            var tip = Assert.Single(result.Suggestions);
+            Assert.Contains("customers-2026.csv", tip, StringComparison.Ordinal);
+            Assert.Contains("missing column", tip, StringComparison.Ordinal);
+        }
+        finally
+        {
+            try { File.Delete(path); } catch (IOException) { }
+        }
+    }
+}

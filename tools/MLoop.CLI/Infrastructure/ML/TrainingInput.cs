@@ -254,6 +254,10 @@ public static class TrainingInput
         }
     }
 
+    /// <summary>What to do when <see cref="LabelColumnRefusal"/> is the answer.</summary>
+    public const string LabelColumnGuidance =
+        "Name a column of the file exactly as its header spells it: mloop train <data-file> --label <column> (or set the label in mloop.yaml).";
+
     /// <summary>What to do when <see cref="DuplicateColumnRefusal"/> is the answer.</summary>
     public const string DuplicateColumnGuidance = "Rename one of them in the file, or delete the column you do not need.";
 

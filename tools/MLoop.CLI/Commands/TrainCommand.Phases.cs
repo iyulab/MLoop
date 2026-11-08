@@ -467,7 +467,7 @@ public static partial class TrainCommand
 
         if (TrainingInput.LabelColumnRefusal(resolvedDataFile, effectiveDefinition.Task, effectiveDefinition.Label, reportedAs: namedDataFile) is { } labelRefusal)
         {
-            ErrorConsole.Error(labelRefusal);
+            ErrorConsole.Error(labelRefusal, TrainingInput.LabelColumnGuidance);
             return PreparedData.Exit(1);
         }
 
