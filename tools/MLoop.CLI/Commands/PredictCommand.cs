@@ -59,7 +59,7 @@ public static partial class PredictCommand
 
         var unknownStrategyOption = new Option<string>("--unknown-strategy")
         {
-            Description = "Strategy for handling unknown categorical values: auto (default), error, use-most-frequent, use-missing",
+            Description = $"Strategy for handling unknown categorical values: {string.Join(", ", UnknownValueStrategies.Names.Select(n => n == "auto" ? "auto (default)" : n))}",
             DefaultValueFactory = _ => "auto"
         };
 
@@ -175,6 +175,13 @@ public static partial class PredictCommand
 
         try
         {
+            // A strategy name that is none of the four used to be read as `auto`; it is refused before anything is loaded.
+            if (UnknownValueStrategies.Refusal(unknownStrategy) is { } unknownStrategyRefusal)
+            {
+                ErrorConsole.Error(Markup.Escape(unknownStrategyRefusal));
+                return 1;
+            }
+
             // Initialize components
             var fileSystem = new FileSystemManager();
             var projectDiscovery = new ProjectDiscovery(fileSystem);
@@ -283,14 +290,7 @@ public static partial class PredictCommand
             resolvedDataFile = preparedRows;
 
             // Parse unknown value strategy
-            var strategy = unknownStrategy.ToLowerInvariant() switch
-            {
-                "auto" => UnknownValueStrategy.Auto,
-                "error" => UnknownValueStrategy.Error,
-                "use-most-frequent" => UnknownValueStrategy.UseMostFrequent,
-                "use-missing" => UnknownValueStrategy.UseMissing,
-                _ => UnknownValueStrategy.Auto
-            };
+            var strategy = UnknownValueStrategies.Parse(unknownStrategy) ?? UnknownValueStrategy.Auto;
 
             // Warn for specialized prediction formats
             if (taskType != null && taskType.Equals("time-series-anomaly", StringComparison.OrdinalIgnoreCase))
