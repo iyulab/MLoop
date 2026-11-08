@@ -76,7 +76,7 @@ public class EnsembleTrainingTests
         }
     }
 
-    private static TrainingConfig Config(string task, string metric, bool ensemble) => new()
+    private static TrainingConfig Config(string task, string metric, bool ensemble, int maxTrials = 16) => new()
     {
         ModelName = "e",
         DataFile = "synthetic",
@@ -84,7 +84,7 @@ public class EnsembleTrainingTests
         Task = task,
         TimeLimitSeconds = 120,
         Metric = metric,
-        MaxTrials = 16,
+        MaxTrials = maxTrials,
         Ensemble = ensemble,
     };
 
@@ -236,6 +236,15 @@ public class EnsembleTrainingTests
         public override long GetTimestamp() => (long)(seconds[Math.Min(_readings++, seconds.Length - 1)] * 1000);
     }
 
+    // The same script, but a reading past it throws: what the blend meets when something under it fails while it is fitted.
+    private sealed class FailingClock(int okReadings) : TimeProvider
+    {
+        private int _readings;
+        public override long TimestampFrequency => 1000;
+        public override long GetTimestamp()
+            => _readings++ < okReadings ? 0 : throw new InvalidOperationException("the clock failed");
+    }
+
     [Fact]
     public async Task AFitTimeThatDoesNotFitInWhatIsLeft_KeepsTheSingleModel_AndNamesTheShortfall()
     {
@@ -300,5 +309,71 @@ public class EnsembleTrainingTests
         public float X3 { get; set; }
         public float X4 { get; set; }
         public string Label { get; set; } = "";
+    }
+
+    [Fact]
+    public async Task ARunThatCouldOnlyTryOneTrial_KeepsTheSingleModel_AndSaysTooFewTrialsLeftAnswers()
+    {
+        var ctx = new MLContext(seed: 42);
+        var data = ctx.Data.LoadFromEnumerable(NoisyBinary());
+        var runner = new TrainingRunner(ctx, new InMemoryDataProvider(ctx, data));
+
+        var result = await runner.RunAsync(Config("binary-classification", "auc", ensemble: true, maxTrials: 1));
+
+        var outcome = Assert.IsType<EnsembleOutcome>(result.Ensemble);
+        Assert.False(outcome.IsBlend);
+        Assert.Equal("fewer than two trials left answers to blend", outcome.SkippedBecause);
+        Assert.NotEqual("Ensemble", result.Trainer.Name);
+        Assert.Null(outcome.OutOfFoldScore);   // nothing was weighed
+        Assert.True(result.Metrics["auc"] > 0.5);
+    }
+
+    [Fact]
+    public async Task ABlendThatCannotBeFitted_LeavesTheSingleModelStanding_AndSaysWhy()
+    {
+        var ctx = new MLContext(seed: 42);
+        var data = ctx.Data.LoadFromEnumerable(NoisyBinary());
+        // Readings 1–2 let the blend start (the run's start, the time left); the one that follows a member fitted fails.
+        var runner = new TrainingRunner(ctx, new InMemoryDataProvider(ctx, data), timeProvider: new FailingClock(okReadings: 2));
+
+        var result = await runner.RunAsync(Config("binary-classification", "auc", ensemble: true));
+
+        // An extension never breaks the training it extends: the run still answers, with the model it had.
+        var outcome = Assert.IsType<EnsembleOutcome>(result.Ensemble);
+        Assert.False(outcome.IsBlend);
+        Assert.Equal("the blend could not be fitted: the clock failed", outcome.SkippedBecause);
+        Assert.NotNull(outcome.OutOfFoldScore);   // weighed before it failed
+        Assert.NotEqual("Ensemble", result.Trainer.Name);
+        Assert.True(result.Metrics["auc"] > 0.5);
+    }
+
+    [Fact]
+    public async Task WhenOneTrialAlreadyRanksEveryRowRight_NoBlendBeatsIt_AndTheSingleModelStands()
+    {
+        var ctx = new MLContext(seed: 42);
+        var random = new Random(5);
+        // The classes sit apart on X1 with a gap between them: the best trial's out-of-fold AUC is 1, which no blend can exceed.
+        var rows = Enumerable.Range(0, 600).Select(_ =>
+        {
+            var positive = random.Next(2) == 1;
+            return new BinaryRow
+            {
+                X1 = (float)(random.NextDouble() * 0.4 + (positive ? 0.6 : -1.0)),
+                X2 = (float)random.NextDouble(),
+                X3 = (float)random.NextDouble(),
+                X4 = (float)random.NextDouble(),
+                Label = positive,
+            };
+        });
+        var data = ctx.Data.LoadFromEnumerable(rows);
+        var runner = new TrainingRunner(ctx, new InMemoryDataProvider(ctx, data));
+
+        var result = await runner.RunAsync(Config("binary-classification", "auc", ensemble: true));
+
+        var outcome = Assert.IsType<EnsembleOutcome>(result.Ensemble);
+        Assert.False(outcome.IsBlend);
+        Assert.Equal("no blend of the best trials scores better than the best one out of fold", outcome.SkippedBecause);
+        Assert.NotEqual("Ensemble", result.Trainer.Name);
+        Assert.Equal(1.0, result.Metrics["auc"], 3);
     }
 }
