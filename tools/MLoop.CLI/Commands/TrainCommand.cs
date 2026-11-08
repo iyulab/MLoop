@@ -157,7 +157,7 @@ public static partial class TrainCommand
 
         var samplingStrategyOption = new Option<string?>("--sampling-strategy")
         {
-            Description = "Sampling strategy when --max-rows is used: 'random' or 'stratified' (default: task-aware)"
+            Description = $"Sampling strategy when --max-rows is used: {string.Join(" or ", SamplingStrategies.Names.Select(n => $"'{n}'"))} (default: task-aware)"
         };
 
         var samplingStrategyAliasOption = new Option<string?>("--sampling")
@@ -294,6 +294,12 @@ public static partial class TrainCommand
 
         try
         {
+            if (SamplingStrategies.Refusal(samplingStrategy) is { } unknownStrategy)
+            {
+                ErrorConsole.Error(Markup.Escape(unknownStrategy), SamplingStrategies.RefusalTip);
+                return 1;
+            }
+
             // Initialize components
             var fileSystem = new FileSystemManager();
             var projectDiscovery = new ProjectDiscovery(fileSystem);
