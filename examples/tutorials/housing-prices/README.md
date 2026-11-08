@@ -295,8 +295,8 @@ mloop train --name luxury-homes    # > $700K
 
 **Investigation**:
 ```bash
-# Find worst predictions
-mloop evaluate datasets/houses.csv --verbose
+# See where the error sits: the metrics again for each neighborhood
+mloop evaluate datasets/houses.csv --slice-by Neighborhood
 
 # Look for patterns:
 # - Specific neighborhoods consistently wrong?

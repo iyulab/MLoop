@@ -117,7 +117,7 @@ cp examples/preprocessing-scripts/04_data_cleaning.cs .mloop/scripts/preprocess/
 mloop train
 
 # 3. Or run preprocessing separately
-mloop preprocess --input raw.csv --output cleaned.csv
+mloop preprocess raw.csv -o cleaned.csv
 ```
 
 ---
@@ -366,7 +366,7 @@ my-project/
 
 ```bash
 # Test preprocessing
-mloop preprocess --input test.csv --validate
+mloop preprocess test.csv -o cleaned-test.csv
 
 # Test hooks (dry run)
 # Coming soon: mloop hooks --dry-run

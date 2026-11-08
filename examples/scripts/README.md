@@ -157,7 +157,7 @@ parallel --dry-run -j 1 mloop train {} ::: dataset*.csv
 
 ```bash
 # Run one training job to measure
-$ mloop train dataset1.csv price --time 1800 &
+$ mloop train dataset1.csv --label price --time 1800 &
 $ htop  # Monitor CPU/memory usage
 ```
 
@@ -290,7 +290,7 @@ parallel --timeout 3600 -j 1 mloop train {} ::: dataset*.csv
 # data3.csv,profit,900
 
 parallel --colsep ',' -j 1 \
-  mloop train {1} {2} --time {3} \
+  mloop train {1} --label {2} --time {3} \
   :::: jobs.csv
 ```
 

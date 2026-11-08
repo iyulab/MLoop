@@ -167,7 +167,7 @@ $ mloop train data.csv --label target
 $ mloop evaluate exp-001/model.zip test.csv
   → Evaluate for 30 seconds → Exit
 
-$ mloop predict exp-001/model.zip new-data.csv
+$ mloop predict new-data.csv --model exp-001/model.zip
   → Predict for 10 seconds → Exit
 ```
 
@@ -213,7 +213,7 @@ $ mloop train data.csv --label target --time 3600
 The `mloop serve` command is the **only exception** that maintains a server process:
 
 ```bash
-$ mloop serve models/production/model.zip --port 5000
+$ mloop serve --port 5000
 🚀 MLoop API Server
    Listening on: http://localhost:5000
    Swagger UI: http://localhost:5000/swagger
@@ -753,12 +753,12 @@ data:
 
 ```bash
 # Default model (--name omitted)
-mloop train datasets/train.csv Churn --time 60
+mloop train datasets/train.csv --label Churn --time 60
 mloop predict
 mloop promote exp-001
 
 # Named model
-mloop train datasets/train.csv Revenue --name revenue --time 60
+mloop train datasets/train.csv --label Revenue --name revenue --time 60
 mloop predict --name revenue
 mloop promote exp-001 --name revenue
 
@@ -1446,10 +1446,10 @@ mloop train datasets/raw.csv --label "quantity" --time 120
 # → Auto-detects scripts → Runs preprocessing → Trains
 
 # Manual preprocessing (debugging)
-mloop preprocess --input datasets/raw.csv --output datasets/train.csv
+mloop preprocess datasets/raw.csv -o datasets/train.csv
 
-# Validate scripts
-mloop validate --scripts
+# Validate scripts (every script is compiled and checked against the interface its folder runs)
+mloop validate -v
 ```
 
 #### Phase 1: Hooks (Lifecycle Extensions)
@@ -1790,10 +1790,10 @@ $ mloop train data.csv --label target --metric profit-metric.cs
 
 ```bash
 # Create new extension
-mloop new hook --name DataValidation --type pre-train
+mloop new hook DataValidation pre-train
 
 # Validate extension
-mloop validate .mloop/scripts/hooks/pre-train.cs
+mloop validate -v
 # ✅ Compilation successful
 # ✅ Implements IMLoopHook
 

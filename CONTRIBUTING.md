@@ -23,7 +23,7 @@ Every contribution should support one or more of these goals:
 **Good**: Feature works immediately with intelligent defaults
 ```csharp
 // ✅ Good: Automatic discovery and defaults
-mloop train datasets/train.csv price --time 60
+mloop train datasets/train.csv --label price --time 60
 ```
 
 **Bad**: Requires extensive configuration before use
@@ -37,7 +37,7 @@ mloop train --config complex.yaml --schema schema.json --mappings map.yaml
 ```csharp
 // ✅ Good: Simple by default, extensible when needed
 // Simple: Just works
-mloop train data.csv price
+mloop train data.csv --label price
 
 // Advanced: Optional customization via scripts
 .mloop/scripts/hooks/pre-train.cs
