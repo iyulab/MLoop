@@ -116,12 +116,12 @@ internal sealed class DataLensAnalyzer
     }
 
     /// <summary>
-    /// What a size-skipped analysis means for the answer. DataLens leaves out an analysis whose cost outgrows the rows when a file has more of them
-    /// than the analysis's row threshold, and says so in a warning in its own words; the result alone would read as if the analysis had run.
+    /// What a size-skipped analysis means for the answer. DataLens leaves out an analysis whose cost outgrows the file when it is larger
+    /// than the analysis's size threshold (rows for most, rows squared times columns for the local outlier factor), and says so in a warning in its own words; the result alone would read as if the analysis had run.
     /// </summary>
     internal static string SkippedMessage(AnalysisWarning skipped) => skipped.Analyzer switch
     {
-        "Lof" => "The local outlier factor was skipped: the file has more rows than it is run on (its cost grows steeply with the rows). "
+        "Lof" => "The local outlier factor was skipped: the file is too large for it (its cost grows with the square of the rows and with the columns). "
                  + "A row counts as an outlier when isolation forest and Mahalanobis distance both flag it.",
         _ => $"{skipped.Analyzer} was skipped: the file has more rows than it is run on (its cost grows steeply with the rows).",
     };
