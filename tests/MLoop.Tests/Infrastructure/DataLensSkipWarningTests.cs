@@ -31,7 +31,7 @@ public class DataLensSkipWarningTests : IDisposable
         var result = await new DataLensAnalyzer().AnalyzeAsync(_csv, DataLensAnalyzer.Only(o =>
         {
             o.IncludeOutliers = true;
-            o.LofRowThreshold = 50;
+            o.LofWorkThreshold = 50;
         }));
 
         Assert.NotNull(result);
