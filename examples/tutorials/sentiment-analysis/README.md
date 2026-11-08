@@ -51,7 +51,7 @@ The reviews are short, generated from pools of opening, middle and closing phras
 
 ```bash
 cd examples/tutorials/sentiment-analysis
-mloop init
+mloop init .
 ```
 
 ---

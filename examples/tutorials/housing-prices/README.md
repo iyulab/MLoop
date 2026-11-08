@@ -51,7 +51,7 @@ This is a **regression** problem - predicting a continuous numerical value (vs c
 
 ```bash
 cd examples/tutorials/housing-prices
-mloop init
+mloop init .
 ```
 
 ---

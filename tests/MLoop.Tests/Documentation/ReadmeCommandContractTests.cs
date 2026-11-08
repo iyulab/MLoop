@@ -40,8 +40,43 @@ namespace MLoop.Tests.Documentation;
 public class ReadmeCommandContractTests
 {
     private static string RepoRoot => RepoSourceTree.RepoRoot;
-    private static readonly string[] DocFiles = { "README.md", "docs/GUIDE.md" };
+    /// <summary>The two documents a new user reads first: they must exist and must yield examples.</summary>
+    private static readonly string[] CoreDocFiles = { "README.md", "docs/GUIDE.md" };
     private const string CommandTableHeading = "### Every command";
+
+    /// <summary>
+    /// Every markdown file of the repository that shows <c>mloop</c> command lines: the two core documents and any other
+    /// guide, architecture note or example README. A scan of 408 lines in seventeen files found fourteen that failed as written,
+    /// all outside the two files this test used to read - the same class of defect, in the files nobody was checking.
+    /// The change log is history (it quotes commands as they were) and is not read.
+    /// </summary>
+    private static readonly string[] DocFiles = CoreDocFiles
+        .Concat(Directory.EnumerateFiles(RepoSourceTree.RepoRoot, "*.md", SearchOption.AllDirectories)
+            .Select(path => Path.GetRelativePath(RepoSourceTree.RepoRoot, path).Replace('\\', '/'))
+            .Where(path => !path.Split('/').Any(part => part is "bin" or "obj" or "node_modules" or "TestResults" or ".git")
+                           && !path.Equals("CHANGELOG.md", StringComparison.OrdinalIgnoreCase))
+            .Except(CoreDocFiles)
+            .Where(path => ExtractCommands(File.ReadAllLines(Path.Combine(RepoSourceTree.RepoRoot, path))).Count > 0
+                           || ExtractGrammarSummaries(File.ReadAllLines(Path.Combine(RepoSourceTree.RepoRoot, path))).Count > 0)
+            .Order(StringComparer.Ordinal))
+        .ToArray();
+
+    /// <summary>
+    /// Lines that show what the CLI does not accept, on purpose: the "bad" half of a good/bad pair, a command of a design
+    /// that is not built yet, a two-column terminal diagram. Each carries its reason, and
+    /// <see cref="Every_exemption_still_names_a_line_that_fails_to_parse"/> removes the entry the day the line is fixed or the CLI grows it.
+    /// </summary>
+    private static readonly (string File, string Command, string Why)[] DeliberatelyNotParsable =
+    {
+        ("CONTRIBUTING.md", "mloop train --config complex.yaml --schema schema.json --mappings map.yaml", "the anti-pattern its principle warns against"),
+        ("CONTRIBUTING.md", "mloop train --pipeline transform-train-evaluate --config pipeline.yaml", "the anti-pattern its principle warns against"),
+        ("docs/ARCHITECTURE.md", "mloop train data.csv --label target --detach", "section 13.4, a design marked as future"),
+        ("docs/ARCHITECTURE.md", "mloop experiment show exp-005", "section 13.4, a design marked as future"),
+        ("docs/ARCHITECTURE.md", "mloop train data.csv         $ mloop train data.csv", "two terminals drawn side by side"),
+    };
+
+    private static bool IsExempt(string file, string command)
+        => DeliberatelyNotParsable.Any(e => e.File == file && e.Command == command);
 
     public static IEnumerable<object[]> ConcreteExampleCommands() =>
         DocFiles
@@ -52,6 +87,7 @@ public class ReadmeCommandContractTests
             // an un-deduplicated list produces "duplicate test ID, skipping" noise rather than a
             // second real case. Only the command matters for dedup; which file it also lives in
             // doesn't change what gets parsed.
+            .Where(x => !IsExempt(x.relativePath, x.cmd))
             .DistinctBy(x => x.cmd)
             .Select(x => new object[] { x.relativePath, x.cmd });
 
@@ -89,7 +125,7 @@ public class ReadmeCommandContractTests
         // nothing for that file — every [Theory] case for it would then vacuously "pass" by not
         // existing. This guards the guard, per file rather than in aggregate, so one doc going
         // quiet isn't masked by the other still having examples.
-        foreach (var relativePath in DocFiles)
+        foreach (var relativePath in CoreDocFiles)
         {
             var found = ExtractCommands(File.ReadAllLines(Path.Combine(RepoRoot, relativePath)));
             Assert.True(found.Count > 0, $"{relativePath}: no concrete `mloop ...` example lines found.");
@@ -116,12 +152,12 @@ public class ReadmeCommandContractTests
         var commands = new List<string>();
         foreach (var raw in lines)
         {
-            var line = raw.Trim();
+            var line = StripPrompt(raw.Trim());
             if (!line.StartsWith("mloop ") || DocumentsAFailure(line))
                 continue;
 
             var withoutComment = StripShellPlumbing(StripTrailingComment(line));
-            if (withoutComment.Contains('<') || withoutComment.Contains('['))
+            if (withoutComment.Contains('<') || withoutComment.Contains('[') || HasTemplateBrace(withoutComment))
                 continue;
 
             commands.Add(withoutComment);
@@ -138,7 +174,7 @@ public class ReadmeCommandContractTests
         var summaries = new List<string>();
         foreach (var raw in lines)
         {
-            var line = raw.Trim();
+            var line = StripPrompt(raw.Trim());
             if (!line.StartsWith("mloop ") || DocumentsAFailure(line))
                 continue;
 
@@ -223,10 +259,29 @@ public class ReadmeCommandContractTests
     [Fact]
     public void At_least_one_grammar_summary_was_found_in_each_doc()
     {
-        foreach (var relativePath in DocFiles)
+        foreach (var relativePath in CoreDocFiles)
             Assert.True(ExtractGrammarSummaries(File.ReadAllLines(Path.Combine(RepoRoot, relativePath))).Count > 0,
                 $"{relativePath}: no grammar-summary lines found.");
     }
+
+    /// <summary>
+    /// A <c>{1}</c> outside quotes is a template slot of a tool that runs the line (GNU parallel, a CI matrix), not an argument a user types.
+    /// A brace inside quotes is a JSON value and stays.
+    /// </summary>
+    private static bool HasTemplateBrace(string line)
+    {
+        char? quote = null;
+        foreach (var c in line)
+        {
+            if (quote is char q) { if (c == q) quote = null; continue; }
+            if (c is '\'' or '"') { quote = c; continue; }
+            if (c == '{') return true;
+        }
+        return false;
+    }
+
+    /// <summary>A transcript shows the shell prompt before the command: <c>$ mloop train ...</c> is the same example.</summary>
+    private static string StripPrompt(string line) => line.StartsWith("$ ", StringComparison.Ordinal) ? line[2..].TrimStart() : line;
 
     private static bool DocumentsAFailure(string line)
     {
@@ -242,7 +297,7 @@ public class ReadmeCommandContractTests
     }
 
     /// <summary>
-    /// Cuts the line at the first shell redirection or pipe. Checked outside quotes so a value that
+    /// Cuts the line at the first shell redirection, pipe, background marker (<c>&amp;</c>) or command separator, and drops a trailing line-continuation backslash. Checked outside quotes so a value that
     /// legitimately contains one of these characters is left intact.
     /// </summary>
     private static string StripShellPlumbing(string line)
@@ -259,10 +314,10 @@ public class ReadmeCommandContractTests
             }
 
             if (c is '\'' or '"') { quote = c; continue; }
-            if (c is '>' or '|') return line[..i].TrimEnd();
+            if (c is '>' or '|' or '&' or ';') return line[..i].TrimEnd();
         }
 
-        return line;
+        return line.EndsWith('\\') ? line[..^1].TrimEnd() : line;
     }
 
     /// <summary>
@@ -345,4 +400,34 @@ public class ReadmeCommandContractTests
             $"  Documented but gone: {(stale.Count == 0 ? "(none)" : string.Join(", ", stale))}");
     }
 
+    [Fact]
+    public void The_scan_reaches_the_documents_beyond_README_and_GUIDE()
+    {
+        // The scan once read two files, and the fourteen broken lines of a wider look sat in the others. If discovery
+        // stopped finding them, this test would go on passing over two files - so it must see the files that hold them.
+        Assert.Contains("CONTRIBUTING.md", DocFiles);
+        Assert.Contains("docs/ARCHITECTURE.md", DocFiles);
+        Assert.Contains(DocFiles, f => f.StartsWith("examples/", StringComparison.Ordinal));
+        Assert.DoesNotContain(DocFiles, f => f.Equals("CHANGELOG.md", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void A_transcript_line_with_a_shell_prompt_is_an_example_too()
+    {
+        Assert.Equal(["mloop list --json"], ExtractCommands(["$ mloop list --json   # View experiments"]));
+    }
+
+    [Fact]
+    public void Every_exemption_still_names_a_line_that_fails_to_parse()
+    {
+        // An exemption is a promise that the line is wrong on purpose. When the line is fixed, deleted or accepted by the CLI,
+        // the entry would only keep hiding the next real defect behind the same words.
+        foreach (var (file, command, why) in DeliberatelyNotParsable)
+        {
+            var lines = ExtractCommands(File.ReadAllLines(Path.Combine(RepoRoot, file)));
+            Assert.True(lines.Contains(command), $"{file}: the exempted line \"{command}\" ({why}) is no longer in the file - remove its entry.");
+            var result = Program.BuildRootCommand().Parse(Tokenize(command).Skip(1).ToArray());
+            Assert.True(result.Errors.Count > 0, $"{file}: \"{command}\" parses now - remove its entry.");
+        }
+    }
 }

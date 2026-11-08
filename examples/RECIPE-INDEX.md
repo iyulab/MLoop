@@ -36,7 +36,7 @@ Learn:
 
 ```bash
 cd examples/tutorials/iris-classification
-mloop init && mloop train
+mloop init . && mloop train
 ```
 
 ---
@@ -57,7 +57,7 @@ Learn:
 
 ```bash
 cd examples/tutorials/sentiment-analysis
-mloop init && mloop train
+mloop init . && mloop train
 ```
 
 ---
@@ -78,7 +78,7 @@ Learn:
 
 ```bash
 cd examples/tutorials/housing-prices
-mloop init && mloop train
+mloop init . && mloop train
 ```
 
 ---
@@ -325,7 +325,7 @@ MLoop has no built-in agent. An AI agent drives it through [mloop-mcp](https://g
 
 ```bash
 # 1. Initialize
-mloop init
+mloop init .
 
 # 2. Analyze data quality
 mloop train --analyze-data

@@ -233,7 +233,7 @@ public class JoinFiles : IPreprocessingScript
 
 3. Train normally - preprocessing runs automatically:
 ```bash
-mloop train datasets/raw.csv price --time 60
+mloop train datasets/raw.csv --label price --time 60
 ```
 
 ### 6. Commit Messages
