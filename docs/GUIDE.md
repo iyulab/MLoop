@@ -189,7 +189,8 @@ mloop train rank.train --label label --group-column qid --test-split 0.2
 # Recommendation: one row per rating. Name the column that says who rated, the one that says what was rated, and the
 # rating itself (--label). They are written to mloop.yaml (user_column, item_column), as --group-column writes its key;
 # `mloop init` puts placeholders there (user_id, item_id), which train refuses when the file has no such column.
-# `mloop predict` takes a file of user and item pairs and answers a score per pair on the scale of the ratings.
+# `mloop predict` takes a file of user and item pairs and answers a score per pair near the scale of the ratings (a score can
+# overshoot its ends a little; it is not clamped).
 mloop init shop --task recommendation
 mloop train datasets/ratings.csv --label rating --user-column user --item-column item
 mloop predict datasets/pairs.csv
@@ -1160,7 +1161,8 @@ refused by name rather than closed up; fill it first (`mloop prep plan --set fil
 **Forecasting.** The model forecasts the `horizon` points after the end of the series it was trained on, and
 `mloop predict` (and `POST /predict`) replay that series (kept beside the model, `series.csv`; a model trained before
 that replays the training file, which has to stay in place) to read the forecast — retrain on the longer series to move the
-forecast forward. `horizon` is fixed when the model is trained. `mloop evaluate` takes a
+forecast forward. `POST /predict` takes an empty JSON object (`{}`) for a forecasting model — the series is the one kept with it —
+and answers the horizon's steps, each with `score`, `scoreLowerBound` and `scoreUpperBound`. `horizon` is fixed when the model is trained. `mloop evaluate` takes a
 file whose last `horizon` rows are the values that followed: they are scored against the forecast made before them, and
 two forecasters are compared (`evaluate --against`, a project `gate:`) on the squared error of those same steps.
 
@@ -1253,6 +1255,9 @@ mloop detect data.csv -c value --json
 | `--sensitivity` | | `99.73` | Coverage of the control limits in percent (0–100 exclusive; 99.73 = 3 sigma) |
 | `--output` | `-o` | | Write the full per-point result to this CSV file |
 | `--json` | | | Output the full result as JSON |
+
+`Index` in the table, the CSV and the JSON is the point's 0-based position in the series: the first value is 0, so the value on the
+file's second line (the first data row) is index 0.
 
 ```
 ── One-Shot Anomaly Detection - series.csv ─────────────────────────────────────

@@ -185,6 +185,26 @@ mloop predict
 
 That's it! Your model is trained and ready to use.
 
+### Other kinds of table
+
+```bash
+# Ranking: rows grouped into queries — name the column that holds the query, and the one that grades each row
+mloop init shop-rank --task ranking
+mloop train datasets/train.csv --label relevance --group-column query_id
+
+# Recommendation: one row per rating — name who rated, what was rated, and the rating
+mloop init shop --task recommendation
+mloop train datasets/ratings.csv --label rating --user-column user --item-column item
+
+# Forecasting (and time-series anomaly): a file of one column of numbers, in order — Linux needs the OpenMP step under Requirements
+mloop init demand --task forecasting
+mloop train datasets/series.csv --label value
+mloop predict
+
+# No model at all: find a series' anomalies straight from a file
+mloop detect series.csv
+```
+
 ### Serve the model over HTTP
 
 ```bash
