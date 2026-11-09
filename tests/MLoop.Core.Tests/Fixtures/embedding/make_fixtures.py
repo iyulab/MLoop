@@ -10,6 +10,8 @@
 - tiny-patch-encoder.onnx: the same class token, then one register token, then a 2 x 2 grid of 3-pixel patches (each
   patch's mean x W), row by row -> [N,6,4] "last_hidden_state" — a vision transformer with registers.
 - patches.json: the L2-normalised patch vectors of pattern.png, row by row, and the centre crop in its own pixels.
+- square.json: pattern.png resized to a 6 x 6 square (aspect ratio given up, no crop; mean and std 0.5) — a processor
+  that resizes to a fixed size, as SigLIP's does.
 """
 import json
 import os
@@ -111,3 +113,11 @@ for r in range(g):
 crop_region = [left * w / nw, top * h / nh, (left + CROP) * w / nw, (top + CROP) * h / nh]
 with open(os.path.join(HERE, "patches.json"), "w") as f:
     json.dump({"patches": patches, "crop": crop_region}, f, indent=1)
+
+# square.json: the whole image resized to CROP x CROP (bicubic, the aspect ratio given up) and normalised with mean and std
+# 0.5, as an image processor that resizes to a fixed size computes it.
+squared = np.asarray(Image.open(os.path.join(HERE, "pattern.png")).convert("RGB").resize((CROP, CROP), resample=Image.BICUBIC))
+squared = squared.astype(np.float32) * np.float32(1 / 255)
+square_tensor = ((squared - np.float32(0.5)) / np.float32(0.5)).transpose(2, 0, 1)
+with open(os.path.join(HERE, "square.json"), "w") as f:
+    json.dump({"tensor": [float(v) for v in square_tensor.flatten()]}, f, indent=1)

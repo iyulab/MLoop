@@ -80,6 +80,8 @@ public sealed record EncoderDefinition(
             return "mean-of-tokens pooling reads a text encoder's attention mask; an image encoder has none";
         if (p is null || p.CropSize <= 0 || p.CropSize > p.ShortestEdge)
             return $"it crops {p?.CropSize} pixels from a shortest edge of {p?.ShortestEdge}";
+        if (p.Resize == ImageResize.Square && p.ShortestEdge != p.CropSize)
+            return $"a square resize has no crop to take: shortestEdge {p.ShortestEdge} is the side of the square and must equal cropSize {p.CropSize}";
         if (p.Mean is not { Count: 3 } || p.Std is not { Count: 3 } || p.Std.Any(s => s <= 0))
             return "mean and std need three values (R, G, B), every std above zero";
         if (PatchSize is { } patch && (patch <= 0 || p.CropSize % patch != 0))
@@ -103,15 +105,18 @@ public sealed record EncoderDefinition(
 public sealed record PatchGrid(int Rows, int Columns, int PatchSize, int CropSize);
 
 /// <summary>
-/// An image processor's steps, in order: resize so the shortest edge is <see cref="ShortestEdge"/> (bicubic, as
-/// Pillow resamples), crop the centre to <see cref="CropSize"/> square, scale to [0, 1], then subtract
-/// <see cref="Mean"/> and divide by <see cref="Std"/> per RGB channel.
+/// An image processor's steps, in order: resize (bicubic, as Pillow resamples) so the shortest edge is
+/// <see cref="ShortestEdge"/> — or, with <see cref="ImageResize.Square"/>, to a square of that side — crop the centre to
+/// <see cref="CropSize"/> square, scale to [0, 1], then subtract <see cref="Mean"/> and divide by <see cref="Std"/> per
+/// RGB channel.
 /// </summary>
-public sealed record ImagePreprocessing(int ShortestEdge, int CropSize, IReadOnlyList<float> Mean, IReadOnlyList<float> Std)
+public sealed record ImagePreprocessing(
+    int ShortestEdge, int CropSize, IReadOnlyList<float> Mean, IReadOnlyList<float> Std,
+    ImageResize Resize = ImageResize.ShortestEdge)
 {
     /// <summary>Equal when every step is: the channel values are compared by value, not by list.</summary>
     public bool Equals(ImagePreprocessing? other) =>
-        other is not null && ShortestEdge == other.ShortestEdge && CropSize == other.CropSize
+        other is not null && ShortestEdge == other.ShortestEdge && CropSize == other.CropSize && Resize == other.Resize
         && Mean.SequenceEqual(other.Mean) && Std.SequenceEqual(other.Std);
 
     public override int GetHashCode()
@@ -119,6 +124,7 @@ public sealed record ImagePreprocessing(int ShortestEdge, int CropSize, IReadOnl
         var hash = new HashCode();
         hash.Add(ShortestEdge);
         hash.Add(CropSize);
+        hash.Add(Resize);
         foreach (var v in Mean.Concat(Std))
             hash.Add(v);
         return hash.ToHashCode();
@@ -127,6 +133,20 @@ public sealed record ImagePreprocessing(int ShortestEdge, int CropSize, IReadOnl
     /// <summary>ImageNet's channel means and deviations, which most vision encoders are trained with.</summary>
     public static ImagePreprocessing ImageNet(int shortestEdge, int cropSize) =>
         new(shortestEdge, cropSize, [0.485f, 0.456f, 0.406f], [0.229f, 0.224f, 0.225f]);
+}
+
+/// <summary>How an image is resized before the crop — written as <c>shortest-edge</c> / <c>square</c> in a definition file.</summary>
+[JsonConverter(typeof(KebabCaseEnumConverter<ImageResize>))]
+public enum ImageResize
+{
+    /// <summary>The shortest edge becomes <see cref="ImagePreprocessing.ShortestEdge"/>, the other in proportion; the crop takes the centre (DINOv2, CLIP).</summary>
+    ShortestEdge,
+
+    /// <summary>
+    /// Both edges become <see cref="ImagePreprocessing.ShortestEdge"/>, the aspect ratio given up, so the whole image is
+    /// read and nothing is cropped (SigLIP). The side must equal the crop.
+    /// </summary>
+    Square,
 }
 
 /// <summary>

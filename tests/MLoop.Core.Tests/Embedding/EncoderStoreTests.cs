@@ -87,6 +87,32 @@ public sealed class EncoderStoreTests : IDisposable
     }
 
     [Fact]
+    public void ASquareResize_IsReadFromTheDefinitionFile_AndItsSideMustBeTheCrop()
+    {
+        Directory.CreateDirectory(_root);
+        string Write(string resize, int edge)
+        {
+            var path = Path.Combine(_root, $"d-{Guid.NewGuid():N}.json");
+            File.WriteAllText(path, $$"""
+                { "id": "e", "version": "1", "dimension": 4,
+                  "preprocessing": { {{resize}} "shortestEdge": {{edge}}, "cropSize": 6, "mean": [0.5, 0.5, 0.5], "std": [0.5, 0.5, 0.5] },
+                  "inputName": "pixel_values", "outputName": "pooler_output", "pooling": "none" }
+                """);
+            return path;
+        }
+
+        var square = EncoderStore.ReadDefinition(Write("\"resize\": \"square\",", 6));
+        var plain = EncoderStore.ReadDefinition(Write("", 8));
+
+        Assert.Equal(ImageResize.Square, square.Preprocessing!.Resize);
+        Assert.Null(square.Problem());
+        Assert.Equal(ImageResize.ShortestEdge, plain.Preprocessing!.Resize);   // a definition written before the field is as it was
+        Assert.Null(plain.Problem());
+        Assert.NotEqual(square.Preprocessing, plain.Preprocessing with { ShortestEdge = 6 });
+        Assert.Contains("square resize", EncoderStore.ReadDefinition(Write("\"resize\": \"square\",", 8)).Problem());
+    }
+
+    [Fact]
     public void ARemovedEncoder_IsGone()
     {
         var store = new EncoderStore(_root);
@@ -173,6 +199,20 @@ public sealed class EncoderStoreTests : IDisposable
             }
         });
         Assert.Same(EncoderCatalog.DinoV2Small, EncoderCatalog.Find("DINOv2-small"));
+        Assert.Equal(EncoderCatalog.All.Count, EncoderCatalog.All.Select(e => e.Id).Distinct(StringComparer.OrdinalIgnoreCase).Count());
+    }
+
+    // A representation is compared with another family's, not only with another size of its own: the catalog's image
+    // encoders are not all one model's.
+    [Fact]
+    public void TheCatalogsImageEncoders_AreOfMoreThanOneFamily_ThatReadTheirImagesDifferently()
+    {
+        var images = EncoderCatalog.All.Where(e => e.Kind == EncoderKind.Image).ToList();
+
+        Assert.True(images.Count >= 3);
+        Assert.Contains(images, e => e.Preprocessing!.Resize == ImageResize.ShortestEdge);
+        Assert.Contains(images, e => e.Preprocessing!.Resize == ImageResize.Square);
+        Assert.Equal(images.Count, images.Select(e => e.Sha256).Distinct().Count());
     }
 
     [Fact]
@@ -291,8 +331,8 @@ public sealed class EncoderStoreTests : IDisposable
     public void TheInstallCommand_NamesTheOnlyEntry_AndOffersTheChoicesWhenThereAreMore()
     {
         Assert.Equal("mloop encoder install multilingual-minilm", EncoderCatalog.InstallCommand(EncoderKind.Text));
-        Assert.Equal("mloop encoder install dinov2-small", EncoderCatalog.InstallCommand(EncoderKind.Image));
-        Assert.Equal("mloop encoder install <dinov2-small|multilingual-minilm>", EncoderCatalog.InstallCommand());
+        Assert.Equal("mloop encoder install <dinov2-small|dinov2-base|siglip-base-224>", EncoderCatalog.InstallCommand(EncoderKind.Image));
+        Assert.Equal("mloop encoder install <dinov2-small|dinov2-base|siglip-base-224|multilingual-minilm>", EncoderCatalog.InstallCommand());
     }
 
     [Fact]

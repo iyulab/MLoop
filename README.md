@@ -464,7 +464,7 @@ The section above shows the ones a first project uses. This is the whole surface
 | `docker` | Generate Docker configuration for model deployment |
 | `new` | Generate new project components (hooks) |
 | `runtime` | Manage on-demand ML runtime downloads |
-| `encoder` | Install a catalog encoder (`install dinov2-small`, `install multilingual-minilm`), add your own, list or remove the encoders `embed` runs |
+| `encoder` | Install a catalog encoder (`install dinov2-small`, `install dinov2-base`, `install siglip-base-224`, `install multilingual-minilm`), add your own, list or remove the encoders `embed` runs |
 | `embed` | Embed images, or text in some fifty languages (`--text`), as vectors with a pretrained encoder |
 | `update` | Check for and install CLI updates |
 

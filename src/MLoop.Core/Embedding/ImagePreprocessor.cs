@@ -49,7 +49,7 @@ public static class ImagePreprocessor
     public static (float[] Tensor, ImageRegion Crop) Prepare(ReadOnlySpan<byte> encoded, ImagePreprocessing preprocessing, int index = 0)
     {
         var (rgb, width, height) = Decode(encoded, index);
-        var (newWidth, newHeight) = ResizedSize(width, height, preprocessing.ShortestEdge);
+        var (newWidth, newHeight) = ResizedSize(width, height, preprocessing);
         var resized = Resize(rgb, width, height, newWidth, newHeight);
         return (Normalize(resized, newWidth, newHeight, preprocessing), CropRegion(width, height, preprocessing));
     }
@@ -60,12 +60,18 @@ public static class ImagePreprocessor
     /// </summary>
     public static ImageRegion CropRegion(int width, int height, ImagePreprocessing preprocessing)
     {
-        var (newWidth, newHeight) = ResizedSize(width, height, preprocessing.ShortestEdge);
+        var (newWidth, newHeight) = ResizedSize(width, height, preprocessing);
         var crop = preprocessing.CropSize;
         var (top, left) = ((newHeight - crop) / 2, (newWidth - crop) / 2);
         var (sx, sy) = ((double)width / newWidth, (double)height / newHeight);
         return new ImageRegion(left * sx, top * sy, (left + crop) * sx, (top + crop) * sy);
     }
+
+    /// <summary>The size an image is resized to under <paramref name="preprocessing"/>: a square of its side, or the shortest edge kept (<see cref="ResizedSize(int, int, int)"/>).</summary>
+    public static (int Width, int Height) ResizedSize(int width, int height, ImagePreprocessing preprocessing) =>
+        preprocessing.Resize == ImageResize.Square
+            ? (preprocessing.ShortestEdge, preprocessing.ShortestEdge)
+            : ResizedSize(width, height, preprocessing.ShortestEdge);
 
     /// <summary>The size an image is resized to: shortest edge <paramref name="shortestEdge"/>, the other in proportion, truncated.</summary>
     public static (int Width, int Height) ResizedSize(int width, int height, int shortestEdge)

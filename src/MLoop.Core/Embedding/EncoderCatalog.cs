@@ -26,6 +26,45 @@ public static class EncoderCatalog
         License: "Apache-2.0");
 
     /// <summary>
+    /// DINOv2 ViT-B/14 (<c>facebook/dinov2-base</c>, Apache-2.0) as ONNX — <see cref="DinoV2Small"/>'s family at the next
+    /// size: 768 dimensions, the class token of <c>last_hidden_state</c>, the same preprocessing and patch grid. The
+    /// download is pinned to one revision of <c>onnx-community/dinov2-base</c>.
+    /// </summary>
+    public static readonly EncoderDefinition DinoV2Base = new(
+        Id: "dinov2-base",
+        Version: "1",
+        Dimension: 768,
+        Preprocessing: ImagePreprocessing.ImageNet(shortestEdge: 256, cropSize: 224),
+        InputName: "pixel_values",
+        OutputName: "last_hidden_state",
+        Pooling: EncoderPooling.FirstToken,
+        Url: "https://huggingface.co/onnx-community/dinov2-base/resolve/31ef06cac16d5d301c5930d147002a058c85a5e4/onnx/model.onnx",
+        Sha256: "320d1012a6fc65b101fc85ca30ee7a47b2e4f6a2e8bd78fb9d7036def0e30cb0",
+        PatchSize: 14,
+        License: "Apache-2.0");
+
+    /// <summary>
+    /// SigLIP ViT-B/16 at 224 pixels (<c>google/siglip-base-patch16-224</c>, Apache-2.0), its image tower as ONNX — a
+    /// different family from DINOv2 (trained to match images with text, not by self-distillation), so a comparison
+    /// between the two is of representations, not of sizes. 768 dimensions: the tower's pooled output
+    /// (<c>pooler_output</c>, the attention-pooling head's — SigLIP has no class token). The whole image is read, resized
+    /// to a 224-pixel square (aspect ratio given up) as its image processor does; mean and std are 0.5. It gives no patch
+    /// vectors: its patch tokens are not in the pooled output. The download is pinned to one revision of
+    /// <c>Xenova/siglip-base-patch16-224</c>'s <c>vision_model.onnx</c>.
+    /// </summary>
+    public static readonly EncoderDefinition SigLipBase = new(
+        Id: "siglip-base-224",
+        Version: "1",
+        Dimension: 768,
+        Preprocessing: new ImagePreprocessing(224, 224, [0.5f, 0.5f, 0.5f], [0.5f, 0.5f, 0.5f], ImageResize.Square),
+        InputName: "pixel_values",
+        OutputName: "pooler_output",
+        Pooling: EncoderPooling.None,
+        Url: "https://huggingface.co/Xenova/siglip-base-patch16-224/resolve/4649052661e53c7000355844105f8a1792088239/onnx/vision_model.onnx",
+        Sha256: "f89d41bac7f4d4b87e010a467d93f98689d708916ed22f5a07f96fdfa26f475f",
+        License: "Apache-2.0");
+
+    /// <summary>
     /// paraphrase-multilingual-MiniLM-L12-v2 (<c>sentence-transformers</c>, Apache-2.0) as ONNX: a sentence encoder of
     /// some fifty languages, Korean among them — 384 dimensions, the mean of <c>last_hidden_state</c> over the text's
     /// tokens, at most 128 tokens (its <c>max_seq_length</c>), XLM-RoBERTa's SentencePiece vocabulary. The downloads are
@@ -48,7 +87,7 @@ public static class EncoderCatalog
         License: "Apache-2.0");
 
     /// <summary>Every entry, by id.</summary>
-    public static IReadOnlyList<EncoderDefinition> All { get; } = [DinoV2Small, MultilingualMiniLm];
+    public static IReadOnlyList<EncoderDefinition> All { get; } = [DinoV2Small, DinoV2Base, SigLipBase, MultilingualMiniLm];
 
     /// <summary>The entry named <paramref name="id"/>, or <see langword="null"/>.</summary>
     public static EncoderDefinition? Find(string? id) =>

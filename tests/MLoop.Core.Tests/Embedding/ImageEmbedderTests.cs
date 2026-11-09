@@ -192,6 +192,34 @@ public class ImageEmbedderTests
         Assert.Equal(282 * 640 / 341.0, region.Y1, 9);
     }
 
+    private static readonly ImagePreprocessing Squared =
+        new(ShortestEdge: 6, CropSize: 6, Mean: [0.5f, 0.5f, 0.5f], Std: [0.5f, 0.5f, 0.5f], Resize: ImageResize.Square);
+
+    /// <summary>A processor that resizes to a fixed square (SigLIP's) reads the whole image: nothing is cropped away.</summary>
+    [Fact]
+    public void ASquareResize_GivesTheSquare_AndTheCropIsTheWholeImage()
+    {
+        Assert.Equal((6, 6), ImagePreprocessor.ResizedSize(37, 23, Squared));
+        Assert.Equal((12, 8), ImagePreprocessor.ResizedSize(37, 23, ImagePreprocessing.ImageNet(8, 6)));
+
+        var region = ImagePreprocessor.CropRegion(37, 23, Squared);
+
+        Assert.Equal((0, 0, 37, 23), (region.X0, region.Y0, region.X1, region.Y1));
+    }
+
+    [Fact]
+    public void ASquareResize_GivesTheTensorPillowComputes_ForAnImageThatIsNotSquare()
+    {
+        var expected = JsonDocument.Parse(File.ReadAllText(Path.Combine(Fixtures, "square.json"))).RootElement
+            .GetProperty("tensor").EnumerateArray().Select(e => e.GetSingle()).ToArray();
+
+        var tensor = ImagePreprocessor.ToTensor(Pattern, Squared);
+
+        Assert.Equal(expected.Length, tensor.Length);
+        for (var i = 0; i < tensor.Length; i++)
+            Assert.True(Math.Abs(expected[i] - tensor[i]) < 1e-5, $"element {i}: Pillow {expected[i]}, here {tensor[i]}");
+    }
+
     /// <summary>
     /// The preprocessor's revision is part of every vector's identity, so the tensors it makes are pinned to it: when one
     /// changes, this fails until <see cref="ImagePreprocessor.Revision"/> is raised and the digest below replaced. Rounded

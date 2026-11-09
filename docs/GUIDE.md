@@ -1955,12 +1955,21 @@ The catalog `mloop encoder install` knows:
 | Encoder | Weights | License | Vector | Preprocessing |
 |---|---|---|---|---|
 | `dinov2-small` | DINOv2 ViT-S/14 as ONNX (88.5 MB), one pinned revision of `onnx-community/dinov2-small` | Apache-2.0 (`facebook/dinov2-small`) | 384, the class token | shortest edge 256 (bicubic), centre crop 224, ImageNet mean/std |
+| `dinov2-base` | DINOv2 ViT-B/14 as ONNX (346.6 MB), one pinned revision of `onnx-community/dinov2-base` | Apache-2.0 (`facebook/dinov2-base`) | 768, the class token | as `dinov2-small` |
+| `siglip-base-224` | the image tower of SigLIP ViT-B/16 at 224 pixels as ONNX (371.8 MB), one pinned revision of `Xenova/siglip-base-patch16-224` | Apache-2.0 (`google/siglip-base-patch16-224`) | 768, the tower's pooled output (no class token) | the whole image resized to a 224 square (aspect ratio given up, no crop), mean/std 0.5 |
 | `multilingual-minilm` | paraphrase-multilingual-MiniLM-L12-v2 as ONNX (470 MB) and its SentencePiece model (5 MB), one pinned revision of `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` | Apache-2.0 | 384, the mean of the text's tokens | text, some fifty languages (Korean, Japanese, Chinese, …), at most 128 tokens |
 
 The product ships no weights: `install` downloads them once, refuses a file whose SHA-256 is not the pinned one, and
 installs them like `add` does. Their vectors match the encoders' own processors and the same weights run from Python
-(cosine 1.000 — `dinov2-small` on photographs and screenshots, transparent ones included; `multilingual-minilm`
-against sentence-transformers on Korean, Japanese and mixed-script text, an over-long text and an empty one).
+(cosine 1.000 — `dinov2-small` on photographs and screenshots, transparent ones included; `dinov2-base` and
+`siglip-base-224` on images wider than tall, taller than wide and square, against Pillow and ONNX Runtime run from Python;
+`multilingual-minilm` against sentence-transformers on Korean, Japanese and mixed-script text, an over-long text and an
+empty one).
+
+The three image encoders are two families — DINOv2 is trained on images alone, SigLIP to match images with text — so
+running the same images through `dinov2-base` and `siglip-base-224` compares representations, and `dinov2-small` with
+`dinov2-base` compares sizes of one. Vectors of different encoders are not comparable with each other; `embed` answers
+with the encoder's id and SHA-256 so a stored vector says which space it is in.
 
 ```bash
 mloop encoder install dinov2-small                  # download a catalog encoder; its SHA-256 is checked against the pin
@@ -1989,16 +1998,47 @@ the image preprocessing the encoder was trained with:
 `pooling` is `first-token` for an output of `[images, tokens, dimension]` (a vision transformer's class token) or
 `none` for `[images, dimension]`. An image is resized so its shortest edge is `shortestEdge` (bicubic, computed as
 Pillow computes it — the resampling most published image processors use), cropped to a `cropSize` square at the
-centre, scaled to [0, 1] and normalised per channel. Adding a `sha256` to the definition makes `add` refuse a graph
+centre, scaled to [0, 1] and normalised per channel. An encoder trained to read the whole image at a fixed size
+(SigLIP) says `"resize": "square"` inside `preprocessing`: both edges become `shortestEdge` — the side of the square, which
+must equal `cropSize` — and nothing is cropped (`"resize": "shortest-edge"` is the default). Adding a `sha256` to the definition makes `add` refuse a graph
 with other contents. An optional `license` (an SPDX identifier, `Apache-2.0`) is shown by `encoder list`; it is information
 only and not part of the encoder's identity, so it changes no vector. Encoders run on ONNX Runtime (`mloop runtime install onnxruntime`).
 
 A vision transformer's definition that should give patch vectors — `POST /embed?patches=true`, and every `image-anomaly`
 model — also says `patchSize`, the side of one patch in crop pixels (14 for DINOv2); without it a patch request, or training
-an `image-anomaly` model with that encoder, is refused and names the field. `outputName` may be any output of the graph, an
+an `image-anomaly` model with that encoder, is refused and names the field. (`dinov2-small` and `dinov2-base` give patch vectors; `siglip-base-224`
+does not — its pooled output has no tokens.) `outputName` may be any output of the graph, an
 intermediate layer's among them: add that layer's tensor to the graph's outputs, give the new name as `outputName`, and
 leave `url` and `sha256` out of a definition for a graph you made (`add` records the graph's own SHA-256). The vectors are
 then that layer's, and the encoder's identity in answers is the id and SHA-256 of your graph.
+
+An encoder that is not in the catalog is added from its ONNX graph and a definition read off its image processor
+(`preprocessor_config.json`) — for CLIP ViT-B/32 (MIT), the image tower exported by `Xenova/clip-vit-base-patch32`
+(`onnx/vision_model.onnx`, which takes `pixel_values` and returns `image_embeds`, `[images, 512]`):
+
+```json
+{
+  "id": "clip-vit-base-patch32",
+  "version": "1",
+  "dimension": 512,
+  "license": "MIT",
+  "preprocessing": { "shortestEdge": 224, "cropSize": 224, "mean": [0.48145466, 0.4578275, 0.40821073], "std": [0.26862954, 0.26130258, 0.27577711] },
+  "inputName": "pixel_values",
+  "outputName": "image_embeds",
+  "pooling": "none"
+}
+```
+
+```bash
+mloop encoder add clip.json --model vision_model.onnx
+mloop embed photo.png --encoder clip-vit-base-patch32 --json
+```
+
+The input and output names, and whether the output is `[images, dimension]` (`pooling: none`) or `[images, tokens, dimension]`
+(`first-token`), are the graph's — `embed` refuses a graph that lacks the named input or output, and an output of another
+shape than the definition says (`add` does not open the graph, so run one image through `embed` after adding). `resize` and the mean and std come from the processor's `resample` (bicubic is
+what `embed` computes), `size`, `crop_size`, `image_mean` and `image_std`. Its vectors matched the same graph run with
+Pillow and ONNX Runtime from Python (cosine 1.000) on the three image shapes above.
 
 A text encoder's definition says `"kind": "text"` and how text becomes its input instead of the image preprocessing
 (a definition without `kind` is of images):
