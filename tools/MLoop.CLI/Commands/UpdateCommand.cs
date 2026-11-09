@@ -38,7 +38,7 @@ public static class UpdateCommand
     /// only thing read — so a self-update that silently did not happen looked identical to one that
     /// did, and the next run kept the old binary without anyone learning why.
     /// </remarks>
-    private static async Task<int> ExecuteAsync(bool checkOnly)
+    internal static async Task<int> ExecuteAsync(bool checkOnly)
     {
         AnsiConsole.MarkupLine("[blue]Checking for updates...[/]");
 
@@ -69,7 +69,7 @@ public static class UpdateCommand
             return 0;
         }
 
-        var installMethod = InstallDetector.Detect();
+        var installMethod = DetectInstall();
 
         return installMethod switch
         {
@@ -80,6 +80,12 @@ public static class UpdateCommand
             _ => Unsupported(installMethod),
         };
     }
+
+    /// <summary>How the running copy was installed — a seam, so a test chooses the path the update takes.</summary>
+    internal static Func<InstallMethod> DetectInstall { get; set; } = InstallDetector.Detect;
+
+    /// <summary>The command that updates a dotnet tool install — a seam, so a test runs a harmless one and sees both outcomes.</summary>
+    internal static (string FileName, string Arguments) ToolUpdateCommand { get; set; } = ("dotnet", "tool update -g mloop");
 
     private static int Unsupported(InstallMethod installMethod)
     {
@@ -94,18 +100,28 @@ public static class UpdateCommand
     {
         AnsiConsole.MarkupLine("[blue]Updating via dotnet tool...[/]");
 
-        var psi = new ProcessStartInfo("dotnet", "tool update -g mloop")
+        var psi = new ProcessStartInfo(ToolUpdateCommand.FileName, ToolUpdateCommand.Arguments)
         {
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false
         };
 
-        var process = Process.Start(psi);
+        Process? process;
+        try
+        {
+            process = Process.Start(psi);
+        }
+        catch (System.ComponentModel.Win32Exception)
+        {
+            // The program is not on PATH: Process.Start throws rather than returning null, which used to end `mloop update` in a stack trace.
+            process = null;
+        }
+
         if (process is null)
         {
             ErrorConsole.Error(
-                "Failed to start 'dotnet tool update -g mloop'.",
+                $"Failed to start '{ToolUpdateCommand.FileName} {ToolUpdateCommand.Arguments}'.",
                 "Check that the .NET SDK is on PATH.");
             return 1;
         }

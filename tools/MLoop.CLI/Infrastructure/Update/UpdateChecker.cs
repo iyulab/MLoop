@@ -10,10 +10,13 @@ public record UpdateInfo(string LatestVersion, string CurrentVersion, bool Updat
 
 public static class UpdateChecker
 {
-    private static readonly string CacheDir = Path.Combine(
+    /// <summary>
+    /// Where the last check's answer is kept (24 hours). A seam: a test points it at a scratch directory instead of the user's own.
+    /// </summary>
+    internal static string CacheDirectory { get; set; } = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "mloop");
 
-    private static readonly string CachePath = Path.Combine(CacheDir, "update-check.json");
+    private static string CachePath => Path.Combine(CacheDirectory, "update-check.json");
 
     private const string GitHubReleasesUrl = "https://api.github.com/repos/iyulab/MLoop/releases?per_page=15";
 
@@ -21,6 +24,15 @@ public static class UpdateChecker
     {
         PooledConnectionLifetime = TimeSpan.FromMinutes(2)
     };
+
+    /// <summary>
+    /// The handler every request goes through — the shared socket pool, or a stand-in a test installs so the check, the download and the
+    /// failures on the way run without a network.
+    /// </summary>
+    internal static HttpMessageHandler Handler { get; set; } = SharedHandler;
+
+    /// <summary>The executable <see cref="ReplaceExecutable"/> replaces: this process, unless a test names a copy.</summary>
+    internal static string? ExecutablePath { get; set; }
 
     public static string GetCurrentVersion()
     {
@@ -54,7 +66,7 @@ public static class UpdateChecker
 
             var timeout = forceCheck ? TimeSpan.FromSeconds(30) : TimeSpan.FromSeconds(2);
 
-            using var http = new HttpClient(SharedHandler, disposeHandler: false) { Timeout = timeout };
+            using var http = new HttpClient(Handler, disposeHandler: false) { Timeout = timeout };
             http.DefaultRequestHeaders.UserAgent.ParseAdd("MLoop-CLI");
 
             var releases = await http.GetFromJsonAsync(
@@ -105,7 +117,7 @@ public static class UpdateChecker
         var assetName = $"mloop-{rid}{ext}";
         var downloadUrl = $"https://github.com/iyulab/MLoop/releases/download/v{version}/{assetName}";
 
-        using var http = new HttpClient(SharedHandler, disposeHandler: false) { Timeout = TimeSpan.FromMinutes(5) };
+        using var http = new HttpClient(Handler, disposeHandler: false) { Timeout = TimeSpan.FromMinutes(5) };
         http.DefaultRequestHeaders.UserAgent.ParseAdd("MLoop-CLI");
 
         using var response = await http.GetAsync(downloadUrl, HttpCompletionOption.ResponseHeadersRead);
@@ -130,7 +142,7 @@ public static class UpdateChecker
 
     public static void ReplaceExecutable(string newFilePath)
     {
-        var currentPath = Environment.ProcessPath
+        var currentPath = ExecutablePath ?? Environment.ProcessPath
             ?? throw new InvalidOperationException("Cannot determine current executable path.");
 
         if (OperatingSystem.IsWindows())
@@ -253,7 +265,7 @@ public static class UpdateChecker
     {
         try
         {
-            Directory.CreateDirectory(CacheDir);
+            Directory.CreateDirectory(CacheDirectory);
             var cache = new UpdateCache
             {
                 LatestVersion = info.LatestVersion,
