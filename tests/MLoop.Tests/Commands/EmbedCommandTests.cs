@@ -58,6 +58,26 @@ public sealed class EmbedCommandTests : IDisposable
         Assert.Equal(64, result.RootElement.GetProperty("encoder").GetProperty("sha256").GetString()!.Length);
     }
 
+    [Fact]
+    public async Task AnEncoderThatNamesItsLicense_ListsIt_AndOneThatDoesNotListsNone()
+    {
+        await AddTiny();
+        var (_, bare, _) = await CliRunner.RunAsync("encoder", "list", "--json");
+        using (var doc = JsonDocument.Parse(bare))
+            Assert.False(doc.RootElement.GetProperty("encoders")[0].TryGetProperty("license", out _));
+
+        await CliRunner.RunAsync("encoder", "remove", "tiny");
+        var definition = Path.Combine(_dir, "licensed.json");
+        File.WriteAllText(definition, File.ReadAllText(Path.Combine(_dir, "encoder.json"))
+            .Replace("\"id\": \"tiny\"", "\"id\": \"tiny\", \"license\": \"MIT\""));
+        var (added, _, addErr) = await CliRunner.RunAsync("encoder", "add", definition, "--model", Path.Combine(Fixtures, "tiny-encoder.onnx"));
+        Assert.True(added == 0, addErr);
+
+        var (_, list, _) = await CliRunner.RunAsync("encoder", "list", "--json");
+        using var licensed = JsonDocument.Parse(list);
+        Assert.Equal("MIT", licensed.RootElement.GetProperty("encoders")[0].GetProperty("license").GetString());
+    }
+
     private Task<(int ExitCode, string Stdout, string Stderr)> AddTinyText()
     {
         File.WriteAllText(Path.Combine(_dir, "text-encoder.json"), """

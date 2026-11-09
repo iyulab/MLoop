@@ -22,7 +22,8 @@ public static class EncoderCatalog
         Pooling: EncoderPooling.FirstToken,
         Url: "https://huggingface.co/onnx-community/dinov2-small/resolve/8b1f705a3a7f6f062f6bdd21986c1583d3ef105d/onnx/model.onnx",
         Sha256: "f22797eabf810a75e41de68d378541ebea372122b25c4ce3ef25ff618250c20a",
-        PatchSize: 14);
+        PatchSize: 14,
+        License: "Apache-2.0");
 
     /// <summary>
     /// paraphrase-multilingual-MiniLM-L12-v2 (<c>sentence-transformers</c>, Apache-2.0) as ONNX: a sentence encoder of
@@ -43,7 +44,8 @@ public static class EncoderCatalog
         Kind: EncoderKind.Text,
         Text: new TextPreprocessing(MaxTokens: 128, TokenIds: TextTokenIds.XlmRoberta),
         TokenizerUrl: "https://huggingface.co/sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2/resolve/e8f8c211226b894fcb81acc59f3b34ba3efd5f42/sentencepiece.bpe.model",
-        TokenizerSha256: "cfc8146abe2a0488e9e2a0c56de7952f7c11ab059eca145a0a727afce0db2865");
+        TokenizerSha256: "cfc8146abe2a0488e9e2a0c56de7952f7c11ab059eca145a0a727afce0db2865",
+        License: "Apache-2.0");
 
     /// <summary>Every entry, by id.</summary>
     public static IReadOnlyList<EncoderDefinition> All { get; } = [DinoV2Small, MultilingualMiniLm];
@@ -51,6 +53,16 @@ public static class EncoderCatalog
     /// <summary>The entry named <paramref name="id"/>, or <see langword="null"/>.</summary>
     public static EncoderDefinition? Find(string? id) =>
         All.FirstOrDefault(e => string.Equals(e.Id, id?.Trim(), StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// The license of <paramref name="definition"/>'s weights: the one it names, else the catalog entry with the same id
+    /// and weights (an encoder installed before definitions carried a license is still the catalog's); <see langword="null"/>
+    /// for an encoder of the user's own that does not say.
+    /// </summary>
+    public static string? LicenseOf(EncoderDefinition definition) =>
+        definition.License ?? All.FirstOrDefault(e =>
+            string.Equals(e.Id, definition.Id, StringComparison.OrdinalIgnoreCase)
+            && e.Sha256 is not null && string.Equals(e.Sha256, definition.Sha256, StringComparison.OrdinalIgnoreCase))?.License;
 
     /// <summary>The ids, for a message that lists what can be installed.</summary>
     public static string Ids => string.Join(", ", All.Select(e => e.Id));

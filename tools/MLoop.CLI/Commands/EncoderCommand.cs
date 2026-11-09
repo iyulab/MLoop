@@ -24,6 +24,15 @@ public static class EncoderCommand
         return command;
     }
 
+    /// <summary>An installed encoder's identity as JSON, with its license beside it when known (not part of the identity).</summary>
+    private static System.Text.Json.Nodes.JsonObject Listing(EncoderDefinition definition)
+    {
+        var node = JsonSerializer.SerializeToNode(EncoderIdentity.Of(definition), Json)!.AsObject();
+        if (EncoderCatalog.LicenseOf(definition) is { } license)
+            node["license"] = license;
+        return node;
+    }
+
     private static Command CreateListCommand()
     {
         var jsonOption = new Option<bool>("--json") { Description = "Emit the encoder list as JSON to stdout instead of the table" };
@@ -38,7 +47,7 @@ public static class EncoderCommand
             using var machineOutput = json ? new JsonOutputScope() : null;
             if (json)
             {
-                Console.WriteLine(JsonSerializer.Serialize(new { encoders = encoders.Select(e => EncoderIdentity.Of(e.Definition)) }, Json));
+                Console.WriteLine(JsonSerializer.Serialize(new { encoders = encoders.Select(e => Listing(e.Definition)) }, Json));
                 return 0;
             }
 
@@ -54,12 +63,14 @@ public static class EncoderCommand
             table.AddColumn("Version");
             table.AddColumn("Dimension");
             table.AddColumn("Input");
+            table.AddColumn("License");
             table.AddColumn("SHA-256");
             foreach (var e in encoders)
             {
                 var d = e.Definition;
                 table.AddRow(Markup.Escape(d.Id), Markup.Escape(d.Version), d.Dimension.ToString(System.Globalization.CultureInfo.InvariantCulture),
                     d.Preprocessing is { } image ? $"{image.CropSize}²" : $"text, {d.Text?.MaxTokens} tokens",
+                    Markup.Escape(EncoderCatalog.LicenseOf(d) ?? "-"),
                     Markup.Escape(d.Sha256?[..12] ?? "-"));
             }
             AnsiConsole.Write(table);

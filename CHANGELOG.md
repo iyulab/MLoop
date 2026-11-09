@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - **`integrity: refuse_changed_model: true` in `mloop.yaml` makes a production model that was changed after its promotion a refusal instead of a warning.** Since 0.50.0 `predict` and `serve` say, once per load, that `production/model.zip` is not the file its promotion recorded; with the setting on, every command that loads the production slot's model (`predict`, `evaluate` without an experiment id, `serve`) stops with the same message and a non-zero exit code, and `POST /predict` answers `409 Conflict`. The setting is off by default, so a project that places models by hand behaves as before. The hash lives beside the model, so this guards against damage and a swapped file, not against someone who rewrites both. `mloop validate` and every command that loads the file report a misspelled `integrity:` key like any other unknown setting.
+- **`mloop encoder list` shows each encoder's license.** A definition can name it (`"license": "Apache-2.0"`, an SPDX identifier; `--json` carries it as `license`), and the catalog entries do; an encoder installed from the catalog before this shows the catalog's license for the same id and weights. It is information only — not part of an encoder's identity, so vectors and the compatibility of trained models are unchanged.
 
 ### Fixed
 

@@ -1966,7 +1966,7 @@ against sentence-transformers on Korean, Japanese and mixed-script text, an over
 mloop encoder install dinov2-small                  # download a catalog encoder; its SHA-256 is checked against the pin
 mloop encoder add encoder.json --model model.onnx   # install your own; records the graph's SHA-256
 mloop encoder add text.json --model model.onnx --tokenizer sentencepiece.bpe.model   # a text encoder: graph and tokenizer
-mloop encoder list                                  # id, version, dimension, input size, SHA-256
+mloop encoder list                                  # id, version, dimension, input size, license, SHA-256
 mloop encoder list --json
 mloop encoder remove my-encoder
 ```
@@ -1990,7 +1990,8 @@ the image preprocessing the encoder was trained with:
 `none` for `[images, dimension]`. An image is resized so its shortest edge is `shortestEdge` (bicubic, computed as
 Pillow computes it — the resampling most published image processors use), cropped to a `cropSize` square at the
 centre, scaled to [0, 1] and normalised per channel. Adding a `sha256` to the definition makes `add` refuse a graph
-with other contents. Encoders run on ONNX Runtime (`mloop runtime install onnxruntime`).
+with other contents. An optional `license` (an SPDX identifier, `Apache-2.0`) is shown by `encoder list`; it is information
+only and not part of the encoder's identity, so it changes no vector. Encoders run on ONNX Runtime (`mloop runtime install onnxruntime`).
 
 A vision transformer's definition that should give patch vectors — `POST /embed?patches=true`, and every `image-anomaly`
 model — also says `patchSize`, the side of one patch in crop pixels (14 for DINOv2); without it a patch request, or training

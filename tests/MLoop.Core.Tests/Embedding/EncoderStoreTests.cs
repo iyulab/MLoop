@@ -176,6 +176,25 @@ public sealed class EncoderStoreTests : IDisposable
     }
 
     [Fact]
+    public void EveryCatalogEntry_NamesItsLicense()
+        => Assert.All(EncoderCatalog.All, e => Assert.False(string.IsNullOrWhiteSpace(e.License), e.Id));
+
+    [Fact]
+    public void ALicense_IsTheDefinitionsOwn_ElseTheCatalogsForTheSameWeights_ElseNone()
+    {
+        var catalog = EncoderCatalog.DinoV2Small;
+
+        // An encoder installed before definitions carried a license is still the catalog's (same id, same weights).
+        Assert.Equal(catalog.License, EncoderCatalog.LicenseOf(catalog with { License = null }));
+        // Another id, or other weights under the same id, is not the catalog's — and nothing is made up for it.
+        Assert.Null(EncoderCatalog.LicenseOf(catalog with { License = null, Id = "my-encoder" }));
+        Assert.Null(EncoderCatalog.LicenseOf(catalog with { License = null, Sha256 = new string('0', 64) }));
+        Assert.Null(EncoderCatalog.LicenseOf(catalog with { License = null, Sha256 = null }));
+        // What a definition says wins.
+        Assert.Equal("MIT", EncoderCatalog.LicenseOf(catalog with { License = "MIT" }));
+    }
+
+    [Fact]
     public void AMissingCatalogEncoder_IsAnsweredWithItsInstallCommand()
     {
         var store = new EncoderStore(_root);

@@ -28,6 +28,11 @@ namespace MLoop.Core.Embedding;
 /// <param name="Text">How text becomes the graph's input; <see langword="null"/> for an image encoder.</param>
 /// <param name="TokenizerUrl">Where a text encoder's tokenizer model is downloaded from; <see langword="null"/> for one given as a file.</param>
 /// <param name="TokenizerSha256">The tokenizer model's SHA-256, lower-case hex; <see langword="null"/> when not pinned.</param>
+/// <param name="License">
+/// The weights' license as an SPDX identifier (<c>Apache-2.0</c>), for <c>mloop encoder list</c> to show; <see langword="null"/>
+/// when the definition does not say. Information only — it is not part of the encoder's identity, so naming it
+/// changes no vector and no model's compatibility.
+/// </param>
 public sealed record EncoderDefinition(
     string Id,
     string Version,
@@ -42,7 +47,8 @@ public sealed record EncoderDefinition(
     EncoderKind Kind = EncoderKind.Image,
     TextPreprocessing? Text = null,
     string? TokenizerUrl = null,
-    string? TokenizerSha256 = null)
+    string? TokenizerSha256 = null,
+    string? License = null)
 {
     /// <summary>What makes this definition unusable, or <see langword="null"/> when it can run.</summary>
     public string? Problem()
