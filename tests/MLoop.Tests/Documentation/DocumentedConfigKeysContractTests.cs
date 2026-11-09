@@ -16,7 +16,7 @@ public class DocumentedConfigKeysContractTests
 {
     private static readonly Regex YamlBlock = new(@"```yaml\r?\n(?<body>.*?)```", RegexOptions.Singleline | RegexOptions.Compiled);
 
-    private static readonly string[] ProjectKeys = ["project", "models", "data", "retention"];
+    private static readonly string[] ProjectKeys = ["project", "models", "data", "retention", "integrity"];
 
     private static readonly string[] ModelKeys = ["prep", "columns", "gate", "training"];
 

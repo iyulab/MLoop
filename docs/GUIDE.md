@@ -721,9 +721,21 @@ this was recorded have neither field.
 
 Each promotion also records the SHA-256 of the model it put in the slot (`modelSha256` in `production/metadata.json`).
 `mloop predict` and `mloop serve` compare `production/model.zip` with it when they load it and say, once per load, that the
-file was changed after it was promoted (disk damage, a file written over by hand, another tool). It is a warning, not a
-refusal — the model still answers; `mloop promote <experiment-id>` puts a staged model there again and `mloop rollback`
+file was changed after it was promoted (disk damage, a file written over by hand, another tool). By default that is a
+warning — the model still answers; `mloop promote <experiment-id>` puts a staged model there again and `mloop rollback`
 returns to the previous one. A slot promoted before the hash was recorded has nothing to compare.
+
+A project that never places models by hand can have the change refused instead:
+
+```yaml
+integrity:
+  refuse_changed_model: true   # a production model that is not the file its promotion recorded is not loaded
+```
+
+Every command that loads the production slot's model (`predict`, `evaluate` without an experiment id, `serve`) then stops with the
+message above and exits non-zero, and `POST /predict` answers `409` with it. The hash is a file in the same folder as the
+model, so this catches damage and a model swapped without its pointer, not someone who rewrites both files — it is an integrity
+check, not a signature.
 
 A complete pipeline that retrains, compares with production on the same rows, promotes through the gate and watches the served model
 with `mloop trigger check` is in [`docs/examples/pipeline`](examples/pipeline/README.md): a GitHub Actions workflow, a cron script and

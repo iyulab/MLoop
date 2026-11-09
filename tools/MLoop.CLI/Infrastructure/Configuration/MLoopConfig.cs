@@ -27,6 +27,11 @@ public class MLoopConfig
     /// How long prediction logs and feedback are kept. Absent: kept until removed by hand.
     /// </summary>
     public RetentionSettings? Retention { get; set; }
+
+    /// <summary>
+    /// What a load does with a production model that changed after it was promoted. Absent: it answers and says so.
+    /// </summary>
+    public MLoop.Core.Models.IntegritySettings? Integrity { get; set; }
 }
 
 /// <summary>

@@ -311,6 +311,16 @@ public static class PredictEndpoint
                     warnings
                 });
             }
+            catch (MLoop.Core.Models.ChangedModelException ex)
+            {
+                // Not the caller's fault and not a crash: the project asked for a model that changed after its promotion to be refused.
+                logger.LogError(ex, "Prediction refused for '{ModelName}': the production model changed after it was promoted", modelName);
+                return Results.Problem(
+                    title: "Production model refused",
+                    detail: ex.Message,
+                    statusCode: StatusCodes.Status409Conflict
+                );
+            }
             catch (ArgumentException ex)
             {
                 // Caller error (e.g. rows share no column with the trained schema — the silent-GIGO guard):
@@ -345,6 +355,7 @@ public static class PredictEndpoint
         .Produces<object>(StatusCodes.Status400BadRequest)
         .Produces<object>(StatusCodes.Status404NotFound)
         .Produces<object>(StatusCodes.Status413PayloadTooLarge)
+        .Produces<ProblemDetails>(StatusCodes.Status409Conflict)
         .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
         .RequireAuthorization();
 

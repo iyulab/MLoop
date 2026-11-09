@@ -350,8 +350,9 @@ public class PredictionEngine
         List<string> tempFiles,
         ScoringLayers layers = ScoringLayers.All)
     {
-        // The production model is the file its promotion recorded, or the answers say so below: a warning, not a refusal.
-        if (ModelIntegrity.Mismatch(modelPath) is { } changed)
+        // The production model is the file its promotion recorded, or the answers say so below: a warning - unless the project
+        // refuses a changed model, which the load right below does (once, as an error).
+        if (ModelIntegrity.Warning(modelPath) is { } changed)
             MLoop.CLI.Infrastructure.Diagnostics.WarningConsole.Warn($"{changed}");
 
         // Load the trained model — with its decision threshold, unless the caller converts the saved model

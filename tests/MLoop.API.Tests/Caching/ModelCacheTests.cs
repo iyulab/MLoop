@@ -227,6 +227,39 @@ public sealed class ModelCacheTests : IDisposable
         Assert.Equal(1, stats.TotalMisses);
     }
 
+    /// <summary>A production slot as the project lays it out, whose recorded hash is not the file's — the model was changed after its promotion.</summary>
+    private string ChangedProductionSlot(string? projectYaml)
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"mloop-cache-integrity-{Guid.NewGuid():N}");
+        var slot = Path.Combine(root, "models", "default", "production");
+        Directory.CreateDirectory(slot);
+        _ml.Model.Save(s_tinyModel.Value.Model, s_tinyModel.Value.Schema, Path.Combine(slot, "model.zip"));
+        File.WriteAllText(Path.Combine(slot, "metadata.json"), "{\"experimentId\":\"exp-001\",\"modelSha256\":\"0000000000000000\"}");
+        if (projectYaml is not null)
+            File.WriteAllText(Path.Combine(root, "mloop.yaml"), projectYaml);
+        _tempFiles.Add(Path.Combine(slot, "model.zip"));
+        return Path.Combine(slot, "model.zip");
+    }
+
+    [Fact]
+    public void AChangedProductionModel_IsRefused_WhenTheProjectAsksForIt_AndTheFailureIsNotCached()
+    {
+        var path = ChangedProductionSlot("integrity:\n  refuse_changed_model: true\n");
+        var cache = NewCache();
+
+        Assert.Throws<MLoop.Core.Models.ChangedModelException>(() => cache.GetOrLoad(path));
+        Assert.Throws<MLoop.Core.Models.ChangedModelException>(() => cache.GetOrLoad(path));   // judged again, not remembered as a model
+        Assert.Equal(0, cache.GetStats().CachedCount);
+    }
+
+    [Fact]
+    public void AChangedProductionModel_StillAnswers_WhenTheProjectDoesNotAskForARefusal()
+    {
+        var path = ChangedProductionSlot(projectYaml: null);
+
+        Assert.NotNull(NewCache().GetOrLoad(path));
+    }
+
     private sealed class Sample
     {
         public float X { get; set; }

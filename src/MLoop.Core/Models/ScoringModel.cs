@@ -35,10 +35,13 @@ public static class ScoringModel
     /// shape reads it from the data it is given (see the multiclass calibration), never from this.
     /// </remarks>
     /// <exception cref="InvalidOperationException">The task needs a runtime that is not installed.</exception>
+    /// <exception cref="ChangedModelException">The production model changed after it was promoted and the project refuses that.</exception>
     public static ITransformer Load(
         MLContext mlContext, string modelPath, out DataViewSchema inputSchema, string? task = null, ScoringLayers layers = ScoringLayers.All)
     {
         ArgumentNullException.ThrowIfNull(mlContext);
+        // Before anything is read: a production model the project refuses to trust (see ModelIntegrity) answers nothing.
+        ModelIntegrity.Enforce(modelPath);
         if (!string.IsNullOrWhiteSpace(task))
             RuntimeManager.EnsureRuntimeForTask(task);
         // A classifier that scores with logits answers in probabilities first, whatever the layers: they are what the

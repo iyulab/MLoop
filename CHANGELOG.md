@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`integrity: refuse_changed_model: true` in `mloop.yaml` makes a production model that was changed after its promotion a refusal instead of a warning.** Since 0.50.0 `predict` and `serve` say, once per load, that `production/model.zip` is not the file its promotion recorded; with the setting on, every command that loads the production slot's model (`predict`, `evaluate` without an experiment id, `serve`) stops with the same message and a non-zero exit code, and `POST /predict` answers `409 Conflict`. The setting is off by default, so a project that places models by hand behaves as before. The hash lives beside the model, so this guards against damage and a swapped file, not against someone who rewrites both. `mloop validate` and every command that loads the file report a misspelled `integrity:` key like any other unknown setting.
+
 ### Fixed
 
 - **`mloop predict` no longer replaces the file of an earlier run made in the same second.** The default output name (`predictions/<model>-predictions-<stamp>.csv`, and the forecast, detection and image-anomaly names) has the resolution of a second, so a script that ran `predict` twice quickly wrote one file and the second silently replaced the first (a 700-row output became a 60-row one). A name that is taken now gets `-2`, `-3`, ... before the extension; `--output` is unchanged, and `mloop logs` and the other readers find the suffixed files like any other.

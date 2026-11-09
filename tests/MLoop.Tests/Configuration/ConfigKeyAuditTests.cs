@@ -43,6 +43,8 @@ public class ConfigKeyAuditTests
         project: demo
         retention:
           days: 30
+        integrity:
+          refuse_changed_model: true
         models:
           Any Model Name:
             task: multiclass-classification
@@ -84,6 +86,15 @@ public class ConfigKeyAuditTests
     }
 
     [Fact]
+    public void AMisspelledIntegritySetting_IsReported_BecauseARefusalThatWasNeverSwitchedOnIsNotOne()
+    {
+        var unknown = ConfigKeyAudit.Find<MLoopConfig>("integrity:\n  refuse_changed_models: true\n").Single();
+
+        Assert.Equal("integrity.refuse_changed_models", unknown.Path);
+        Assert.Equal("refuse_changed_model", unknown.Suggestion);
+    }
+
+    [Fact]
     public void ACorrectFile_IsReportedClean_AndItsFreeFormNamesAreNotKeys()
     {
         // The partner of the test above: model names and column names are the user's own, and a list is walked item by item.
@@ -98,6 +109,7 @@ public class ConfigKeyAuditTests
         {
             Project = "demo",
             Retention = new RetentionSettings { Days = 7 },
+            Integrity = new IntegritySettings { RefuseChangedModel = true },
             Data = new DataSettings { Train = "a.csv", Test = "b.csv" },
             Models =
             {

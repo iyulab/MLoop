@@ -80,4 +80,86 @@ public sealed class ModelIntegrityTests : IDisposable
         File.Delete(Path.Combine(_root, "production", "metadata.json"));
         Assert.Null(ModelIntegrity.Mismatch(path));
     }
+
+    private void ProjectFile(string yaml) => File.WriteAllText(Path.Combine(_root, "mloop.yaml"), yaml);
+
+    private string ChangedProductionModel()
+    {
+        var path = Slot("production", [1, 2, 3]);
+        File.WriteAllBytes(path, [9, 9, 9, 9, 9]);
+        return path;
+    }
+
+    [Fact]
+    public void A_changed_production_model_is_refused_when_the_project_asks_for_it_and_the_refusal_says_where_it_was_asked()
+    {
+        ProjectFile("project: demo\nintegrity:\n  refuse_changed_model: true\n");
+        var path = ChangedProductionModel();
+
+        var refusal = Assert.Throws<ChangedModelException>(() => ModelIntegrity.Enforce(path));
+
+        Assert.Contains("changed after it was promoted", refusal.Message, StringComparison.Ordinal);
+        Assert.Contains("refuse_changed_model", refusal.Message, StringComparison.Ordinal);
+        Assert.Contains("mloop rollback", refusal.Message, StringComparison.Ordinal);
+        Assert.Null(ModelIntegrity.Warning(path));   // said once, by the refusal - not also as a warning
+    }
+
+    [Theory]
+    [InlineData(null)]                                                // no project file at all
+    [InlineData("project: demo\n")]                                   // the key absent: the old behaviour
+    [InlineData("integrity:\n  refuse_changed_model: false\n")]
+    [InlineData("integrity: [this is not a mapping\n")]               // unreadable: a check does not turn a typo into an outage
+    public void A_changed_production_model_is_only_warned_about_unless_the_project_asks_for_a_refusal(string? yaml)
+    {
+        if (yaml is not null)
+            ProjectFile(yaml);
+        var path = ChangedProductionModel();
+
+        ModelIntegrity.Enforce(path);
+
+        Assert.NotNull(ModelIntegrity.Warning(path));
+        Assert.False(ModelIntegrity.RefusesChangedModel(path));
+    }
+
+    [Fact]
+    public void A_production_model_that_matches_its_record_is_never_refused_even_when_refusal_is_on()
+    {
+        ProjectFile("integrity:\n  refuse_changed_model: true\n");
+        var path = Slot("production", [1, 2, 3]);
+
+        ModelIntegrity.Enforce(path);
+
+        Assert.Null(ModelIntegrity.Warning(path));
+    }
+
+    [Fact]
+    public void A_model_outside_the_production_slot_is_never_refused_a_hand_placed_model_elsewhere_is_the_users_own()
+    {
+        ProjectFile("integrity:\n  refuse_changed_model: true\n");
+        ModelIntegrity.Enforce(Slot(Path.Combine("staging", "exp-001"), [1, 2, 3], pointer: "{\"modelSha256\":\"0000\"}"));
+    }
+
+    [Fact]
+    public void Every_scoring_load_passes_the_refusal_before_the_file_is_read()
+    {
+        ProjectFile("integrity:\n  refuse_changed_model: true\n");
+        var path = ChangedProductionModel();   // not a model archive: without the refusal this would be an UnreadableStateFileException
+
+        Assert.Throws<ChangedModelException>(() => ScoringModel.Load(new Microsoft.ML.MLContext(seed: 1), path));
+    }
+
+    [Fact]
+    public void The_project_file_is_found_above_the_slot_where_a_project_keeps_it_models_name_production()
+    {
+        ProjectFile("integrity:\n  refuse_changed_model: true\n");
+        var slot = Path.Combine(_root, "models", "default", "production");
+        Directory.CreateDirectory(slot);
+        var path = Path.Combine(slot, "model.zip");
+        File.WriteAllBytes(path, [1, 2, 3]);
+        File.WriteAllText(Path.Combine(slot, "metadata.json"), $"{{\"experimentId\":\"exp-001\",\"modelSha256\":\"{ModelFingerprint.Sha256(path)}\"}}");
+        File.WriteAllBytes(path, [9, 9, 9, 9, 9]);
+
+        Assert.True(ModelIntegrity.RefusesChangedModel(path));
+        Assert.Throws<ChangedModelException>(() => ModelIntegrity.Enforce(path));
+    }
 }
