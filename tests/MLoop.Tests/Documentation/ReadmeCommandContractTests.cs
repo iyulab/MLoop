@@ -39,6 +39,19 @@ namespace MLoop.Tests.Documentation;
 /// </remarks>
 public class ReadmeCommandContractTests
 {
+    // Declared first: the static initializers below read them, and run in the order written.
+    /// <summary>The names of the commands <c>mloop</c> has, for a job written as a quoted command without the program's name.</summary>
+    private static readonly Lazy<HashSet<string>> RootVerbs = new(() =>
+        [.. Program.BuildRootCommand().Subcommands.Select(c => c.Name)]);
+
+    private static readonly System.Text.RegularExpressions.Regex WrappedCommand = new(
+        @"^(?:nice\s+-n\s+\d+|taskset\s+-c\s+\S+|systemd-run\s+.*?|sudo|time|env\s+\S+=\S+)\s+(mloop\s.*)$",
+        System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static readonly System.Text.RegularExpressions.Regex QuotedJob = new(
+        "^\"(?<job>[a-z][a-z-]*\\s[^\"]*)\"\\s*\\\\?$",
+        System.Text.RegularExpressions.RegexOptions.Compiled);
+
     private static string RepoRoot => RepoSourceTree.RepoRoot;
     /// <summary>The two documents a new user reads first: they must exist and must yield examples.</summary>
     private static readonly string[] CoreDocFiles = { "README.md", "docs/GUIDE.md" };
@@ -118,6 +131,34 @@ public class ReadmeCommandContractTests
     }
 
     [Fact]
+    public void A_command_after_a_wrapper_or_quoted_as_a_job_is_found_and_held_to_the_grammar()
+    {
+        // The shapes the line-start scan missed: a job handed to a queue script, and a command run under nice. Both carried
+        // the retired `train data.csv price` form past this test.
+        var found = ExtractCommands(
+        [
+            "  \"train dataset1.csv price --time 1800\" \\",
+            "nice -n 19 mloop train dataset.csv price --time 1800",
+            "  \"hello world\" \\",
+            "  \"not-a-command x --y\"",
+        ]);
+
+        Assert.Equal(["mloop train dataset1.csv price --time 1800", "mloop train dataset.csv price --time 1800"], found);
+        Assert.All(found, c => Assert.NotEmpty(Program.BuildRootCommand().Parse(Tokenize(c).Skip(1).ToArray()).Errors));
+        Assert.Equal("mloop train d.csv --label price", ExtractCommands(["  \"train d.csv --label price\" \\"]).Single());
+    }
+
+    [Fact]
+    public void The_scripts_readme_shows_jobs_this_scan_now_reads()
+    {
+        // The guard sees: the queue examples are quoted jobs, and the scan finds them.
+        var jobs = ExtractCommands(File.ReadAllLines(Path.Combine(RepoRoot, "examples/scripts/README.md")));
+
+        Assert.Contains(jobs, c => c.StartsWith("mloop train ", StringComparison.Ordinal));
+        Assert.Contains(jobs, c => c.StartsWith("mloop evaluate exp-", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void At_least_one_example_was_found_in_each_doc()
     {
         // A change to a doc's formatting (e.g. every example moved into fenced code blocks with no
@@ -152,8 +193,8 @@ public class ReadmeCommandContractTests
         var commands = new List<string>();
         foreach (var raw in lines)
         {
-            var line = StripPrompt(raw.Trim());
-            if (!line.StartsWith("mloop ") || DocumentsAFailure(line))
+            var line = AsMloopCommand(StripPrompt(raw.Trim()));
+            if (line is null || DocumentsAFailure(line))
                 continue;
 
             var withoutComment = StripShellPlumbing(StripTrailingComment(line));
@@ -174,8 +215,8 @@ public class ReadmeCommandContractTests
         var summaries = new List<string>();
         foreach (var raw in lines)
         {
-            var line = StripPrompt(raw.Trim());
-            if (!line.StartsWith("mloop ") || DocumentsAFailure(line))
+            var line = AsMloopCommand(StripPrompt(raw.Trim()));
+            if (line is null || DocumentsAFailure(line))
                 continue;
 
             // Only the comment is cut: in a summary ">" closes a placeholder, it is not a redirection.
@@ -281,6 +322,23 @@ public class ReadmeCommandContractTests
     }
 
     /// <summary>A transcript shows the shell prompt before the command: <c>$ mloop train ...</c> is the same example.</summary>
+    /// <summary>
+    /// The <c>mloop</c> command a line shows, or <see langword="null"/>: the line itself when it starts with <c>mloop </c>, the
+    /// command after a wrapper (<c>nice -n 19 mloop train …</c>), or a job handed to a script as a quoted command without the
+    /// program's name (<c>"train data.csv price --time 1800" \</c>, as <c>examples/scripts/mloop-queue.sh</c> takes them) —
+    /// two shapes the line-start scan never saw, and the old positional-label form of <c>train</c> lived in both.
+    /// </summary>
+    internal static string? AsMloopCommand(string line)
+    {
+        if (line.StartsWith("mloop ", StringComparison.Ordinal))
+            return line;
+        if (WrappedCommand.Match(line) is { Success: true } wrapped)
+            return wrapped.Groups[1].Value;
+        if (QuotedJob.Match(line) is { Success: true } quoted && RootVerbs.Value.Contains(quoted.Groups["job"].Value.Split(' ')[0]))
+            return "mloop " + quoted.Groups["job"].Value;
+        return null;
+    }
+
     private static string StripPrompt(string line) => line.StartsWith("$ ", StringComparison.Ordinal) ? line[2..].TrimStart() : line;
 
     private static bool DocumentsAFailure(string line)
