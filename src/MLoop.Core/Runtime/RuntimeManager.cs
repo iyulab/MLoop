@@ -17,9 +17,20 @@ public class RuntimeManager
     private static readonly HashSet<string> _loadedRuntimes = new(StringComparer.OrdinalIgnoreCase);
 
     public RuntimeManager(string? cacheDir = null)
+        : this(cacheDir, null)
+    {
+    }
+
+    /// <summary>
+    /// A manager whose downloads go through <paramref name="handler"/> — a stand-in a test installs, so the install, its failures and
+    /// its progress run without the network. <c>null</c> is the default pool.
+    /// </summary>
+    internal RuntimeManager(string? cacheDir, HttpMessageHandler? handler)
     {
         _cacheDir = cacheDir ?? DefaultCacheDir;
-        _httpClient = new HttpClient { Timeout = TimeSpan.FromMinutes(30) };
+        _httpClient = handler is null
+            ? new HttpClient { Timeout = TimeSpan.FromMinutes(30) }
+            : new HttpClient(handler, disposeHandler: false) { Timeout = TimeSpan.FromMinutes(30) };
     }
 
     /// <summary>
