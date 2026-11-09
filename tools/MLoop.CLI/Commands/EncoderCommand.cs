@@ -153,9 +153,19 @@ public static class EncoderCommand
             var modelPath = parseResult.GetValue(modelOption)!;
             try
             {
-                var installed = new EncoderStore().Add(EncoderStore.ReadDefinition(definitionPath), modelPath, parseResult.GetValue(tokenizerOption));
+                var definition = EncoderStore.ReadDefinition(definitionPath);
+                // A definition that cannot run is refused by Add with its own message; the graph is looked at only once it could.
+                var graph = definition.Problem() is null && File.Exists(modelPath) ? EncoderGraphCheck.Check(definition, modelPath) : null;
+                if (graph?.Problem is { } problem)
+                {
+                    ErrorConsole.Error(Markup.Escape($"Encoder '{definition.Id}' was not installed: {problem}."));
+                    return 1;
+                }
+                var installed = new EncoderStore().Add(definition, modelPath, parseResult.GetValue(tokenizerOption));
                 AnsiConsole.MarkupLine($"[green]✓[/] Encoder [cyan]{Markup.Escape(installed.Definition.Id)}[/] installed " +
                                        $"({installed.Definition.Dimension} dimensions, SHA-256 {installed.Definition.Sha256![..12]}…)");
+                if (graph?.NotChecked is { } skipped)
+                    AnsiConsole.MarkupLine($"[yellow]The graph's input and output were not checked against the definition:[/] {Markup.Escape(skipped)}");
                 return 0;
             }
             catch (Exception ex) when (ex is IOException or JsonException or InvalidDataException or ArgumentException or InvalidOperationException or UnauthorizedAccessException)

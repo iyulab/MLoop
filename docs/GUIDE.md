@@ -2035,8 +2035,9 @@ mloop embed photo.png --encoder clip-vit-base-patch32 --json
 ```
 
 The input and output names, and whether the output is `[images, dimension]` (`pooling: none`) or `[images, tokens, dimension]`
-(`first-token`), are the graph's — `embed` refuses a graph that lacks the named input or output, and an output of another
-shape than the definition says (`add` does not open the graph, so run one image through `embed` after adding). `resize` and the mean and std come from the processor's `resample` (bicubic is
+(`first-token`), are the graph's — `add` opens the graph and refuses one that lacks the named input or output, or whose output
+has another rank or width than `pooling` and `dimension` say, naming what the graph has instead (`add` skips this, and says so,
+when ONNX Runtime is not installed — `embed` finds the same at its first use). `resize` and the mean and std come from the processor's `resample` (bicubic is
 what `embed` computes), `size`, `crop_size`, `image_mean` and `image_std`. Its vectors matched the same graph run with
 Pillow and ONNX Runtime from Python (cosine 1.000) on the three image shapes above.
 

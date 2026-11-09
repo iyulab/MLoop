@@ -78,6 +78,41 @@ public sealed class EmbedCommandTests : IDisposable
         Assert.Equal("MIT", licensed.RootElement.GetProperty("encoders")[0].GetProperty("license").GetString());
     }
 
+    // The definition names what the graph has: a wrong name is refused when the encoder is added, saying what the graph has instead.
+    [Theory]
+    [InlineData("\"inputName\": \"pixel_values\"", "\"inputName\": \"images\"", "no input 'images'", "pixel_values")]
+    [InlineData("\"outputName\": \"last_hidden_state\"", "\"outputName\": \"embeds\"", "no output 'embeds'", "last_hidden_state")]
+    [InlineData("\"pooling\": \"first-token\"", "\"pooling\": \"none\"", "rank 3, but pooling 'none' reads rank 2", "[images, dimension]")]
+    [InlineData("\"dimension\": 4", "\"dimension\": 5", "4 wide, but the definition says dimension 5", "")]
+    public async Task AGraphThatIsNotWhatTheDefinitionSays_IsRefusedWhenAdded(string right, string wrong, string reason, string alsoSays)
+    {
+        var path = Path.Combine(_dir, "wrong.json");
+        var text = File.ReadAllText(Path.Combine(_dir, "encoder.json"));
+        Assert.Contains(right, text);
+        File.WriteAllText(path, text.Replace(right, wrong));
+
+        var (exit, _, stderr) = await CliRunner.RunAsync("encoder", "add", path, "--model", Path.Combine(Fixtures, "tiny-encoder.onnx"));
+
+        Assert.Equal(1, exit);
+        Assert.Contains(reason, stderr);
+        Assert.Contains(alsoSays, stderr);
+        var (_, list, _) = await CliRunner.RunAsync("encoder", "list", "--json");
+        using var doc = JsonDocument.Parse(list);
+        Assert.Equal(0, doc.RootElement.GetProperty("encoders").GetArrayLength());   // nothing was installed
+    }
+
+    [Fact]
+    public async Task AFileThatIsNotAnOnnxGraph_IsRefusedWhenAdded()
+    {
+        var notAGraph = Path.Combine(_dir, "weights.onnx");
+        File.WriteAllText(notAGraph, "not a graph");
+
+        var (exit, _, stderr) = await CliRunner.RunAsync("encoder", "add", Path.Combine(_dir, "encoder.json"), "--model", notAGraph);
+
+        Assert.Equal(1, exit);
+        Assert.Contains("not a graph ONNX Runtime can open", stderr);
+    }
+
     private Task<(int ExitCode, string Stdout, string Stderr)> AddTinyText()
     {
         File.WriteAllText(Path.Combine(_dir, "text-encoder.json"), """
