@@ -33,6 +33,7 @@ public class PartitionDisjointnessTests
         public float F1 { get; set; }
         public float F2 { get; set; }
         public string Cls { get; set; } = "";
+        public string Item { get; set; } = "";
         public bool Flag { get; set; }
         public float Value { get; set; }
     }
@@ -49,6 +50,7 @@ public class PartitionDisjointnessTests
                 F1 = (float)(random.NextDouble() * 2 - 1),
                 F2 = (float)(random.NextDouble() * 2 - 1),
                 Cls = f0 < -0.3f ? "low" : f0 < 0.3f ? "mid" : "high",
+                Item = "i" + random.Next(12),
                 Flag = f0 > 0,
                 Value = 5 + 2 * f0 + (float)random.NextDouble(),
             };
@@ -139,7 +141,8 @@ public class PartitionDisjointnessTests
         }
     }
 
-    private static async Task<RecordingProvider> RunAsync(string task, string label, bool overlapOnPurpose = false)
+    private static async Task<RecordingProvider> RunAsync(string task, string label, bool overlapOnPurpose = false,
+        string? userColumn = null, string? itemColumn = null)
     {
         var ctx = new MLContext(seed: Seed);
         var provider = new RecordingProvider(ctx, ctx.Data.LoadFromEnumerable(Data(Seed)), overlapOnPurpose);
@@ -151,6 +154,8 @@ public class PartitionDisjointnessTests
             Task = task,
             TimeLimitSeconds = 60,
             MaxTrials = 3,
+            UserColumn = userColumn,
+            ItemColumn = itemColumn,
         });
         return provider;
     }
@@ -179,6 +184,11 @@ public class PartitionDisjointnessTests
     [Fact]
     public async Task Regression_TheRowsTheMetricsAreReportedOn_AreNotRowsTheModelWasFitted() =>
         AssertDisjointAndWhole(await RunAsync("regression", nameof(Row.Value)));
+
+    // A recommendation is judged on rows too: its user and item columns are keys, not features, and the split is by row.
+    [Fact]
+    public async Task Recommendation_TheRowsTheMetricsAreReportedOn_AreNotRowsTheModelWasFitted() =>
+        AssertDisjointAndWhole(await RunAsync("recommendation", nameof(Row.Value), userColumn: nameof(Row.Cls), itemColumn: nameof(Row.Item)));
 
     [Fact]
     public async Task TheRecording_SeesAPartitionThatReportsOnItsOwnFittedRows()
