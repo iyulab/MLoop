@@ -144,4 +144,25 @@ public class MLoopYamlEditTests
     [InlineData("project: p\nmodels:\n  other:\n    label: x\n")]                      // no such model
     public void ALayoutTheEditDoesNotKnow_IsRefused(string yaml) =>
         Assert.Null(MLoopYamlEdit.SetModelScalars(yaml, "default", [("label", "y")]));
+
+    [Fact]
+    public void AnEmptyValue_AsInitWritesForATaskWithoutALabel_IsFilledInPlaceAndTheCommentsStay()
+    {
+        // `mloop init --task time-series-anomaly` writes `label: ` with nothing after it. The edit refused it as if it opened a nested
+        // block, so the first `train` rewrote the whole file and warned that the comments were not kept — for a file nobody had changed.
+        var yaml = Init.Replace("label: Label", "label: ");
+        var edited = MLoopYamlEdit.SetModelScalars(yaml, "default", [("label", "value")]);
+
+        Assert.NotNull(edited);
+        Assert.Contains("    label: value\n", edited, StringComparison.Ordinal);
+        Assert.Contains("# Add more models as needed:", edited, StringComparison.Ordinal);
+        Assert.Contains("# time_limit_seconds: 300", edited, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AKeyWithNothingAfterItsColon_ThatOpensANestedBlock_IsStillNotAScalar()
+    {
+        var yaml = "project: p\nmodels:\n  default:\n    label:\n      - a\n";
+        Assert.Null(MLoopYamlEdit.SetModelScalars(yaml, "default", [("label", "y")]));
+    }
 }

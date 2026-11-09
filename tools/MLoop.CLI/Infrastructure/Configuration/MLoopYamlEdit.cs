@@ -41,8 +41,11 @@ public static partial class MLoopYamlEdit
             }
 
             var match = ScalarLine().Match(lines[existing]);
-            // A key whose value is a nested block or a flow collection is not a scalar to replace.
-            if (!match.Success || match.Groups["value"].Value.Trim() is "" or ['[' or '{' or '|' or '>', ..])
+            // A key whose value is a nested block or a flow collection is not a scalar to replace. A key with nothing after its colon
+            // is a nested block only when the next line that says anything sits deeper than the key; otherwise it is an empty value
+            // (`label:` as `mloop init` writes it for a task without a label), and an empty value is a scalar to fill in.
+            if (!match.Success || match.Groups["value"].Value.Trim() is ['[' or '{' or '|' or '>', ..]
+                || (match.Groups["value"].Value.Trim() == "" && OpensNestedBlock(lines, existing)))
                 return null;
             lines[existing] = match.Groups["head"].Value + Scalar(value) + match.Groups["comment"].Value;
         }
@@ -168,6 +171,19 @@ public static partial class MLoopYamlEdit
     private static partial Regex LineBreak();
 
     private static bool IsBlankOrComment(string line) => line.TrimStart() is "" or ['#', ..];
+
+    /// <summary>Whether the first line after <paramref name="index"/> that is neither blank nor a comment is indented deeper than line <paramref name="index"/>.</summary>
+    private static bool OpensNestedBlock(List<string> lines, int index)
+    {
+        for (var i = index + 1; i < lines.Count; i++)
+        {
+            var trimmed = lines[i].Trim();
+            if (trimmed.Length == 0 || trimmed.StartsWith('#'))
+                continue;
+            return Indent(lines[i]) > Indent(lines[index]);
+        }
+        return false;
+    }
 
     private static int Indent(string line) => line.Length - line.TrimStart(' ').Length;
 
