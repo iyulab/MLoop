@@ -340,7 +340,7 @@ public static partial class PredictCommand
             // Merge original features with predictions if requested
             if (includeFeatures)
             {
-                MergeInputWithPredictions(resolvedDataFile, resolvedOutputPath, trainedSchema);
+                MergeInputWithPredictions(resolvedDataFile, resolvedOutputPath, trainedSchema, taskType);
                 AnsiConsole.MarkupLine("[green]>[/] Original features included in output");
             }
 
@@ -400,10 +400,12 @@ public static partial class PredictCommand
         return cols.Count > 0 ? cols : null;
     }
 
-    private static void MergeInputWithPredictions(string inputPath, string outputPath, InputSchemaInfo? schema)
+    internal static void MergeInputWithPredictions(string inputPath, string outputPath, InputSchemaInfo? schema, string? task = null)
     {
         string? labelColumn = null;
-        if (schema != null)
+        // A time-series detector's "label" is the series it judges: the value belongs beside its verdict, not out of the file
+        // (and with a one-column series, leaving it out left a first column with no name and no cells).
+        if (schema != null && !string.Equals(task, "time-series-anomaly", StringComparison.OrdinalIgnoreCase))
         {
             labelColumn = schema.Columns.FirstOrDefault(c => c.Purpose == "Label")?.Name;
         }
@@ -425,7 +427,7 @@ public static partial class PredictCommand
 
         // Header: features + predictions
         var featureHeaders = keepIndices.Select(i => CsvFieldParser.Quote(inputHeaders[i]));
-        writer.WriteLine(string.Join(",", featureHeaders) + "," + predLines[0]);
+        writer.WriteLine(string.Join(",", featureHeaders.Append(predLines[0])));
 
         // Data rows, paired with the predictions by position: a blank line of the input is no row and has no prediction,
         // so it is left out or every row after it is written beside the prediction of the one before
@@ -434,7 +436,7 @@ public static partial class PredictCommand
         {
             var fields = CsvFieldParser.ParseFields(inputRows[r]);
             var featureValues = keepIndices.Select(i => i < fields.Length ? CsvFieldParser.Quote(fields[i]) : "");
-            writer.WriteLine(string.Join(",", featureValues) + "," + predLines[r + 1]);
+            writer.WriteLine(string.Join(",", featureValues.Append(predLines[r + 1])));
         }
     }
 
