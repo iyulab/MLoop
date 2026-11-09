@@ -3,13 +3,13 @@
 # Executes multiple MLoop commands one after another
 #
 # Usage:
-#   ./mloop-queue.sh "train data1.csv price --time 1800" "train data2.csv price --time 1800"
+#   ./mloop-queue.sh "train data1.csv --label price --time 1800" "train data2.csv --label price --time 1800"
 #
 # Example:
 #   ./mloop-queue.sh \
-#     "train datasets/sales-2022.csv revenue --time 1800" \
-#     "train datasets/sales-2023.csv revenue --time 1800" \
-#     "evaluate models/staging/exp-001/model.zip datasets/test.csv"
+#     "train datasets/sales-2022.csv --label revenue --time 1800" \
+#     "train datasets/sales-2023.csv --label revenue --time 1800" \
+#     "evaluate exp-001 datasets/test.csv"
 
 set -e  # Exit on error
 
@@ -28,9 +28,9 @@ if [ $# -eq 0 ]; then
     echo ""
     echo "Example:"
     echo "  $0 \\"
-    echo "    \"train dataset1.csv price --time 1800\" \\"
-    echo "    \"train dataset2.csv price --time 1800\" \\"
-    echo "    \"evaluate models/staging/exp-001/model.zip test.csv\""
+    echo "    \"train dataset1.csv --label price --time 1800\" \\"
+    echo "    \"train dataset2.csv --label price --time 1800\" \\"
+    echo "    \"evaluate exp-001 test.csv\""
     exit 1
 fi
 

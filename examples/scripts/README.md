@@ -20,9 +20,9 @@ Execute multiple MLoop commands one after another.
 **Example**:
 ```bash
 ./mloop-queue.sh \
-  "train datasets/sales-2022.csv revenue --time 1800" \
-  "train datasets/sales-2023.csv revenue --time 1800" \
-  "evaluate models/staging/exp-001/model.zip datasets/test.csv revenue"
+  "train datasets/sales-2022.csv --label revenue --time 1800" \
+  "train datasets/sales-2023.csv --label revenue --time 1800" \
+  "evaluate exp-001 datasets/test.csv"
 ```
 
 **Features**:
@@ -43,7 +43,7 @@ Total jobs: 3
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [1/3] Starting job
-Command: mloop train datasets/sales-2022.csv revenue --time 1800
+Command: mloop train datasets/sales-2022.csv --label revenue --time 1800
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 [Training output...]
@@ -119,13 +119,13 @@ brew install parallel
 ```bash
 # Simple queue
 ./mloop-queue.sh \
-  "train data1.csv price --time 1800" \
-  "train data2.csv price --time 1800"
+  "train data1.csv --label price --time 1800" \
+  "train data2.csv --label price --time 1800"
 
 # With evaluation
 ./mloop-queue.sh \
-  "train datasets/train.csv price --time 1800" \
-  "evaluate models/staging/exp-001/model.zip datasets/test.csv price" \
+  "train datasets/train.csv --label price --time 1800" \
+  "evaluate exp-001 datasets/test.csv" \
   "promote exp-001"
 ```
 
@@ -169,21 +169,21 @@ Default to sequential execution (`-j 1`) to prevent resource exhaustion.
 
 ```bash
 # Reduce CPU priority (0-19, higher = lower priority)
-nice -n 19 mloop train dataset.csv price --time 1800
+nice -n 19 mloop train dataset.csv --label price --time 1800
 ```
 
 ### 4. Set Memory Limits (Linux)
 
 ```bash
 # Limit to 4GB memory
-systemd-run --scope -p MemoryMax=4G mloop train dataset.csv price --time 1800
+systemd-run --scope -p MemoryMax=4G mloop train dataset.csv --label price --time 1800
 ```
 
 ### 5. Pin to CPU Cores (Linux)
 
 ```bash
 # Use cores 0-3 only
-taskset -c 0-3 mloop train dataset.csv price --time 1800
+taskset -c 0-3 mloop train dataset.csv --label price --time 1800
 ```
 
 ---
@@ -194,26 +194,26 @@ taskset -c 0-3 mloop train dataset.csv price --time 1800
 
 ```bash
 ./mloop-queue.sh \
-  "train datasets/jan-2024.csv revenue --time 1800" \
-  "train datasets/feb-2024.csv revenue --time 1800" \
-  "train datasets/mar-2024.csv revenue --time 1800"
+  "train datasets/jan-2024.csv --label revenue --time 1800" \
+  "train datasets/feb-2024.csv --label revenue --time 1800" \
+  "train datasets/mar-2024.csv --label revenue --time 1800"
 ```
 
 ### Pattern 2: Same Dataset, Different Time Budgets
 
 ```bash
 ./mloop-queue.sh \
-  "train datasets/sales.csv revenue --time 300" \
-  "train datasets/sales.csv revenue --time 600" \
-  "train datasets/sales.csv revenue --time 1800"
+  "train datasets/sales.csv --label revenue --time 300" \
+  "train datasets/sales.csv --label revenue --time 600" \
+  "train datasets/sales.csv --label revenue --time 1800"
 ```
 
 ### Pattern 3: Train → Evaluate → Promote
 
 ```bash
 ./mloop-queue.sh \
-  "train datasets/train.csv price --time 1800" \
-  "evaluate models/staging/exp-001/model.zip datasets/test.csv price" \
+  "train datasets/train.csv --label price --time 1800" \
+  "evaluate exp-001 datasets/test.csv" \
   "promote exp-001"
 ```
 
@@ -221,12 +221,12 @@ taskset -c 0-3 mloop train dataset.csv price --time 1800
 
 ```bash
 ./mloop-queue.sh \
-  "train datasets/train.csv price --time 600 --metric r_squared" \
-  "evaluate models/staging/exp-001/model.zip datasets/test.csv price" \
-  "train datasets/train.csv price --time 1200 --metric rmse" \
-  "evaluate models/staging/exp-002/model.zip datasets/test.csv price" \
-  "train datasets/train.csv price --time 1800 --metric mae" \
-  "evaluate models/staging/exp-003/model.zip datasets/test.csv price"
+  "train datasets/train.csv --label price --time 600 --metric r_squared" \
+  "evaluate exp-001 datasets/test.csv" \
+  "train datasets/train.csv --label price --time 1200 --metric rmse" \
+  "evaluate exp-002 datasets/test.csv" \
+  "train datasets/train.csv --label price --time 1800 --metric mae" \
+  "evaluate exp-003 datasets/test.csv"
 ```
 
 ---

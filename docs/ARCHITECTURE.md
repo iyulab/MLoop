@@ -164,7 +164,7 @@ MLoop enables anyone to achieve production-quality ML models with minimal coding
 $ mloop train data.csv --label target
   → Train for 10 minutes → Exit
 
-$ mloop evaluate exp-001/model.zip test.csv
+$ mloop evaluate exp-001 test.csv
   → Evaluate for 30 seconds → Exit
 
 $ mloop predict new-data.csv --model exp-001/model.zip

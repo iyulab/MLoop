@@ -615,14 +615,17 @@ mloop list
 # Show all experiments including failed
 mloop list --all
 
-# Output:
-# ┌─────────┬──────────────────┬───────────┬─────────────┬──────────────┐
-# │   ID    │    Timestamp     │  Status   │ Best Metric │    Stage     │
-# ├─────────┼──────────────────┼───────────┼─────────────┼──────────────┤
-# │ exp-003 │ 2025-11-10 10:30 │ Completed │    0.9523   │ ★ Production │
-# │ exp-002 │ 2025-11-10 10:20 │ Completed │    0.9401   │   Staging    │
-# │ exp-001 │ 2025-11-10 10:10 │ Completed │    0.9278   │   Staging    │
-# └─────────┴──────────────────┴───────────┴─────────────┴──────────────┘
+# Output (newest first — not ranked; `prod` marks the experiment production serves):
+# ── All Experiments in my-ml-project ──
+# ╭─────────┬─────────┬────────┬───────────┬──────────┬──────────────────┬───────╮
+# │ Model   │   ID    │ When   │  Status   │ Trainer  │          Metric  │ Stage │
+# │         │         │        │           │          │      (r_squared) │       │
+# ├─────────┼─────────┼────────┼───────────┼──────────┼──────────────────┼───────┤
+# │ default │ exp-003 │ 1m ago │ Completed │ FastTree │           0.9853 │   -   │
+# │ default │ exp-002 │ 1m ago │ Completed │ FastTree │           0.9853 │   -   │
+# │ default │ exp-001 │ 2m ago │ Completed │ FastTree │           0.9861 │ prod  │
+# ╰─────────┴─────────┴────────┴───────────┴──────────┴──────────────────┴───────╯
+# Metric is r_squared (↑ higher is better) — listed newest first, not ranked.
 ```
 
 ### `mloop promote`
@@ -1112,17 +1115,14 @@ mloop info datasets/train.csv --label IsError
 mloop info datasets/train.csv --name fraud-detector
 
 # Output:
-# [Info] Converted CP949 → UTF-8    # (automatic encoding conversion)
-# Label column: IsError (from mloop.yaml (model: default))
+# Analyzing: train.csv
+# Info: Converted CP949 -> UTF-8    # (only when the file was not UTF-8 — automatic encoding conversion)
+# Label column: price (from --label option)    # or "(from mloop.yaml (model: fraud-detector))"
 #
-# 📊 Dataset Information
-# Rows: 1,000
-# Columns: 15
-#
-# Column Details:
-# - price (Numeric): Min=10.5, Max=999.9, Mean=245.3
-# - category (Text): 5 unique values
-# - date (DateTime): Range: 2024-01-01 to 2024-12-31
+# ── File Information ──          size, rows (excluding the header), last modified
+# ── Column Information ──        # · Column Name · Data Type · Purpose (Numeric Feature, Categorical Feature, Label, ...)
+# ── Data Statistics ──           per column: missing count and %, unique values, type, mean, standard deviation, min, max
+# ── Label Statistics (Regression) ──   or the class balance for a classification label
 ```
 
 **Label Column Resolution** (v0.5.0+):
@@ -1319,10 +1319,18 @@ mloop evaluate <experiment-id> <test-data>
 mloop evaluate exp-003 datasets/test.csv
 
 # Output:
-# 📊 Evaluation Results
-# R²: 0.9456
-# RMSE: 13.21
-# MAE: 9.87
+# > Model: default
+# > Using experiment: exp-003
+# > Using test data: datasets/test.csv
+# > Schema validation passed
+# ── Evaluation Results ──
+# ╭───────────┬────────────┬───────────┬────────────╮
+# │ Metric    │ Training   │ Test      │ Difference │
+# ├───────────┼────────────┼───────────┼────────────┤
+# │ r_squared │ 0.9853     │ 0.9941    │ +0.0089    │
+# │ rmse      │ 12612.2886 │ 8218.1028 │ -4394.1858 │
+# │ mae       │ 10644.9850 │ 5638.7371 │ -5006.2479 │
+# ╰───────────┴────────────┴───────────┴────────────╯   (the training column is the run's own held-out score)
 
 # The same metrics for each value of a column of the test data
 mloop evaluate exp-003 datasets/test.csv --slice-by site
@@ -2661,18 +2669,20 @@ Use the provided `mloop-queue.sh` script for simple sequential execution:
 ```bash
 # ✅ Jobs run one after another
 $ examples/scripts/mloop-queue.sh \
-    "train dataset1.csv price --time 1800" \
-    "train dataset2.csv price --time 1800" \
-    "train dataset3.csv price --time 1800"
+    "train dataset1.csv --label price --time 1800" \
+    "train dataset2.csv --label price --time 1800" \
+    "train dataset3.csv --label price --time 1800"
 
-# Output:
-# [1/3] Running: mloop train dataset1.csv --label price --time 1800
-# ✅ Job 1 complete (30 min)
-# [2/3] Running: mloop train dataset2.csv --label price --time 1800
-# ✅ Job 2 complete (30 min)
-# [3/3] Running: mloop train dataset3.csv --label price --time 1800
-# ✅ Job 3 complete (30 min)
-# 🎉 All jobs complete: 3/3 succeeded
+# Output (each job's own output between the lines):
+# Total jobs: 3
+# Command: mloop train dataset1.csv --label price --time 1800
+# ✅ Job 1 complete (30m 4s)
+# Command: mloop train dataset2.csv --label price --time 1800
+# ✅ Job 2 complete (30m 3s)
+# Command: mloop train dataset3.csv --label price --time 1800
+# ✅ Job 3 complete (30m 5s)
+# Execution Summary — Total jobs: 3, Completed: 3, Total time: 1h 30m 12s
+# 🎉 All jobs completed successfully!
 ```
 
 **Features**:
@@ -2694,9 +2704,9 @@ $ brew install parallel           # macOS
 $ cat jobs.txt | parallel -j 1 --progress mloop {}
 
 # jobs.txt:
-# train dataset1.csv price --time 1800
-# train dataset2.csv price --time 1800
-# train dataset3.csv price --time 1800
+# train dataset1.csv --label price --time 1800
+# train dataset2.csv --label price --time 1800
+# train dataset3.csv --label price --time 1800
 ```
 
 **Advanced Options**:
