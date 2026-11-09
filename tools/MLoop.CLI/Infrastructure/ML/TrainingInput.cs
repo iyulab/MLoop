@@ -79,7 +79,7 @@ public static class TrainingInput
             return null;
         var file = Path.GetFileName(reportedAs ?? dataFile);
         var what = string.Join(" and ", missing.Select(m => $"the {m.Role} column '{m.Column}'"));
-        var message = $"The project reads {what} of {file}, and the file has no such column. Available columns: {string.Join(", ", columns)}.";
+        var message = $"The project reads {what} of {file}, and the file has {(missing.Count == 1 ? "no such column" : "no such columns")}. Available columns: {string.Join(", ", columns)}.";
         var hint = "Name the column of the file that holds it: mloop train <data-file> "
             + string.Join(" ", missing.Select(m => $"{m.Flag} <column>"))
             + $" (or set {string.Join(" and ", missing.Select(m => m.Key))} in mloop.yaml).";

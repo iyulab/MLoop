@@ -1787,6 +1787,7 @@ public partial class TrainingRunner
             var featureWidth = featureColumns.Sum(name =>
                 trainSet.Schema[name].Type is VectorDataViewType vector ? vector.Size : 1);
             _logger.Info($"Ranking: {featureWidth} features, group='{config.GroupColumn}', label='{config.LabelColumn}'");
+            _logger.Info("Held out by query: a query's rows are all in training or all in the test, so the test score is on queries the model has not seen");
 
             // Build pipeline: convert label to Single, hash group to Key, concatenate features
             var pipeline = _mlContext.Transforms.Conversion.ConvertType(config.LabelColumn, outputKind: Microsoft.ML.Data.DataKind.Single)
@@ -2335,12 +2336,17 @@ public partial class TrainingRunner
             // Build pipeline: MapValueToKey for user & item, then MatrixFactorization
             var pipeline = _mlContext.Transforms.Conversion.MapValueToKey("UserKey", config.UserColumn)
                 .Append(_mlContext.Transforms.Conversion.MapValueToKey("ItemKey", config.ItemColumn))
-                .Append(_mlContext.Recommendation().Trainers.MatrixFactorization(
-                    labelColumnName: config.LabelColumn,
-                    matrixColumnIndexColumnName: "UserKey",
-                    matrixRowIndexColumnName: "ItemKey",
-                    numberOfIterations: 20,
-                    approximationRank: 32));
+                .Append(_mlContext.Recommendation().Trainers.MatrixFactorization(new Microsoft.ML.Trainers.MatrixFactorizationTrainer.Options
+                {
+                    LabelColumnName = config.LabelColumn,
+                    MatrixColumnIndexColumnName = "UserKey",
+                    MatrixRowIndexColumnName = "ItemKey",
+                    NumberOfIterations = 20,
+                    ApproximationRank = 32,
+                    // The library prints its own iteration table to the console otherwise (its raw objective values),
+                    // which is not what the run reports: the metrics are the evaluation on the test rows below.
+                    Quiet = true
+                }));
 
             var trialChannel = CreateTrialChannel(progress);
 
