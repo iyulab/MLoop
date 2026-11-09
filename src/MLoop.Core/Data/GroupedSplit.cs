@@ -22,16 +22,18 @@ public static class GroupedSplit
 
     /// <summary>
     /// Splits <paramref name="data"/> so that no value of <paramref name="groupColumn"/> is on both sides.
-    /// A fraction of 0 gives the whole data to both sides, as <c>IDataProvider.SplitData</c> does.
+    /// A fraction of 0 gives the whole data to both sides, as <c>IDataProvider.SplitData</c> does. The group is placed by a
+    /// hash of its value and <paramref name="seed"/>: a second split of one of the sides must use another seed, or it hashes
+    /// the same values to the same places and gives all of them to the side they were already on.
     /// </summary>
-    public static (IDataView Train, IDataView Test) Of(MLContext ml, IDataView data, string groupColumn, double testFraction)
+    public static (IDataView Train, IDataView Test) Of(MLContext ml, IDataView data, string groupColumn, double testFraction, int seed = Seed)
     {
         if (testFraction <= 0)
             return (data, data);
         if (testFraction >= 1)
             throw new ArgumentException("testFraction must be between 0 and 1 (exclusive).", nameof(testFraction));
 
-        var split = ml.Data.TrainTestSplit(data, testFraction: testFraction, samplingKeyColumnName: groupColumn, seed: Seed);
+        var split = ml.Data.TrainTestSplit(data, testFraction: testFraction, samplingKeyColumnName: groupColumn, seed: seed);
         return (split.TrainSet, split.TestSet);
     }
 }

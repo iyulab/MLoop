@@ -62,6 +62,10 @@ public class RankingSelectionTests : IDisposable
 
         Assert.NotEmpty(result.Trials);
         var winnerScore = result.Trials.Max(t => t.Metrics["ndcg"]);
+        // The trials were scored on queries: a comparison set of no rows scores every trial 0, which is not different from anything
+        // and made the next assertion true for the wrong reason (the queries here are text — "q0", "q1", … — and the split of the
+        // training partition gave all of them to the fitting side).
+        Assert.All(result.Trials, t => Assert.True(t.Metrics["ndcg"] > 0, $"{t.Trainer.Name} was scored on no rows"));
         // The winner was scored on queries held out of its fitting; the report is the refitted model on the test queries.
         Assert.NotEqual(winnerScore, result.Metrics["ndcg"]);
         Assert.InRange(result.Metrics["ndcg"], 0.0, 1.0);

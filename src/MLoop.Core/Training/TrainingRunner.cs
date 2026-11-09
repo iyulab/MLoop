@@ -1923,18 +1923,24 @@ public partial class TrainingRunner
     /// A ranking run's training partition split by query into the rows the candidates are fitted on and the queries they are
     /// compared on (a fifth of the queries); the second is null when the partition holds too few queries to spare any.
     /// </summary>
-    private (IDataView Fit, IDataView? Selection) SelectionSplit(IDataView trainSet, TrainingConfig config)
+    internal (IDataView Fit, IDataView? Selection) SelectionSplit(IDataView trainSet, TrainingConfig config)
     {
         var (keyed, keyColumn) = RankingQueries.Of(_mlContext, trainSet, config.GroupColumn);
         var queryCount = keyed.GetColumn<uint>(keyColumn).Distinct().Count();
         if (queryCount < SelectionMinimumQueries)
             return (trainSet, null);
 
-        var (fit, selection) = GroupedSplit.Of(_mlContext, trainSet, config.GroupColumn!, SelectionFraction);
-        return (fit, selection);
+        // Another seed than the split that made this partition: the queries here were all hashed to the training side of that
+        // one, so the same hash puts every one of them on the training side again and nothing is left to compare on (a text
+        // query identifier gave a comparison set of no rows, and every trial scored 0).
+        var (fit, selection) = GroupedSplit.Of(_mlContext, trainSet, config.GroupColumn!, SelectionFraction, SelectionSeed);
+
+        // A hash can still place too few queries on a side; with none to compare on, the first trainer that fits is taken.
+        return CountRows(selection) == 0 || CountRows(fit) == 0 ? (trainSet, null) : (fit, selection);
     }
 
     private const int SelectionMinimumQueries = 10;
+    private const int SelectionSeed = GroupedSplit.Seed + 1;
     private const double SelectionFraction = 0.2;
 
     private async Task<TrainedModel> RunForecastingAsync(
