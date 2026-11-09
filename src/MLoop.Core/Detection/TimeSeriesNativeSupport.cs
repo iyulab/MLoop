@@ -47,19 +47,54 @@ namespace MLoop.Core.Detection;
 /// </remarks>
 public static class TimeSeriesNativeSupport
 {
-    /// <summary>
-    /// What a user is told when the native is unavailable. Names the missing runtime and the action
-    /// that supplies it, because the underlying loader error names only a type initializer.
-    /// </summary>
-    public const string UnavailableMessage =
+    /// <summary>The sentence every variant of the message starts with — what the algorithms need and that it could not be loaded.</summary>
+    public const string UnavailableLead =
         "Time-series algorithms (forecasting, time-series anomaly detection) need ML.NET's "
-        + "MKL native library, and it could not be loaded here. On Linux that library expects an "
-        + "Intel-ABI OpenMP runtime to be installed on the system — ML.NET deliberately does not "
+        + "MKL native library, and it could not be loaded here.";
+
+    private const string LinuxOpenMpAdvice =
+        " On Linux that library expects an Intel-ABI OpenMP runtime to be installed on the system — ML.NET deliberately does not "
         + "bundle one — so install it and expose it under the name it looks for: "
         + "'apt-get update && apt-get install -y libomp5', then make libiomp5.so a symlink to libomp.so.5 "
-        + "(in the same directory, as the README shows). On macOS running "
-        + "Apple silicon and on Linux arm64, ML.NET publishes no osx-arm64 or linux-arm64 build of this "
-        + "library at all, so these algorithms are unavailable there and no install resolves it.";
+        + "(in the same directory, as the README shows).";
+
+    private const string NoBuildAdvice =
+        " ML.NET publishes no osx-arm64 or linux-arm64 build of this library at all, so these algorithms are unavailable there "
+        + "and no install resolves it.";
+
+    /// <summary>
+    /// What a user is told when the native is unavailable and the machine is not known — both causes. Names the missing runtime and
+    /// the action that supplies it, because the underlying loader error names only a type initializer.
+    /// </summary>
+    public const string UnavailableMessage = UnavailableLead + LinuxOpenMpAdvice + " On macOS running Apple silicon and on Linux arm64,"
+        + NoBuildAdvice;
+
+    /// <summary>
+    /// The message for the machine this runs on: <see cref="UnavailableFor"/> of its operating system and architecture.
+    /// </summary>
+    public static string UnavailableHere => UnavailableFor(
+        System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.OSX) ? "macOS"
+        : System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Linux) ? "Linux"
+        : System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows) ? "Windows"
+        : "this operating system",
+        System.Runtime.InteropServices.RuntimeInformation.OSArchitecture);
+
+    /// <summary>
+    /// The one cause that applies to <paramref name="os"/> on <paramref name="architecture"/>, and what to do about it. On Linux x64
+    /// the runtime is the system's to supply (the install steps); on an arm64 machine there is no build to load, so the sentence says
+    /// the platform cannot run these algorithms and names the place that can (a Linux x64 machine or container) and what needs none
+    /// (<c>mloop detect</c>). Any other machine gets both causes.
+    /// </summary>
+    public static string UnavailableFor(string os, System.Runtime.InteropServices.Architecture architecture)
+    {
+        if (architecture == System.Runtime.InteropServices.Architecture.Arm64)
+            return $"{UnavailableLead} ML.NET publishes no build of this library for {os} on arm64, so forecasting and time-series anomaly "
+                + "training cannot run on this machine and no install changes that. Run the training on a Linux x64 machine or container "
+                + "(a linux/amd64 image after the OpenMP step in the README), or find a series' anomalies here without training: mloop detect <data-file>.";
+        if (os == "Linux" && architecture == System.Runtime.InteropServices.Architecture.X64)
+            return UnavailableLead + LinuxOpenMpAdvice;
+        return UnavailableMessage;
+    }
 
     /// <summary>
     /// True when <paramref name="ex"/> is the native library failing to load, rather than a genuine
@@ -121,7 +156,7 @@ public static class TimeSeriesNativeSupport
         }
         catch (Exception ex) when (IsMissingNative(ex))
         {
-            throw new PlatformNotSupportedException(UnavailableMessage, ex);
+            throw new PlatformNotSupportedException(UnavailableHere, ex);
         }
     }
 

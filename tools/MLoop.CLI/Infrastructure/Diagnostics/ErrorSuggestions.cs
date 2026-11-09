@@ -143,7 +143,7 @@ public static partial class ErrorSuggestions
         }
         // The time-series native library is missing: the message already names it and the way out, and advice about the data
         // (the keyword rules below) would point away from the cause. The one thing worth adding is what does not need it.
-        if (InChainCarriesMessage(ex, TimeSeriesNativeSupport.UnavailableMessage))
+        if (InChainCarriesMessage(ex, TimeSeriesNativeSupport.UnavailableLead))
         {
             suggestions.Add("To find anomalies in a series without that library and without training: [cyan]mloop detect <data-file>[/]");
             return suggestions;

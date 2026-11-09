@@ -2288,7 +2288,7 @@ public partial class TrainingRunner
             {
                 if (missingNative is not null)
                     throw new PlatformNotSupportedException(
-                        TimeSeriesNativeSupport.UnavailableMessage, missingNative);
+                        TimeSeriesNativeSupport.UnavailableHere, missingNative);
 
                 throw new InvalidOperationException("All time series anomaly detectors failed.");
             }
