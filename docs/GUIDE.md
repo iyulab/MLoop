@@ -52,10 +52,13 @@ cp ~/data/train.csv datasets/train.csv
 # 2. Train with AutoML (60 seconds)
 mloop train datasets/train.csv --label price --time 60
 
-# Output:
-# ✅ Training complete: exp-001
-# 📊 Best Trainer: FastTreeRegressor
-# 📈 R²: 0.9523, RMSE: 12.45
+# Output (after the search's progress lines):
+# ── Training Complete! ──
+# > Model: default
+# > Experiment ID: exp-001
+# > Best Trainer: FastTree
+# > Training Time: 60.1s
+# then a table of the metrics (R SQUARED, RMSE, MAE, ...) for the held-out rows
 
 # 3. Make predictions
 mloop predict
@@ -1392,9 +1395,11 @@ mloop validate
 # Detailed results
 mloop validate --verbose
 
-# Output:
-# ✅ Configuration is valid
-# ❌ models.default.task: Invalid task type 'regressoin'. Valid values: binary-classification, ...
+# Output: a table of checks (config file, YAML syntax, task types, labels, data paths, prep steps, ...), then
+# "Validation successful! Configuration is valid." (or "Validation passed with warnings." after a "Warnings (n):" list) — and for a mistyped task:
+#   Errors (1):
+#     ✗ models.default.task: Invalid task type 'regressoin'. Valid values: regression, binary-classification, ...
+#   Error: Validation failed: 1 error(s) above — fix them and run mloop validate again.   (exit code 1)
 ```
 
 A valid configuration can still carry warnings: a key `mloop` does not know (usually a typo), a key written twice in
@@ -2852,7 +2857,7 @@ Common issues and solutions when using MLoop.
 ```bash
 # Check encoding with mloop info
 mloop info data.csv
-# Output: [Info] Converted CP949 → UTF-8
+# Output: Info: Converted CP949 -> UTF-8
 
 # Train will also auto-convert
 mloop train data.csv --label label --task regression
@@ -2892,7 +2897,7 @@ pass `--drop-missing-labels false`:
 mloop train data.csv --label label --task binary-classification --drop-missing-labels
 
 # Check the output for dropped row count
-# Output: "Warning: Dropped 113 rows with missing labels"
+# Output: "Warning: Dropped 113/800 rows with missing labels (14.1%)" — and, with the cleaned copy written beside the file, "Using cleaned data: …"
 ```
 
 ### Low Model Performance
