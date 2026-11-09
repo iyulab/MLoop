@@ -867,6 +867,31 @@ public class ModelRegistryTests : IDisposable
     }
 
     [Fact]
+    public async Task ThePromotionThatRepairsAChangedProductionModel_WorksWhileTheProjectRefusesToLoadIt()
+    {
+        // A project that refuses a changed production model must still be able to put a good one back: the way out the refusal names
+        // ('mloop promote <id>', 'mloop rollback') cannot itself read the model it replaces.
+        var first = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double> { ["r_squared"] = 0.7 });
+        var second = await CreateDummyExperimentAsync(DefaultModelName, "exp-002", new Dictionary<string, double> { ["r_squared"] = 0.9 });
+        await _modelRegistry.PromoteAsync(DefaultModelName, first, CancellationToken.None);
+        var slot = _modelRegistry.GetProductionPath(DefaultModelName);
+        var projectRoot = Path.GetFullPath(Path.Combine(slot, "..", "..", ".."));
+        await File.WriteAllTextAsync(Path.Combine(projectRoot, "mloop.yaml"), "integrity:\n  refuse_changed_model: true\n");
+        var model = Path.Combine(slot, "model.zip");
+        await File.WriteAllBytesAsync(model, [7, 7, 7, 7, 7, 7, 7, 7, 7, 7, 7]);
+        Assert.Throws<MLoop.Core.Models.ChangedModelException>(() => MLoop.Core.Models.ModelIntegrity.Enforce(model));   // refused, as asked
+
+        await _modelRegistry.PromoteAsync(DefaultModelName, second, CancellationToken.None);
+
+        MLoop.Core.Models.ModelIntegrity.Enforce(model);   // the slot is a promoted model again
+        Assert.Null(MLoop.Core.Models.ModelIntegrity.Mismatch(model));
+
+        await File.WriteAllBytesAsync(model, [8, 8, 8, 8, 8, 8, 8, 8, 8, 8, 8]);
+        await _modelRegistry.PromoteAsync(DefaultModelName, first, MLoop.Ops.Interfaces.PromotionActions.Rollback);
+        MLoop.Core.Models.ModelIntegrity.Enforce(model);   // and a rollback repairs it as well
+    }
+
+    [Fact]
     public async Task ARollback_IsRecordedWithoutTheGate()
     {
         var first = await CreateDummyExperimentAsync(DefaultModelName, "exp-001", new Dictionary<string, double> { ["r_squared"] = 0.7 });
