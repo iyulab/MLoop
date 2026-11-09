@@ -153,6 +153,8 @@ mloop train [data-file] [options]    # the label is --label, or the one in mloop
 #   --balance [strategy]        Class balancing: 'auto' (to 10:1 when the ratio exceeds 10:1),
 #                               'none', or a target ratio such as '5'; bare --balance means 'auto'
 #   --group-column <column>     Query/group column for the ranking task
+#   --user-column <column>      User column for the recommendation task (who rated)
+#   --item-column <column>      Item column for the recommendation task (what was rated)
 #   --weight <column>           Column that weights the rows (binary, multiclass, regression);
 #                               never a feature. Same as `weight:` in mloop.yaml
 #   --portable                  Train only with steps ONNX can express, so `mloop export onnx`
@@ -183,6 +185,14 @@ mloop train data/fraud.csv --label is_fraud --time 180 --test-split 0.3
 # queries held out of the training share, and the one reported is the winner fitted again on the whole share and
 # scored once on the test queries (a share of fewer than ten queries has none to spare: the first trainer that fits is used).
 mloop train rank.train --label label --group-column qid --test-split 0.2
+
+# Recommendation: one row per rating. Name the column that says who rated, the one that says what was rated, and the
+# rating itself (--label). They are written to mloop.yaml (user_column, item_column), as --group-column writes its key;
+# `mloop init` puts placeholders there (user_id, item_id), which train refuses when the file has no such column.
+# `mloop predict` takes a file of user and item pairs and answers a score per pair on the scale of the ratings.
+mloop init shop --task recommendation
+mloop train datasets/ratings.csv --label rating --user-column user --item-column item
+mloop predict datasets/pairs.csv
 
 # Multi-file training (v0.4.0+)
 mloop train --data normal.csv outlier.csv --label Target --task regression

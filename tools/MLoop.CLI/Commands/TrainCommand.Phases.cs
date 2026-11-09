@@ -45,7 +45,7 @@ public static partial class TrainCommand
     private static async Task<TrainSetup?> ResolveSetupAsync(
         string? modelName, string? label, string? task, int? time, int? maxTrials, int? epochs, string? metric, double? testSplit,
         string? groupColumn, string? weight, string? balance, bool portable, bool ensemble, string? encoder, int? bankSize,
-        FileSystemManager fileSystem, ProjectDiscovery projectDiscovery, Action<string?> noteTask)
+        string? userColumn, string? itemColumn, FileSystemManager fileSystem, ProjectDiscovery projectDiscovery, Action<string?> noteTask)
     {
         // Find project root
         string projectRoot;
@@ -105,6 +105,12 @@ public static partial class TrainCommand
         // Apply CLI --group-column override
         if (!string.IsNullOrEmpty(groupColumn))
             effectiveDefinition.GroupColumn = groupColumn;
+
+        // Apply CLI --user-column / --item-column overrides
+        if (!string.IsNullOrEmpty(userColumn))
+            effectiveDefinition.UserColumn = userColumn;
+        if (!string.IsNullOrEmpty(itemColumn))
+            effectiveDefinition.ItemColumn = itemColumn;
 
         // Apply CLI --weight override, then refuse a weight the run could not honour — a weight
         // that silently did nothing would train an unweighted model the user believes weighted.
@@ -468,6 +474,12 @@ public static partial class TrainCommand
         if (TrainingInput.LabelColumnRefusal(resolvedDataFile, effectiveDefinition.Task, effectiveDefinition.Label, reportedAs: namedDataFile) is { } labelRefusal)
         {
             ErrorConsole.Error(labelRefusal, TrainingInput.LabelColumnGuidance);
+            return PreparedData.Exit(1);
+        }
+
+        if (TrainingInput.KeyColumnsRefusal(resolvedDataFile, effectiveDefinition, reportedAs: namedDataFile) is { } keyRefusal)
+        {
+            ShowRefusal(keyRefusal);
             return PreparedData.Exit(1);
         }
 

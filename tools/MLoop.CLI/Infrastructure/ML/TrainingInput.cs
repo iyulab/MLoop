@@ -53,6 +53,40 @@ public static class TrainingInput
     }
 
     /// <summary>
+    /// Why a ranking or recommendation task cannot train on <paramref name="dataFile"/>: a column it is told to read as the query group,
+    /// the user or the item is not one of the file's columns. Said before any data is read, naming the file, each column the project
+    /// asks for that the file lacks, the columns the file has, and the option that names the right one - <c>mloop init</c> writes a
+    /// placeholder (<c>query_id</c>, <c>user_id</c>, <c>item_id</c>) that a table of the user's own rarely spells that way. <c>null</c>
+    /// for another task, a file with no readable header, or when every named column is there.
+    /// </summary>
+    public static Refusal? KeyColumnsRefusal(string dataFile, ModelDefinition definition, string? reportedAs = null)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        var wanted = new List<(string Role, string Column, string Flag, string Key)>();
+        if (string.Equals(definition.Task, "ranking", StringComparison.OrdinalIgnoreCase))
+            wanted.Add(("query group", definition.GroupColumn ?? "", "--group-column", "group_column"));
+        else if (string.Equals(definition.Task, "recommendation", StringComparison.OrdinalIgnoreCase))
+        {
+            wanted.Add(("user", definition.UserColumn ?? "", "--user-column", "user_column"));
+            wanted.Add(("item", definition.ItemColumn ?? "", "--item-column", "item_column"));
+        }
+        if (wanted.Count == 0 || HeaderColumns(dataFile) is not { } columns)
+            return null;
+        var missing = wanted
+            .Where(w => w.Column.Length > 0 && !columns.Any(column => string.Equals(column, w.Column, StringComparison.Ordinal)))
+            .ToList();
+        if (missing.Count == 0)
+            return null;
+        var file = Path.GetFileName(reportedAs ?? dataFile);
+        var what = string.Join(" and ", missing.Select(m => $"the {m.Role} column '{m.Column}'"));
+        var message = $"The project reads {what} of {file}, and the file has no such column. Available columns: {string.Join(", ", columns)}.";
+        var hint = "Name the column of the file that holds it: mloop train <data-file> "
+            + string.Join(" ", missing.Select(m => $"{m.Flag} <column>"))
+            + $" (or set {string.Join(" and ", missing.Select(m => m.Key))} in mloop.yaml).";
+        return new Refusal(message, hint);
+    }
+
+    /// <summary>
     /// The columns of a CSV/TSV file's header row, read in the file's own encoding: a Korean name against a CP949 file (the usual
     /// spreadsheet export) is no column when the header is read as UTF-8, and a refusal listed the columns as replacement characters.
     /// <c>null</c> for any other file, an unreadable one, or one with no header row.
@@ -278,11 +312,11 @@ public static class TrainingInput
             return new Refusal($"Invalid task type '{definition.Task}'.", $"Valid options: {TaskTypes.Listed}");
 
         if (definition.Task.Equals("ranking", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(definition.GroupColumn))
-            return new Refusal("Ranking task requires a group column. Use --group-column or set 'group_column' in mloop.yaml");
+            return new Refusal("Ranking task requires a group column.", "Name the query column of the file: --group-column <column> (or set 'group_column' in mloop.yaml).");
 
         if (definition.Task.Equals("recommendation", StringComparison.OrdinalIgnoreCase) &&
             (string.IsNullOrEmpty(definition.UserColumn) || string.IsNullOrEmpty(definition.ItemColumn)))
-            return new Refusal("Recommendation task requires user_column and item_column. Set them in mloop.yaml");
+            return new Refusal("Recommendation task requires a user column and an item column.", "Name them: --user-column <column> --item-column <column> (or set 'user_column' and 'item_column' in mloop.yaml).");
 
         if (definition.Task.Equals("forecasting", StringComparison.OrdinalIgnoreCase) && (definition.Horizon ?? 0) <= 0)
             return new Refusal("Forecasting task requires horizon > 0. Set 'horizon' in mloop.yaml");

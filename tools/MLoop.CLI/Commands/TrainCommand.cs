@@ -150,6 +150,15 @@ public static partial class TrainCommand
             Description = "Group column for ranking task (groups rows into query contexts)"
         };
 
+        var userColumnOption = new Option<string?>("--user-column")
+        {
+            Description = "User column for the recommendation task (who rated)"
+        };
+        var itemColumnOption = new Option<string?>("--item-column")
+        {
+            Description = "Item column for the recommendation task (what was rated)"
+        };
+
         var maxRowsOption = new Option<int?>("--max-rows")
         {
             Description = "Maximum training rows. Data exceeding this is auto-sampled (random for regression/anomaly, stratified for classification)"
@@ -197,6 +206,8 @@ public static partial class TrainCommand
         command.Options.Add(autoTimeOption);
         command.Options.Add(balanceOption);
         command.Options.Add(groupColumnOption);
+        command.Options.Add(userColumnOption);
+        command.Options.Add(itemColumnOption);
         command.Options.Add(weightOption);
         command.Options.Add(encoderOption);
         command.Options.Add(bankSizeOption);
@@ -229,6 +240,8 @@ public static partial class TrainCommand
             var autoTime = parseResult.GetValue(autoTimeOption);
             var balance = parseResult.GetValue(balanceOption);
             var groupColumn = parseResult.GetValue(groupColumnOption);
+            var userColumn = parseResult.GetValue(userColumnOption);
+            var itemColumn = parseResult.GetValue(itemColumnOption);
             var maxRows = parseResult.GetValue(maxRowsOption);
             var samplingStrategy = parseResult.GetValue(samplingStrategyOption) ?? parseResult.GetValue(samplingStrategyAliasOption);
             var seed = parseResult.GetValue(seedOption);
@@ -238,7 +251,7 @@ public static partial class TrainCommand
             {
                 balance = "auto";
             }
-            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths, noAutoTime, autoTime, balance, groupColumn, maxRows, samplingStrategy, seed, json, parseResult.GetValue(recordsOption), parseResult.GetValue(weightOption), parseResult.GetValue(portableOption), parseResult.GetValue(encoderOption), parseResult.GetValue(bankSizeOption), parseResult.GetValue(maxTrialsOption), parseResult.GetValue(epochsOption), parseResult.GetValue(ensembleOption));
+            return ExecuteAsync(dataFile, name, label, task, time, metric, testSplit, noPromote, analyzeData, generateScript, autoMerge, dropMissingLabels, dataPaths, noAutoTime, autoTime, balance, groupColumn, maxRows, samplingStrategy, seed, json, parseResult.GetValue(recordsOption), parseResult.GetValue(weightOption), parseResult.GetValue(portableOption), parseResult.GetValue(encoderOption), parseResult.GetValue(bankSizeOption), parseResult.GetValue(maxTrialsOption), parseResult.GetValue(epochsOption), parseResult.GetValue(ensembleOption), userColumn, itemColumn);
         });
 
         return command;
@@ -273,7 +286,9 @@ public static partial class TrainCommand
         int? bankSize = null,
         int? maxTrials = null,
         int? epochs = null,
-        bool ensemble = false)
+        bool ensemble = false,
+        string? userColumn = null,
+        string? itemColumn = null)
     {
         // --json reserves stdout for the event stream: every renderer and narrator in the training
         // path is silenced for the duration, and the real stdout is handed to the emitter. Disposed
@@ -306,7 +321,7 @@ public static partial class TrainCommand
 
             var setup = await ResolveSetupAsync(
                 modelName, label, task, time, maxTrials, epochs, metric, testSplit, groupColumn, weight, balance, portable, ensemble, encoder, bankSize,
-                fileSystem, projectDiscovery, resolved => failedTask = resolved);
+                userColumn, itemColumn, fileSystem, projectDiscovery, resolved => failedTask = resolved);
             if (setup is null)
                 return 1;
             var (projectRoot, resolvedModelName, configLoader, userConfig, effectiveDefinition, requiresLabel) = setup;
@@ -445,7 +460,7 @@ public static partial class TrainCommand
             }
 
             // Sync mloop.yaml if CLI overrode label or task
-            await SyncYamlConfigAsync(configLoader, userConfig, resolvedModelName, effectiveDefinition, label, task, groupColumn);
+            await SyncYamlConfigAsync(configLoader, userConfig, resolvedModelName, effectiveDefinition, label, task, groupColumn, userColumn, itemColumn);
 
             // Emitted here, before auto-promote: the experiment is finished and recorded at this
             // point. A promotion that fails afterwards adds an error event and a non-zero exit, so a
@@ -546,10 +561,13 @@ public static partial class TrainCommand
         ModelDefinition effectiveDefinition,
         string? cliLabel,
         string? cliTask,
-        string? cliGroupColumn = null)
+        string? cliGroupColumn = null,
+        string? cliUserColumn = null,
+        string? cliItemColumn = null)
     {
         // Only sync if CLI actually overrode something
-        if (string.IsNullOrEmpty(cliLabel) && string.IsNullOrEmpty(cliTask) && string.IsNullOrEmpty(cliGroupColumn))
+        if (string.IsNullOrEmpty(cliLabel) && string.IsNullOrEmpty(cliTask) && string.IsNullOrEmpty(cliGroupColumn)
+            && string.IsNullOrEmpty(cliUserColumn) && string.IsNullOrEmpty(cliItemColumn))
             return;
 
         var yamlModel = userConfig.Models.TryGetValue(modelName, out var m) ? m : null;
@@ -560,6 +578,10 @@ public static partial class TrainCommand
         if (!string.IsNullOrEmpty(cliTask) && (yamlModel == null || !string.Equals(yamlModel.Task, cliTask, StringComparison.OrdinalIgnoreCase)))
             needsUpdate = true;
         if (!string.IsNullOrEmpty(cliGroupColumn) && (yamlModel == null || !string.Equals(yamlModel.GroupColumn, cliGroupColumn, StringComparison.Ordinal)))
+            needsUpdate = true;
+        if (!string.IsNullOrEmpty(cliUserColumn) && (yamlModel == null || !string.Equals(yamlModel.UserColumn, cliUserColumn, StringComparison.Ordinal)))
+            needsUpdate = true;
+        if (!string.IsNullOrEmpty(cliItemColumn) && (yamlModel == null || !string.Equals(yamlModel.ItemColumn, cliItemColumn, StringComparison.Ordinal)))
             needsUpdate = true;
 
         if (!needsUpdate)
@@ -584,6 +606,16 @@ public static partial class TrainCommand
                 yamlModel.GroupColumn = cliGroupColumn;
                 changes.Add(("group_column", cliGroupColumn));
             }
+            if (!string.IsNullOrEmpty(cliUserColumn))
+            {
+                yamlModel.UserColumn = cliUserColumn;
+                changes.Add(("user_column", cliUserColumn));
+            }
+            if (!string.IsNullOrEmpty(cliItemColumn))
+            {
+                yamlModel.ItemColumn = cliItemColumn;
+                changes.Add(("item_column", cliItemColumn));
+            }
         }
         else
         {
@@ -593,6 +625,8 @@ public static partial class TrainCommand
                 Task = effectiveDefinition.Task,
                 Label = effectiveDefinition.Label,
                 GroupColumn = effectiveDefinition.GroupColumn,
+                UserColumn = effectiveDefinition.UserColumn,
+                ItemColumn = effectiveDefinition.ItemColumn,
                 Training = effectiveDefinition.Training
             };
         }
@@ -602,7 +636,9 @@ public static partial class TrainCommand
             if (!await configLoader.SaveModelAsync(userConfig, modelName, changes))
                 WarningConsole.Warn(ConfigLoader.RewrittenWarning);
             var group = string.IsNullOrEmpty(effectiveDefinition.GroupColumn) ? "" : $", group_column={effectiveDefinition.GroupColumn}";
-            var text = $"Updated mloop.yaml: model '{modelName}' → label={effectiveDefinition.Label}, task={effectiveDefinition.Task}{group}";
+            var users = string.IsNullOrEmpty(effectiveDefinition.UserColumn) ? "" : $", user_column={effectiveDefinition.UserColumn}";
+            var items = string.IsNullOrEmpty(effectiveDefinition.ItemColumn) ? "" : $", item_column={effectiveDefinition.ItemColumn}";
+            var text = $"Updated mloop.yaml: model '{modelName}' → label={effectiveDefinition.Label}, task={effectiveDefinition.Task}{group}{users}{items}";
             AnsiConsole.MarkupLine($"[grey]{Markup.Escape(text)}[/]");
         }
         catch (Exception ex)
