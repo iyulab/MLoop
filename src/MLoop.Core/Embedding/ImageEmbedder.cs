@@ -48,9 +48,12 @@ public sealed class ImageEmbedder : IDisposable
     /// <summary>
     /// Why <paramref name="encoder"/> gives no patch vectors, or <see langword="null"/> when it does.
     /// </summary>
-    public static string? NoPatches(EncoderDefinition encoder) => encoder.Grid is null
-        ? $"Encoder '{encoder.Id}' does not say how its output tiles the image (\"patchSize\" in its encoder.json), so it gives no patch vectors."
-        : null;
+    public static string? NoPatches(EncoderDefinition encoder) =>
+        encoder.Grid is not null ? null
+        : encoder.Pooling != EncoderPooling.FirstToken
+            ? $"Encoder '{encoder.Id}' returns one pooled vector per image ([images, dimension]), not the image's tokens, so it has no patch vectors; " +
+              $"patches need an encoder whose output is [images, tokens, dimension] and that names its \"patchSize\" ({string.Join(", ", EncoderCatalog.All.Where(e => e.Grid is not null).Select(e => e.Id))})."
+            : $"Encoder '{encoder.Id}' does not say how its output tiles the image (\"patchSize\" in its encoder.json), so it gives no patch vectors.";
 
     /// <summary>One vector per image, in order — and with <paramref name="patches"/>, every image's patch vectors.</summary>
     /// <exception cref="UnreadableImageException">An image could not be decoded; nothing is returned for the batch.</exception>

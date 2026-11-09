@@ -192,6 +192,24 @@ public class ImageEmbedderTests
         Assert.Equal(282 * 640 / 341.0, region.Y1, 9);
     }
 
+    // An encoder that returns one pooled vector has no tokens to tile: the answer says so and names the ones that do, instead
+    // of asking for a patchSize that would not help.
+    [Fact]
+    public void PatchesAskedOfAPooledEncoder_AreRefusedWithTheReason_AndTheEncodersThatDoGiveThem()
+    {
+        var pooled = Tiny with { Pooling = EncoderPooling.None };
+        var unsaid = Tiny;   // first-token, but no patchSize
+
+        var refusal = ImageEmbedder.NoPatches(pooled)!;
+        Assert.Contains("one pooled vector per image", refusal);
+        Assert.Contains("dinov2-small", refusal);
+        Assert.DoesNotContain("dinov2-small", EncoderCatalog.All.Where(e => e.Grid is null).Select(e => e.Id));
+        Assert.Contains("siglip-base-224", EncoderCatalog.All.Where(e => e.Grid is null).Select(e => e.Id));
+        Assert.DoesNotContain("siglip-base-224", refusal);
+        Assert.Contains("\"patchSize\" in its encoder.json", ImageEmbedder.NoPatches(unsaid));
+        Assert.Null(ImageEmbedder.NoPatches(unsaid with { PatchSize = 3 }));
+    }
+
     private static readonly ImagePreprocessing Squared =
         new(ShortestEdge: 6, CropSize: 6, Mean: [0.5f, 0.5f, 0.5f], Std: [0.5f, 0.5f, 0.5f], Resize: ImageResize.Square);
 
