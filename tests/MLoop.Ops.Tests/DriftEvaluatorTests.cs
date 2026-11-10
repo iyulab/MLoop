@@ -27,11 +27,11 @@ public class DriftEvaluatorTests : IDisposable
 
     private string Production => Path.Combine(_root, ExperimentLayout.ModelsDirectory, "m", ExperimentLayout.ProductionDirectory);
 
-    private void Promote(string experimentId, bool withProfile = true, double? yesShareAtTraining = null, int profileRows = 1000)
+    private void Promote(string experimentId, bool withProfile = true, double? yesShareAtTraining = null, int profileRows = 1000, string? task = null)
     {
         Directory.CreateDirectory(Production);
         File.WriteAllText(Path.Combine(Production, ExperimentLayout.MetadataFileName),
-            JsonSerializer.Serialize(new { experimentId }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
+            JsonSerializer.Serialize(new { experimentId, task }, new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
         if (!withProfile)
             return;
         var rows = Enumerable.Range(0, profileRows).Select(i => new[] { (i % 100).ToString(CultureInfo.InvariantCulture) }).ToArray();
@@ -85,6 +85,32 @@ public class DriftEvaluatorTests : IDisposable
 
         check.Status.Should().Be(DriftCheckStatus.NoProfile);
         check.Message.Should().Contain("Retrain and promote");
+    }
+
+    [Theory]
+    [InlineData("recommendation")]
+    [InlineData("forecasting")]
+    public async Task ATaskThatReadsNoFeatureColumns_IsToldItHasNothingToProfile_NotToRetrain(string task)
+    {
+        Promote("exp-001", withProfile: false, task: task);
+
+        var check = await DriftEvaluator.CheckAsync(_root, _logs, "m");
+
+        check.Status.Should().Be(DriftCheckStatus.NoProfile);
+        check.Message.Should().Contain("reads no feature columns").And.Contain(task).And.NotContain("Retrain");
+    }
+
+    [Theory]
+    [InlineData("text-classification")]
+    [InlineData("binary-classification")]
+    public async Task ATaskThatRecordsAProfile_ButHasNone_IsStillToldToRetrain(string task)
+    {
+        Promote("exp-001", withProfile: false, task: task);
+
+        var check = await DriftEvaluator.CheckAsync(_root, _logs, "m");
+
+        check.Status.Should().Be(DriftCheckStatus.NoProfile);
+        check.Message.Should().Contain("Retrain and promote").And.NotContain("reads no feature columns");
     }
 
     [Fact]

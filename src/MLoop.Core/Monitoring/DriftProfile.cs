@@ -62,6 +62,14 @@ public sealed record DriftProfile
     public static bool ProfilesTableText(string? task)
         => TaskTypes.Canonical(task) is "text-classification" or "sentence-similarity" or "ner" or "question-answering";
 
+    /// <summary>
+    /// Whether training records a drift profile for <paramref name="task"/> at all — the one place that says it: a model that reads
+    /// feature columns, or the free text of a text task. A recommendation, series or object-detection model never has one, so
+    /// "retrain to start measuring drift" is advice that starts nothing for it.
+    /// </summary>
+    public static bool IsRecordedFor(string? task)
+        => Training.TrainingRunner.ReadsFeatureColumns(task) || ProfilesTableText(task);
+
     /// <summary>Whether <paramref name="task"/>'s answer is a class or a value — the answers an answer profile describes.</summary>
     public static bool HasAnswerProfile(string? task)
         => Training.TrainingRunner.IsClassification(task) || TaskTypes.Canonical(task) == "regression";

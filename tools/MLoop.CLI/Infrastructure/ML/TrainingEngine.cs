@@ -997,7 +997,7 @@ public class TrainingEngine : ITrainingEngine
         CancellationToken cancellationToken)
     {
         if (inputSchema is null || !File.Exists(dataFilePath)
-            || !(TrainingRunner.ReadsFeatureColumns(config.Task) || MLoop.Core.Monitoring.DriftProfile.ProfilesTableText(config.Task)))
+            || !MLoop.Core.Monitoring.DriftProfile.IsRecordedFor(config.Task))
             return;
         try
         {

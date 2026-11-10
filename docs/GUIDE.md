@@ -1820,8 +1820,8 @@ compared as the model reads them, in single precision. Fewer than 300 logged pre
 to compare: with ten bins per column an unchanged window of n rows has a PSI of about 9 ÷ n, so a
 smaller window would read chance as drift. Only predictions of the model now in production count:
 an earlier model's traffic describes another model. A model
-trained before profiles were recorded, or a task that reads no feature columns (time series,
-recommendation, deep learning), has none — the command says so; retrain and promote to start.
+trained before profiles were recorded has none — the command says so; retrain and promote to start. A task
+that records no profile at all (time series, recommendation, image tasks) is told that there is no input to profile.
 
 The same measurement is a retraining condition: `mloop trigger check` and `GET /trigger` report
 `input_drift` (met when a column's PSI is at 0.25 or more and over what chance alone gives for that window and training set - the same bound the levels are read against; the details say when it was over the threshold but within the bound) with every column's PSI under `drift` in `--json`.

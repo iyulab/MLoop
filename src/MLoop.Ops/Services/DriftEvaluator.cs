@@ -87,8 +87,11 @@ public static class DriftEvaluator
         var profilePath = Path.Combine(production, ExperimentLayout.DriftProfileFileName);
         if (!File.Exists(profilePath))
             return new DriftCheck(DriftCheckStatus.NoProfile, experimentId, 0, null, null,
-                $"The production model ({experimentId}) has no drift profile — it was trained before profiles were recorded, "
-                + "or its task reads no feature columns. Retrain and promote to start measuring drift.");
+                // A task whose model reads no feature columns never has a profile, so retraining would not start anything.
+                metadata.Task is { } task && !DriftProfile.IsRecordedFor(task)
+                    ? $"The production model ({experimentId}) is a {task} model: it reads no feature columns, so there is no input to profile and drift is not measured for it."
+                    : $"The production model ({experimentId}) has no drift profile — it was trained before profiles were recorded. "
+                      + "Retrain and promote to start measuring drift.");
         DriftProfile profile;
         await using (var stream = File.OpenRead(profilePath))
             profile = await JsonSerializer.DeserializeAsync<DriftProfile>(stream, Options, cancellationToken).ConfigureAwait(false)
