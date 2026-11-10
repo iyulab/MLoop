@@ -6,12 +6,12 @@ using Spectre.Console;
 namespace MLoop.Tests.Commands;
 
 /// <summary>
-/// The feature ranking <c>info --analyze</c> prints. It printed the structural ranking (variance and collinearity, blind to the
+/// What <c>info</c> prints about a data file. The feature ranking of <c>--analyze</c> printed the structural ranking (variance and collinearity, blind to the
 /// label): where one column drove the label and another was noise, the noise column came first, the driver last, and the label
 /// was listed as one of its own features.
 /// </summary>
 [Collection("FileSystem")]
-public class InfoImportancePresenterTests
+public class InfoPresenterTests
 {
     private static FeatureReport Report() => new()
     {
@@ -75,5 +75,25 @@ public class InfoImportancePresenterTests
 
         Assert.Contains("Importance (structural)", text, StringComparison.Ordinal);
         Assert.Contains("not from the label", System.Text.RegularExpressions.Regex.Replace(text, @"\s+", " "), StringComparison.Ordinal);   // the line wraps at the console width
+    }
+
+    [Fact]
+    public void TheLabelStatistics_StdDevIsTheSampleStandardDeviation_AsTheColumnTableSaysIt()
+    {
+        // 1..30, once each: the sample standard deviation is 8.8034 (the population one 8.6554).
+        var distribution = Enumerable.Range(1, 30).ToDictionary(i => i.ToString(System.Globalization.CultureInfo.InvariantCulture), _ => 1);
+        var original = AnsiConsole.Console;
+        var buffer = new StringWriter();
+        try
+        {
+            AnsiConsole.Console = AnsiConsole.Create(new AnsiConsoleSettings { Out = new AnsiConsoleOutput(buffer), Ansi = AnsiSupport.No, ColorSystem = ColorSystemSupport.NoColors });
+            InfoPresenter.DisplayLabelDistribution(distribution, 30);
+        }
+        finally
+        {
+            AnsiConsole.Console = original;
+        }
+
+        Assert.Matches(@"Std Dev\s*│\s*8\.8034", buffer.ToString());
     }
 }

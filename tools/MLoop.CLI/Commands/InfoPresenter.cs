@@ -440,7 +440,9 @@ internal static class InfoPresenter
             .ToList();
 
         var mean = values.Average();
-        var stdDev = Math.Sqrt(values.Average(v => (v - mean) * (v - mean)));
+        // The sample standard deviation (n - 1), as the StdDev column of the same report says it — dividing by n made one
+        // column's two figures differ in the third digit.
+        var stdDev = values.Count > 1 ? Math.Sqrt(values.Sum(v => (v - mean) * (v - mean)) / (values.Count - 1)) : 0.0;
         var median = values.Count % 2 == 0
             ? (values[values.Count / 2 - 1] + values[values.Count / 2]) / 2.0
             : values[values.Count / 2];
