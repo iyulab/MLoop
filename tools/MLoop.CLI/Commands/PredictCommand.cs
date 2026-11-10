@@ -198,6 +198,9 @@ public static partial class PredictCommand
                 return 1;
             }
 
+            if (OutputFileGuard.Refuses(dataFile is null ? null : ProjectPaths.Resolve(dataFile, projectRoot), output, projectRoot))
+                return 1;
+
             // Resolve model name (defaults to "default")
             var resolvedModelName = MLoop.Core.Storage.ModelName.Resolve(modelName);
 

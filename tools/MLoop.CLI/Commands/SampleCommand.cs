@@ -165,6 +165,9 @@ public static class SampleCommand
                 return 1;
             }
 
+            if (OutputFileGuard.Refuses(resolvedInput, outputPath, null))   // written where the sampler is told to: relative to the working directory
+                return 1;
+
             // Generate default output path if not provided. The sample is CSV: beside a file in another format
             // (Excel, JSON, Parquet, TSV) it is named for that file, with the extension of what it holds.
             if (string.IsNullOrEmpty(outputPath))

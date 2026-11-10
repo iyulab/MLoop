@@ -142,6 +142,9 @@ public static class DetectCommand
 
         try
         {
+            if (OutputFileGuard.Refuses(dataFile, outputPath, null))
+                return 1;
+
             // Checked here, in the command's own terms, so the message names the flag rather than
             // the library property it becomes.
             if (!(threshold > 0) || !double.IsFinite(threshold))

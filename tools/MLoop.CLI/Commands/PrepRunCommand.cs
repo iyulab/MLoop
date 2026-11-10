@@ -183,6 +183,9 @@ public static class PrepRunCommand
                 return 0;
             }
 
+            if (OutputFileGuard.Refuses(resolvedInput, outputPath, null))   // written where the pipeline is told to: relative to the working directory
+                return 1;
+
             // Resolve output path
             var resolvedOutput = outputPath;
             if (string.IsNullOrEmpty(resolvedOutput))
