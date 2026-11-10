@@ -187,6 +187,22 @@ public static partial class EvaluateCommand
         return resolvedTestDataFile;
     }
 
+    /// <summary>
+    /// The Training and Difference cells of one metric. A metric the training run did not record is no value of zero: shown as "-", with no
+    /// difference (a training <c>ece</c> that was never measured read 0.0000 and the test's 0.0006 as a rise of 0.0006, a log-loss reduction
+    /// of 0.9994 against nothing). One recorded as undefined is the worst value of its direction: shown in words, with no difference to read.
+    /// </summary>
+    internal static (string Training, string Difference) TrainingColumns(
+        string metricName, double testValue, IReadOnlyDictionary<string, double> trainingMetrics)
+    {
+        if (!trainingMetrics.TryGetValue(metricName, out var trainingValue))
+            return ("-", "-");
+
+        var undefined = MetricSanitizer.IsUndefinedSentinel(metricName, testValue) || MetricSanitizer.IsUndefinedSentinel(metricName, trainingValue);
+        return (MetricSanitizer.Display(metricName, trainingValue),
+            undefined ? "-" : FormatMetricDifference(metricName, testValue - trainingValue));
+    }
+
     /// <summary>The metrics table against training, the confusion matrix, and the overfitting finding.</summary>
     private static (bool Overfitting, Dictionary<string, double> TrainingMetrics) ShowEvaluation(
         ExperimentData experimentData, Dictionary<string, double> testMetrics, ConfusionCounts? confusion,
@@ -208,18 +224,12 @@ public static partial class EvaluateCommand
 
         foreach (var metricName in testMetrics.Keys)
         {
-            var testValue = testMetrics[metricName];
-            var trainingValue = trainingMetrics.ContainsKey(metricName) ? trainingMetrics[metricName] : 0;
-            var difference = testValue - trainingValue;
-
-            // A metric recorded as undefined is the worst value of its direction: shown in words, with no difference to read.
-            var undefined = MetricSanitizer.IsUndefinedSentinel(metricName, testValue) || MetricSanitizer.IsUndefinedSentinel(metricName, trainingValue);
-            var differenceText = undefined ? "-" : FormatMetricDifference(metricName, difference);
+            var (trainingText, differenceText) = TrainingColumns(metricName, testMetrics[metricName], trainingMetrics);
 
             table.AddRow(
                 metricName,
-                MetricSanitizer.Display(metricName, trainingValue),
-                MetricSanitizer.Display(metricName, testValue),
+                trainingText,
+                MetricSanitizer.Display(metricName, testMetrics[metricName]),
                 differenceText);
         }
 

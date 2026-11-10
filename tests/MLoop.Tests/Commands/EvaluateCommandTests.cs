@@ -24,6 +24,25 @@ public class EvaluateCommandTests
 
     #endregion
 
+    #region TrainingColumns
+
+    [Fact]
+    public void TrainingColumns_AMetricTheTrainingRunDidNotRecord_IsNoZero()
+    {
+        var training = new Dictionary<string, double> { ["macro_accuracy"] = 1.0, ["log_loss"] = 0.0008 };
+
+        // Not in the training record: nothing to compare with — no "0.0000", and no difference against it.
+        Assert.Equal(("-", "-"), EvaluateCommand.TrainingColumns("ece", 0.0006, training));
+        Assert.Equal(("-", "-"), EvaluateCommand.TrainingColumns("log_loss_reduction", 0.9994, training));
+
+        // Recorded: the value and the difference as before.
+        var (value, difference) = EvaluateCommand.TrainingColumns("macro_accuracy", 0.9, training);
+        Assert.Equal("1.0000", value);
+        Assert.NotEqual("-", difference);
+    }
+
+    #endregion
+
     #region FormatMetricDifference
 
     [Fact]
