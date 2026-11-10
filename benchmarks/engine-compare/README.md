@@ -48,7 +48,7 @@ both systems, and a new draw of noise around the same gaps, and checks the statu
 noise alone - that is why one flip is only a watch.
 
 The `Benchmarks scheduled` workflow runs the comparison (systems `mloop`, `flaml`, `lightgbm`; split seeds 0-4) and the lifecycle walk on a weekly schedule and reads
-each comparison against the previous successful run.
+each comparison against the baseline pinned at the last release, not the previous run - a baseline that followed the previous run would take in a table that slipped behind each week and never fail on a slow slide. After a release, start the workflow by hand with `pin_baseline` on the released commit to pin it (kept 90 days as the `bench-baseline` artifact); with none pinned yet, the first successful run pins itself.
 
 ## Ranking against the old AutoML (`rank.py`)
 
