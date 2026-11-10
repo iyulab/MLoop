@@ -77,6 +77,24 @@ public class AnswerAlignmentTests
         Assert.Throws<NotSupportedException>(() => ((ICanSaveModel)model).Save(null!));
     }
 
+    [Fact]
+    public void ThePassageColumnIsReadFromTheTransformersOwnOptions()
+    {
+        var model = new Microsoft.ML.TorchSharp.Roberta.QATransformer();
+
+        Assert.True(AnswerAlignment.IsQuestionAnswering(model));
+        Assert.Equal("Passage", AnswerAlignment.ContextColumnOf(model));
+    }
+
+    [Fact]
+    public void AQuestionAnsweringModelWhosePassageColumnCannotBeRead_IsRefused_NotReadUnpadded()
+    {
+        var model = new Microsoft.ML.TorchSharp.Roberta.QATransformer(options: new object());
+
+        Assert.Null(AnswerAlignment.ContextColumnOf(model));
+        Assert.Throws<InvalidOperationException>(() => AnswerAlignment.Apply(new MLContext(1), model));
+    }
+
     private sealed class Row
     {
         public string? Context { get; set; }

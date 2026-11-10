@@ -44,7 +44,12 @@ public static class AnswerAlignment
     {
         ArgumentNullException.ThrowIfNull(mlContext);
         ArgumentNullException.ThrowIfNull(model);
-        return ContextColumnOf(model) is { } column ? Apply(mlContext, model, column) : model;
+        if (!IsQuestionAnswering(model))
+            return model;
+        // See NerAlignment.Apply: an unreadable passage column is a refusal, not an unpadded read.
+        var column = ContextColumnOf(model)
+            ?? throw new InvalidOperationException("The question-answering model's passage column could not be read from its transformer (the ML.NET TorchSharp layout changed?); its answers cannot be read whole.");
+        return Apply(mlContext, model, column);
     }
 
     /// <summary>The same for a model that reads its passages from <paramref name="contextColumn"/>.</summary>

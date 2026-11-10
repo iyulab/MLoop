@@ -48,7 +48,13 @@ public static class NerAlignment
     {
         ArgumentNullException.ThrowIfNull(mlContext);
         ArgumentNullException.ThrowIfNull(model);
-        return TextColumnOf(model) is { } column ? Apply(mlContext, model, column) : model;
+        if (!IsNer(model))
+            return model;
+        // A NER model whose sentence column cannot be read — the library moved its fields — is not read unaligned in silence: that is
+        // the wrong answers this layer exists to prevent.
+        var column = TextColumnOf(model)
+            ?? throw new InvalidOperationException("The NER model's sentence column could not be read from its transformer (the ML.NET TorchSharp layout changed?); its tags cannot be put back on their words.");
+        return Apply(mlContext, model, column);
     }
 
     /// <summary>The same for a model that reads its sentences from <paramref name="textColumn"/>.</summary>

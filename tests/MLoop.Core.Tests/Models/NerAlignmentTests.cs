@@ -104,6 +104,25 @@ public class NerAlignmentTests
         Assert.Throws<NotSupportedException>(() => ((ICanSaveModel)model).Save(null!));
     }
 
+    [Fact]
+    public void TheSentenceColumnIsReadFromTheTransformersOwnOptions()
+    {
+        var model = new Microsoft.ML.TorchSharp.NasBert.NerTransformer();
+
+        Assert.True(NerAlignment.IsNer(model));
+        Assert.Equal("Sentence", NerAlignment.TextColumnOf(model));
+        Assert.Equal("Sentence", NerAlignment.TextColumnOf(new TransformerChain<ITransformer>(model)));
+    }
+
+    [Fact]
+    public void ANerModelWhoseSentenceColumnCannotBeRead_IsRefused_NotReadUnaligned()
+    {
+        var model = new Microsoft.ML.TorchSharp.NasBert.NerTransformer(options: new object());
+
+        Assert.Null(NerAlignment.TextColumnOf(model));
+        Assert.Throws<InvalidOperationException>(() => NerAlignment.Apply(new MLContext(1), model));
+    }
+
     // What one sentence's answer is in the transformer's shape: the start token's slot, then each word's slot holds the
     // tag of the word before it (a word outside every entity is the outside tag).
     private static string[] Shift(string? sentence)
