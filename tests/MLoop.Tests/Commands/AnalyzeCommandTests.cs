@@ -157,6 +157,44 @@ public class AnalyzeCommandTests
         Assert.Empty(env.Flags);
     }
 
+    private static FeatureReport TwoNumericFeaturesRanked() => new()
+    {
+        TargetColumn = "y",
+        Permutation = new PermutationSummary
+        {
+            BaselineScore = 0.9,
+            Features = [new() { Name = "a", Importance = 0.3 }, new() { Name = "b", Importance = 0.02 }],
+        },
+    };
+
+    [Fact]
+    public void MapImportance_SaysWhichFileColumnsItDidNotRank()
+    {
+        // A text/category column is not scored here, and a reader who sees two of three columns ranked
+        // concludes the third does not matter — the command names it.
+        var env = AnalyzeJson.MapImportance(TwoNumericFeaturesRanked(), label: "y", fileColumns: ["a", "b", "grp", "y"]);
+
+        var note = Assert.Single(env.Flags, f => f.StartsWith("not ranked:", StringComparison.Ordinal));
+        Assert.Equal("not ranked: grp ", note.Split('—')[0]);   // ranked columns and the label are not listed
+    }
+
+    [Fact]
+    public void MapImportance_AllFileColumnsRanked_AddsNoNote()
+    {
+        var env = AnalyzeJson.MapImportance(TwoNumericFeaturesRanked(), label: "y", fileColumns: ["a", "b", "y"]);
+
+        Assert.DoesNotContain(env.Flags, f => f.StartsWith("not ranked:", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void NotRanked_KeepsFileOrder_AndSkipsLabelAndBlankNames()
+    {
+        var ranking = new[] { new AnalyzeJson.RankedFeature("a", 0.3) };
+
+        Assert.Equal(["z", "m"], AnalyzeJson.NotRanked(["z", "a", "y", "", "m"], "y", ranking));
+        Assert.Empty(AnalyzeJson.NotRanked(null, "y", ranking));
+    }
+
     [Fact]
     public void MapImportance_PrefersPermutation_AndExcludesLabel()
     {

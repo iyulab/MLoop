@@ -228,7 +228,25 @@ public static class AnalyzeJson
         return (method, ranking);
     }
 
-    public static AnalyzeEnvelope MapImportance(FeatureReport? features, string? label)
+    /// <summary>
+    /// The file's feature columns that the ranking does not hold — in file order. Importance is scored on the
+    /// columns the analysis reads as numbers, so a text or category column is not ranked; without this a reader
+    /// sees two columns ranked and concludes the third does not matter (a model may rely on it most).
+    /// </summary>
+    public static IReadOnlyList<string> NotRanked(IReadOnlyList<string>? fileColumns, string? label, IReadOnlyList<RankedFeature> ranking)
+    {
+        if (fileColumns is null) return Array.Empty<string>();
+        var ranked = ranking.Select(r => r.Feature).ToHashSet(StringComparer.Ordinal);
+        return fileColumns
+            .Where(c => !string.IsNullOrWhiteSpace(c) && !string.Equals(c, label, StringComparison.Ordinal) && !ranked.Contains(c))
+            .ToList();
+    }
+
+    /// <summary>The sentence that says which columns were not ranked and where to look instead.</summary>
+    public static string NotRankedNote(IReadOnlyList<string> notRanked)
+        => $"not ranked: {string.Join(", ", notRanked)} — importance here covers the columns read as numbers (text, category and constant columns are left out); `mloop explain` on a trained model scores every column the model reads";
+
+    public static AnalyzeEnvelope MapImportance(FeatureReport? features, string? label, IReadOnlyList<string>? fileColumns = null)
     {
         var structural = features?.Importance;
         var (method, rankedFeatures) = RankImportance(features, label);
@@ -248,6 +266,9 @@ public static class AnalyzeJson
         var highCorrPairs = structural?.HighCorrPairsCount ?? 0;
 
         var flags = new List<string>();
+        var notRanked = NotRanked(fileColumns, label, rankedFeatures);
+        if (notRanked.Count > 0)
+            flags.Add(NotRankedNote(notRanked));
         if (conditionNumber > 1000)
             flags.Add($"multicollinearity-suspected (condition number {conditionNumber:F0})");
         if (lowVariance > 0)

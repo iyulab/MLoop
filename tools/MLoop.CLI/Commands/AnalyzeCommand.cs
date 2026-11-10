@@ -410,7 +410,8 @@ public static class AnalyzeCommand
                 o.TargetColumn = ctx.Value.Label;
             }));
 
-            var env = AnalyzeJson.MapImportance(result?.Features, ctx.Value.Label);
+            var fileColumns = FeaturesCommand.ReadHeaderColumns(ctx.Value.DataFile);
+            var env = AnalyzeJson.MapImportance(result?.Features, ctx.Value.Label, fileColumns);
             Emit(env, json, _ =>
             {
                 var (method, ranking) = AnalyzeJson.RankImportance(result?.Features, ctx.Value.Label);
@@ -425,6 +426,9 @@ public static class AnalyzeCommand
                 foreach (var r in ranking)
                     table.AddRow(Markup.Escape(r.Feature), r.Score.ToString("F4"));
                 AnsiConsole.Write(table);
+                var notRanked = AnalyzeJson.NotRanked(fileColumns, ctx.Value.Label, ranking);
+                if (notRanked.Count > 0)
+                    AnsiConsole.MarkupLine($"[grey]{Markup.Escape(AnalyzeJson.NotRankedNote(notRanked))}[/]");
             });
             return 0;
         }
