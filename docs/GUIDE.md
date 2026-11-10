@@ -1597,7 +1597,17 @@ on.
 
 **`--metrics-file`** is for callers that hold the metrics themselves — a distributed run, or a
 system of record outside this project. It ranks what it is given and reports the winner without
-reading `.mloop/` at all, which is why it pairs with `--json`.
+reading `.mloop/` at all, which is why it pairs with `--json`. The file is an array of candidates, each with an
+`id` and its `metrics` (a candidate missing a metric the others have is ranked on the metrics they share):
+
+```json
+[{"id": "a", "metrics": {"macro_accuracy": 0.40, "entity_f1": 0.20}},
+ {"id": "b", "metrics": {"macro_accuracy": 0.50}}]
+```
+
+```bash
+mloop compare --metrics-file candidates.json --json     # → {"metric": "macro_accuracy", "best": "b", "ranking": [...], ...}
+```
 
 ---
 
