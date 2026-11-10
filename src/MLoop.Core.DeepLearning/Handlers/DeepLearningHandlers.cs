@@ -385,7 +385,7 @@ internal static class DeepLearningHandlers
             using (EpochProgress.Attach(mlContext, progress, "Question answering", EpochProgress.Of(config), log))
                 model = TorchFit.Run(() => pipeline.Fit(prepared));
 
-            var (exact, f1) = AnswerOverlap.Measure(model.Transform(testSet), answerCol);
+            var (exact, f1) = AnswerOverlap.Measure(AnswerAlignment.Apply(mlContext, model, contextCol).Transform(testSet), answerCol);
             var metricsDict = new Dictionary<string, double>
             {
                 [AnswerOverlap.CharF1] = f1,
@@ -461,7 +461,16 @@ internal static class DeepLearningHandlers
             answer(ref a);
             if (AnswerStartColumn.Locate(c.Span, a.Span, position()) is { } at)
             {
-                rows.Add(new QuestionAnswerRow { Context = c.ToString(), Question = q.ToString(), Answer = a.ToString(), Start = at });
+                // The trainer is told the passage with a word after its last one and the answer reaching the next token's first
+                // character: its decoder cuts the last token off what was trained (AnswerAlignment).
+                var padded = TextPadding.Padded(c.ToString());
+                rows.Add(new QuestionAnswerRow
+                {
+                    Context = padded,
+                    Question = q.ToString(),
+                    Answer = AnswerAlignment.TrainingAnswer(padded, at, a.Length),
+                    Start = at,
+                });
                 if (PretrainedTextAlphabet.CanWrite(a.Span))
                     writable++;
             }

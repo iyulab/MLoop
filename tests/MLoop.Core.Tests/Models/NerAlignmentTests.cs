@@ -70,8 +70,8 @@ public class NerAlignmentTests
     [InlineData("already ends with a dot .")]
     public void APaddedSentence_IsGivenBackAsItWas(string sentence)
     {
-        Assert.Equal(sentence + " .", NerAlignment.Padded(sentence));
-        Assert.Equal(sentence, NerAlignment.Unpadded(NerAlignment.Padded(sentence)));
+        Assert.Equal(sentence + " .", TextPadding.Padded(sentence));
+        Assert.Equal(sentence, TextPadding.Unpadded(TextPadding.Padded(sentence)));
     }
 
     [Fact]

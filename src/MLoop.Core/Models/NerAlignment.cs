@@ -15,7 +15,7 @@ namespace MLoop.Core.Models;
 /// <remarks>
 /// Applied when a model is loaded to score (<c>ScoringModel.Load</c>) and over a model just trained
 /// (the test score), never saved: the model file is the trained model alone, so a model trained before this existed
-/// is read right too. In front of the model the sentence gets one more word (<see cref="PadWord"/>) so the last real
+/// is read right too. In front of the model the sentence gets one more word (<see cref="TextPadding.PadWord"/>) so the last real
 /// word has a successor to be read at; behind it the first answer is dropped; the sentence is given back as it was.
 /// The sentence column is read from the transformer itself — the column it was trained on.
 /// TODO(upstream: dotnet/machinelearning — the NamedEntityRecognition transformer writes its tags one word to the right) — drop this
@@ -25,9 +25,6 @@ public static class NerAlignment
 {
     /// <summary>The ML.NET NER transformer, by type name — MLoop.Core does not reference TorchSharp.</summary>
     public const string TransformerName = "Microsoft.ML.TorchSharp.NasBert.NerTransformer";
-
-    /// <summary>The word that follows the last real word, so that word's tag is written.</summary>
-    public const string PadWord = ".";
 
     private const string PredictedLabel = "PredictedLabel";
 
@@ -61,20 +58,10 @@ public static class NerAlignment
         ArgumentNullException.ThrowIfNull(model);
         ArgumentException.ThrowIfNullOrWhiteSpace(textColumn);
         return new AlignedModel(new TransformerChain<ITransformer>(
-            TextMapping(mlContext, textColumn, Padded), model, TagMapping(mlContext), TextMapping(mlContext, textColumn, Unpadded)));
+            TextPadding.Mapping(mlContext, textColumn, TextPadding.Padded), model, TagMapping(mlContext), TextPadding.Mapping(mlContext, textColumn, TextPadding.Unpadded)));
     }
 
-    /// <summary><paramref name="sentence"/> with the word that gives its last word a successor.</summary>
-    public static string Padded(string? sentence) => $"{sentence} {PadWord}";
-
-    /// <summary>A sentence <see cref="Padded"/> by this layer, as it was.</summary>
-    public static string Unpadded(string? sentence)
-    {
-        var suffix = $" {PadWord}";
-        return sentence is not null && sentence.EndsWith(suffix, StringComparison.Ordinal) ? sentence[..^suffix.Length] : sentence ?? "";
-    }
-
-    /// <summary>The tags of the real words from the transformer's answer over a <see cref="Padded"/> sentence: all but the start token's.</summary>
+    /// <summary>The tags of the real words from the transformer's answer over a <see cref="TextPadding.Padded"/> sentence: all but the start token's.</summary>
     public static string[] Aligned(string[]? raw) => raw is { Length: > 1 } ? raw[1..] : [];
 
     private static ITransformer? Find(ITransformer? model) => model switch
@@ -97,17 +84,6 @@ public static class NerAlignment
                 return property.GetValue(target);
         }
         return null;
-    }
-
-    private static ITransformer TextMapping(MLContext mlContext, string column, Func<string?, string> map)
-    {
-        var input = SchemaDefinition.Create(typeof(Sentence));
-        input[0].ColumnName = column;
-        var output = SchemaDefinition.Create(typeof(Sentence));
-        output[0].ColumnName = column;
-        return mlContext.Transforms.CustomMapping<Sentence, Sentence>(
-                (row, result) => result.Text = map(row.Text), contractName: null, input, output)
-            .Fit(mlContext.Data.LoadFromEnumerable(Array.Empty<Sentence>(), input));
     }
 
     private static ITransformer TagMapping(MLContext mlContext)
@@ -133,11 +109,6 @@ public static class NerAlignment
 
         void ICanSaveModel.Save(ModelSaveContext ctx) =>
             throw new NotSupportedException("A NER model is aligned when it is loaded; it is saved as the model alone.");
-    }
-
-    private sealed class Sentence
-    {
-        public string? Text { get; set; }
     }
 
     private sealed class Tags
