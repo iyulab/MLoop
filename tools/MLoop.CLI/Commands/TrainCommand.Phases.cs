@@ -269,7 +269,7 @@ public static partial class TrainCommand
                 }
 
                 var merge = await TrainingDataFiles.MergeAsync(
-                    resolvedPaths, effectiveDefinition.Weight, Path.Combine(datasetsPath, "merged_train.csv"), records);
+                    resolvedPaths, effectiveDefinition.Weight, Path.Combine(datasetsPath, CsvMerger.MergedFileName), records);
                 if (merge.Path is null)
                 {
                     ErrorConsole.Error(Markup.Escape(merge.Error!), Markup.Escape(merge.Guidance!));
@@ -309,13 +309,15 @@ public static partial class TrainCommand
                         ValueLine.Write("    [grey]• [/]", Path.GetFileName(file));
                     }
 
-                    // Merge to train.csv
-                    var mergedPath = Path.Combine(datasetsPath, "train.csv");
+                    // Merge to a file of its own — train.csv is the project's training file, not an output
+                    var mergedPath = Path.Combine(datasetsPath, CsvMerger.MergedFileName);
                     var mergeResult = await csvMerger.MergeAsync(primaryGroup.FilePaths, mergedPath);
 
                     if (mergeResult.Success)
                     {
-                        AnsiConsole.MarkupLine($"[green]✓[/] Merged [cyan]{mergeResult.TotalRows}[/] rows into [cyan]train.csv[/]");
+                        AnsiConsole.MarkupLine($"[green]✓[/] Merged [cyan]{mergeResult.TotalRows}[/] rows into [cyan]{CsvMerger.MergedFileName}[/]");
+                        if (File.Exists(Path.Combine(datasetsPath, "train.csv")))
+                            AnsiConsole.MarkupLine("[grey]  datasets/train.csv is not part of the merge and was left as it is — to train on it too, list the files with --data.[/]");
                         foreach (var (fileName, rowCount) in mergeResult.RowsPerFile)
                         {
                             AnsiConsole.MarkupLineInterpolated($"    [grey]• {fileName}: {rowCount} rows[/]");

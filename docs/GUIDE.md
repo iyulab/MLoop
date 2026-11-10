@@ -2907,7 +2907,8 @@ mloop info file2.csv
 # If columns match, use --data to specify files
 mloop train --data file1.csv file2.csv --label Target --task regression
 
-# For auto-discovery, ensure files have identical columns
+# For auto-discovery, ensure files have identical columns. The joined rows are written to datasets/merged_train.csv;
+# train.csv (the project's own training file), validation.csv, test.csv and predict.csv are not joined and are never replaced
 mloop train --auto-merge --label Target --task regression
 ```
 

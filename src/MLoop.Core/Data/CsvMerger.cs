@@ -31,6 +31,13 @@ public class CsvMerger : ICsvMerger
         _csvHelper = csvHelper ?? throw new ArgumentNullException(nameof(csvHelper));
     }
 
+    /// <summary>
+    /// The file a merge of several training files is written to, beside them in <c>datasets/</c>. Never <c>train.csv</c>: that name is the
+    /// project's own training file, and a merge that wrote it replaced the user's file with the rows of the other files — which did not
+    /// include it. The merged file is not a candidate for the next merge (it would count its own rows again).
+    /// </summary>
+    public const string MergedFileName = "merged_train.csv";
+
     /// <inheritdoc />
     public async Task<List<CsvMergeGroup>> DiscoverMergeableCsvsAsync(
         string directory,
@@ -43,6 +50,7 @@ public class CsvMerger : ICsvMerger
 
         var csvFiles = Directory.GetFiles(directory, "*.csv", SearchOption.TopDirectoryOnly)
             .Where(f => !Path.GetFileName(f).Equals("train.csv", StringComparison.OrdinalIgnoreCase))
+            .Where(f => !Path.GetFileName(f).Equals(MergedFileName, StringComparison.OrdinalIgnoreCase))
             .Where(f => !Path.GetFileName(f).Equals("validation.csv", StringComparison.OrdinalIgnoreCase))
             .Where(f => !Path.GetFileName(f).Equals("test.csv", StringComparison.OrdinalIgnoreCase))
             .Where(f => !Path.GetFileName(f).Equals("predict.csv", StringComparison.OrdinalIgnoreCase))

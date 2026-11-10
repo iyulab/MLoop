@@ -121,6 +121,21 @@ public class CsvMergerTests : IDisposable
     }
 
     [Fact]
+    public async Task DiscoverMergeableCsvsAsync_ExcludesTheFileAMergeIsWrittenTo()
+    {
+        // The merged file sits beside its sources: found again, it would count their rows a second time.
+        await File.WriteAllTextAsync(Path.Combine(_tempDirectory, CsvMerger.MergedFileName), "A,B,C\n1,2,3\n4,5,6\n7,8,9");
+        await File.WriteAllTextAsync(Path.Combine(_tempDirectory, "data1.csv"), "A,B,C\n4,5,6");
+        await File.WriteAllTextAsync(Path.Combine(_tempDirectory, "data2.csv"), "A,B,C\n7,8,9");
+
+        var groups = await _csvMerger.DiscoverMergeableCsvsAsync(_tempDirectory);
+
+        var group = Assert.Single(groups);
+        Assert.Equal(2, group.FilePaths.Count);
+        Assert.DoesNotContain(group.FilePaths, p => Path.GetFileName(p).Equals(CsvMerger.MergedFileName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task MergeAsync_WithValidFiles_CombinesData()
     {
         // Arrange
