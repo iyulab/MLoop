@@ -241,7 +241,9 @@ internal static class DeepLearningHandlers
             using (EpochProgress.Attach(mlContext, progress, "NER (NAS-BERT)", EpochProgress.Of(config), log))
                 model = TorchFit.Run(() => pipeline.Fit(preparedTrain));
 
-            var scores = NerTagAccuracy.Measure(mlContext, model.Transform(testSet), config.LabelColumn);
+            // The transformer's tags are one word to the right of their words (NerAlignment): scored as they come, a model
+            // that tagged every word right would read as one that learned nothing.
+            var scores = NerTagAccuracy.Measure(mlContext, NerAlignment.Apply(mlContext, model, textCol).Transform(testSet), config.LabelColumn);
             // The tag average is named as multiclass names it, and for the same reason: it is what a model
             // that answers O everywhere cannot fake, and the gate's 1/N floor applies to it as-is.
             var metricsDict = scores.Metrics();

@@ -46,7 +46,8 @@ public static class ScoringModel
             RuntimeManager.EnsureRuntimeForTask(task);
         // A classifier that scores with logits answers in probabilities first, whatever the layers: they are what the
         // model means, and a calibration — fitted with no layers — reads them.
-        var model = ClassScores.AsProbabilities(mlContext, LoadArchive(mlContext, modelPath, out inputSchema));
+        // A NER model's tags are put back on their words (NerAlignment) — the transformer answers one word to the right.
+        var model = ClassScores.AsProbabilities(mlContext, NerAlignment.Apply(mlContext, LoadArchive(mlContext, modelPath, out inputSchema)));
         if (layers.HasFlag(ScoringLayers.Calibration))
             model = ProbabilityCalibration.ApplyBeside(mlContext, model, modelPath);
         if (layers.HasFlag(ScoringLayers.DecisionThreshold))
