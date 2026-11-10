@@ -1525,28 +1525,45 @@ public partial class TrainingRunner
             if (featureColumns.Count == 0)
                 throw new InvalidOperationException("No numeric feature columns found for anomaly detection.");
 
-            _logger.Info($"Anomaly detection: {featureColumns.Count} feature columns, using RandomizedPca");
+            // Featurize once and fit the trainer on the result; the saved model is the two together. The columns are
+            // standardized — a principal component follows the widest column, so on a table whose columns are in
+            // different units the components were the units, and a column in the billions stopped the fit with "The
+            // learnt eigenvectors contained NaN values" — and the rows are kept in memory, since the rank below takes
+            // more than one fit over them.
+            var featurizer = FeatureVector(trainSet.Schema, featureColumns)
+                .Append(_mlContext.Transforms.ReplaceMissingValues("Features", replacementMode: MissingValueReplacingEstimator.ReplacementMode.Mean))   // MissingNumbers
+                .Append(_mlContext.Transforms.NormalizeMeanVariance("Features", fixZero: false))
+                .Fit(trainSet);
+            var featurizedTrainSet = MLoop.Search.RowCache.Of(_mlContext, featurizer.Transform(trainSet));
+            var featurizedTestSet = ReferenceEquals(testSet, trainSet)
+                ? featurizedTrainSet
+                : MLoop.Search.RowCache.Of(_mlContext, featurizer.Transform(testSet));
 
-            // Determine PCA rank (auto: min of feature count and 20)
-            var rank = Math.Min(featureColumns.Count, 20);
+            var featureWidth = featurizedTrainSet.Schema["Features"].Type is VectorDataViewType vector ? vector.Size : 1;
+            var ceiling = AnomalyPcaRank.Ceiling(featureWidth);
 
-            // Build pipeline: Concatenate features → missing values to the mean (MissingNumbers) → RandomizedPca
-            var pipeline = FeatureVector(trainSet.Schema, featureColumns)
-                .Append(_mlContext.Transforms.ReplaceMissingValues("Features", replacementMode: MissingValueReplacingEstimator.ReplacementMode.Mean))
-                .Append(_mlContext.AnomalyDetection.Trainers.RandomizedPca(
-                    featureColumnName: "Features",
-                    rank: rank,
-                    oversampling: 20));
+            Microsoft.ML.Data.AnomalyPredictionTransformer<Microsoft.ML.Trainers.PcaModelParameters> FitPca(int pcaRank) =>
+                _mlContext.AnomalyDetection.Trainers.RandomizedPca(featureColumnName: "Features", rank: pcaRank, oversampling: 20)
+                    .Fit(featurizedTrainSet);
+
+            // The rank is the fewest components that carry 90 % of the variance (at most 20, always fewer than the
+            // columns): with as many components as columns the rebuild is exact and every score is rounding noise.
+            var widest = FitPca(ceiling);
+            var (componentVariance, totalVariance) = AnomalyPcaRank.Measure(featurizedTrainSet, widest.Model);
+            var rank = AnomalyPcaRank.Choose(componentVariance, totalVariance, ceiling);
+            var pca = rank == ceiling ? widest : FitPca(rank);
+
+            _logger.Info($"Anomaly detection: {featureColumns.Count} feature columns, standardized, RandomizedPca keeping {rank} of at most {ceiling} components (the fewest that carry {AnomalyPcaRank.ExplainedShare:P0} of the variance)");
 
             // The trial and the result describe the same single fit — one descriptor, named by the
             // rank that identifies this configuration.
             var trainer = TrainerDescriptor.Of("RandomizedPca", ("rank", rank));
             var trialChannel = CreateTrialChannel(progress);
 
-            var model = pipeline.Fit(trainSet);
+            var model = featurizer.Append(pca);
 
             // Evaluate on test set
-            var predictions = model.Transform(testSet);
+            var predictions = pca.Transform(featurizedTestSet);
 
             var metricsDict = new Dictionary<string, double>();
 

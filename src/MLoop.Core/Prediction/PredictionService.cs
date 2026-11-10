@@ -901,7 +901,7 @@ public class PredictionService
         return rows;
     }
 
-    private static List<PredictionRow> ExtractAnomalyRows(
+    internal static List<PredictionRow> ExtractAnomalyRows(
         DataViewRowCursor cursor,
         DataViewSchema.Column? predictedLabelCol,
         DataViewSchema.Column? scoreCol)
@@ -934,6 +934,8 @@ public class PredictionService
                 scoreGetter(ref scoreValue);
                 if (float.IsFinite(scoreValue))
                     anomalyScore = scoreValue;
+                else
+                    isAnomaly = null;   // a row that has no score is not "not anomalous": the model could not judge it (the time series' rows without a judgment answer null the same way)
             }
 
             rows.Add(new PredictionRow { IsAnomaly = isAnomaly, AnomalyScore = anomalyScore });
