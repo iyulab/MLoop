@@ -222,10 +222,20 @@ public static class AnalyzeJson
         var ranking = raw
             .Where(r => string.IsNullOrEmpty(label) || !string.Equals(r.Name, label, StringComparison.Ordinal))
             .OrderByDescending(r => r.Score)
-            .Select(r => new RankedFeature(r.Name, Math.Round(r.Score, 4)))
+            .Select(r => new RankedFeature(r.Name, RoundScore(r.Score)))
             .ToList();
 
         return (method, ranking);
+    }
+
+    /// <summary>
+    /// A score to four places. A permutation score is the fall of the model's own score, so a column the model
+    /// does not use can sit a few millionths below zero; rounded, that is negative zero, which prints as "-0.0000".
+    /// </summary>
+    private static double RoundScore(double score)
+    {
+        var rounded = Math.Round(score, 4);
+        return rounded == 0 ? 0.0 : rounded;
     }
 
     /// <summary>

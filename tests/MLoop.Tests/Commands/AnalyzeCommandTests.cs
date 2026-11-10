@@ -196,6 +196,33 @@ public class AnalyzeCommandTests
     }
 
     [Fact]
+    public void RankImportance_ASmallNegativeScoreReadsAsZero_NotMinusZero()
+    {
+        // A shuffled column can leave the model's score a hair higher than it was (the score is no longer
+        // floored at zero), so a column the model does not use scores a few millionths below zero. Rounded
+        // to four places that is negative zero, which prints as "-0.0000" and reads as a result.
+        var report = new FeatureReport
+        {
+            TargetColumn = "y",
+            Permutation = new PermutationSummary
+            {
+                BaselineScore = 0.9,
+                Features =
+                [
+                    new() { Name = "used", Importance = 1.8 },
+                    new() { Name = "unused", Importance = -0.00002 },
+                ],
+            },
+        };
+
+        var (_, ranking) = AnalyzeJson.RankImportance(report, "y");
+
+        var unused = ranking.Single(r => r.Feature == "unused");
+        Assert.Equal("0.0000", unused.Score.ToString("F4", System.Globalization.CultureInfo.InvariantCulture));
+        Assert.Equal(1.8, ranking.Single(r => r.Feature == "used").Score, 4); // above the model's own score: kept as is
+    }
+
+    [Fact]
     public void MapImportance_PrefersPermutation_AndExcludesLabel()
     {
         // a target-aware command (--label) must surface predictive importance
