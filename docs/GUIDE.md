@@ -1049,7 +1049,7 @@ whether it is present:
 ### `mloop analyze`
 
 Exploratory data analysis, one aspect per subcommand, so you ask for the answer you want rather
-than reading a whole report. `mloop info --analyze` runs the lot; these are the parts.
+than reading a whole report. `mloop info --analyze` runs the lot (its feature ranking is the one `importance` gives, with the method in the header); these are the parts.
 
 ```bash
 mloop analyze profile datasets/train.csv        # per-column statistics

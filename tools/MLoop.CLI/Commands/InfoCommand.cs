@@ -436,7 +436,7 @@ public static class InfoCommand
         AnalysisResult? analysisResult = null;
         if (analyze)
         {
-            analysisResult = await RunDeepAnalysisAsync(dataLens, originalDataFile, labelColumn);
+            analysisResult = await RunDeepAnalysisAsync(dataLens, originalDataFile, labelColumn, columns);
         }
 
         EmitJson(
@@ -448,7 +448,7 @@ public static class InfoCommand
     }
 
     private static async Task<AnalysisResult?> RunDeepAnalysisAsync(
-        DataLensAnalyzer dataLens, string dataFile, string? labelColumn)
+        DataLensAnalyzer dataLens, string dataFile, string? labelColumn, IReadOnlyList<string> fileColumns)
     {
         if (!dataLens.IsAvailable)
         {
@@ -494,7 +494,7 @@ public static class InfoCommand
         // c. Feature Importance
         if (result.Features?.Importance != null)
         {
-            InfoPresenter.DisplayFeatureImportance(result.Features.Importance);
+            InfoPresenter.DisplayFeatureImportance(result.Features, labelColumn, fileColumns);
         }
 
         // d. Distribution

@@ -251,29 +251,33 @@ internal static class InfoPresenter
         AnsiConsole.WriteLine();
     }
 
-    public static void DisplayFeatureImportance(FeatureImportanceSummary importance)
+    /// <summary>
+    /// The feature ranking of <c>--analyze</c>: the same target-aware ranking <c>mloop analyze importance</c> shows
+    /// (<see cref="AnalyzeJson.RankImportance"/>, the label never among its own features), with the method in the header.
+    /// It used to print DataLens's structural ranking — variance and collinearity, blind to the label — under the plain
+    /// heading «Feature Importance»: on a table where one column drove the label and another was noise, the noise column
+    /// came first, the driver last, and the label itself was listed as a feature.
+    /// </summary>
+    public static void DisplayFeatureImportance(FeatureReport features, string? label, IReadOnlyList<string>? fileColumns)
     {
         AnsiConsole.Write(new Rule("[yellow]Feature Importance[/]").LeftJustified());
         AnsiConsole.WriteLine();
 
-        if (importance.Scores.Count == 0)
+        var importance = features.Importance;
+        var (method, ranked) = AnalyzeJson.RankImportance(features, label);
+        if (method == null || ranked.Count == 0)
         {
             AnsiConsole.MarkupLine("[grey]No feature importance scores available.[/]");
             AnsiConsole.WriteLine();
             return;
         }
 
-        // Sort descending by score
-        var ranked = importance.Scores
-            .OrderByDescending(x => x.Score)
-            .ToList();
-
         double maxScore = ranked.Max(x => x.Score);
         if (maxScore <= 0) maxScore = 1;
 
         var table = new Table().Border(TableBorder.Rounded);
         table.AddColumn("Feature");
-        table.AddColumn(new TableColumn("Score").RightAligned());
+        table.AddColumn(new TableColumn($"Importance ({method})").RightAligned());
         table.AddColumn("Bar");
 
         foreach (var item in ranked)
@@ -282,23 +286,26 @@ internal static class InfoPresenter
             var bar = new string('#', Math.Max(0, barLen));
             var color = item.Score >= maxScore * 0.7 ? "green" :
                        item.Score >= maxScore * 0.4 ? "yellow" : "grey";
-            table.AddRow(Markup.Escape(item.Name), item.Score.ToString("F4"), $"[{color}]{bar}[/]");
+            table.AddRow(Markup.Escape(item.Feature), item.Score.ToString("F4"), $"[{color}]{bar}[/]");
         }
 
         AnsiConsole.Write(table);
 
+        if (method == "structural")
+            AnsiConsole.MarkupLine("[grey]These scores come from the columns' variance and collinearity, not from the label — they do not say which column predicts it.[/]");
+        var notRanked = AnalyzeJson.NotRanked(fileColumns, label, ranked);
+        if (notRanked.Count > 0)
+            AnsiConsole.MarkupLine($"[grey]{Markup.Escape(AnalyzeJson.NotRankedNote(notRanked))}[/]");
+
         // Diagnostic notes
-        if (importance.LowVarianceCount > 0)
+        if (importance != null)
         {
-            AnsiConsole.MarkupLine($"[yellow]Note:[/] {importance.LowVarianceCount} feature(s) have low variance.");
-        }
-        if (importance.HighCorrPairsCount > 0)
-        {
-            AnsiConsole.MarkupLine($"[yellow]Note:[/] {importance.HighCorrPairsCount} highly correlated feature pair(s) detected.");
-        }
-        if (importance.ConditionNumber > 1000)
-        {
-            AnsiConsole.MarkupLine($"[yellow]Note:[/] High condition number ({importance.ConditionNumber:F0}) -- possible multicollinearity.");
+            if (importance.LowVarianceCount > 0)
+                AnsiConsole.MarkupLine($"[yellow]Note:[/] {importance.LowVarianceCount} feature(s) have low variance.");
+            if (importance.HighCorrPairsCount > 0)
+                AnsiConsole.MarkupLine($"[yellow]Note:[/] {importance.HighCorrPairsCount} highly correlated feature pair(s) detected.");
+            if (importance.ConditionNumber > 1000)
+                AnsiConsole.MarkupLine($"[yellow]Note:[/] High condition number ({importance.ConditionNumber:F0}) -- possible multicollinearity.");
         }
 
         AnsiConsole.WriteLine();
