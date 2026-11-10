@@ -313,7 +313,8 @@ public static class ModelEndpoints
         .RequireAuthorization();
 
         app.MapPost("/rollback", async (
-            [FromBody] RollbackRequest request,
+            // Both fields are optional (the CLI's `mloop rollback` takes neither), so a call with no body at all means «the previous one».
+            [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] RollbackRequest? request,
             HttpContext http,
             IModelRegistry registry,
             IExperimentStore experimentStore,
@@ -321,10 +322,10 @@ public static class ModelEndpoints
             ILogger<Program> logger,
             CancellationToken ct) =>
         {
-            var modelName = MLoop.Core.Storage.ModelName.Resolve(request.Name);
+            var modelName = MLoop.Core.Storage.ModelName.Resolve(request?.Name);
             var current = (await registry.GetProductionAsync(modelName, ct))?.ExperimentId;
             var history = await promotionManager.GetHistoryAsync(modelName, ct);
-            var (target, error) = MLoop.Ops.Interfaces.RollbackTarget.Resolve(history, current, request.To?.Trim());
+            var (target, error) = MLoop.Ops.Interfaces.RollbackTarget.Resolve(history, current, request?.To?.Trim());
             if (target is null)
                 return Results.Json(new { error }, statusCode: StatusCodes.Status409Conflict);
 

@@ -76,6 +76,25 @@ public class PromotionOriginApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task ARollbackWithNoBodyAtAll_ReturnsTheDefaultModelToItsPreviousExperiment()
+    {
+        // `mloop rollback` takes neither a name nor a target; the endpoint's body is as optional, so a bare POST is a rollback of the
+        // default model and not a 400 about a body.
+        await SeedAsync("default", "exp-001");
+        await SeedAsync("default", "exp-002");
+        (await _client.SendAsync(Post("/promote", new { experimentId = "exp-001" }, null))).EnsureSuccessStatusCode();
+        (await _client.SendAsync(Post("/promote", new { experimentId = "exp-002" }, null))).EnsureSuccessStatusCode();
+
+        using var bare = new HttpRequestMessage(HttpMethod.Post, "/rollback");
+        var response = await _client.SendAsync(bare);
+
+        response.StatusCode.Should().Be(System.Net.HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var body = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+        body.GetProperty("experimentId").GetString().Should().Be("exp-001");
+        body.GetProperty("previousExperimentId").GetString().Should().Be("exp-002");
+    }
+
+    [Fact]
     public async Task ThePromotionHistory_ReadsARecordWrittenBeforeWhoWasRecorded_WithNoNameAndNoDoor()
     {
         // history.json files of earlier versions have neither field: they read as unknown, not as a failure.

@@ -945,8 +945,8 @@ mloop rollback --json              # machine-readable result
 | `--json` | | Output the result as JSON |
 
 Only a former production experiment qualifies — promoting one that never served is a new decision,
-which is `mloop promote`'s, quality gate included. `POST /rollback` (admin) does the same and answers
-409 when there is nothing to return to.
+which is `mloop promote`'s, quality gate included. `POST /rollback` (admin) does the same — its body (`{"name": …, "to": …}`) is optional, so a bare POST returns the default
+model to its previous experiment — and answers 409 when there is nothing to return to.
 
 ### `mloop status`
 
