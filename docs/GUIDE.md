@@ -680,6 +680,8 @@ is refused on that metric as before.
 when it passes) and `qualityWarning` (`null` unless the gate passed it with the warning above).
 `POST /promote` applies the same gate and answers 422; send `"force": true` to override.
 
+Promoting the experiment that is already in production changes nothing — `mloop promote` says so (`--json` reports `status: "unchanged"`), `POST /promote` answers 200 with `"unchanged": true`, and neither writes a backup or a history record; `--force` / `"force": true` promotes it again.
+
 #### A project's own gate policy
 
 The fixed gate asks whether a model learned anything. A project can add its own rules under the

@@ -59,7 +59,10 @@ public static class RollbackTarget
                          + $"Use 'mloop promote {requested}' to make it production.");
         }
 
-        var arrival = history.LastOrDefault(r => r.ExperimentId.Equals(currentProduction, StringComparison.OrdinalIgnoreCase));
+        // The arrival is the last record that made production *change* to this experiment: a forced re-promotion of the experiment
+        // already in production replaces it with itself, and going «back» to that is no rollback at all.
+        var arrival = history.LastOrDefault(r => r.ExperimentId.Equals(currentProduction, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(r.PreviousExperimentId, currentProduction, StringComparison.OrdinalIgnoreCase));
         return arrival?.PreviousExperimentId is { } previous
             ? (previous, null)
             : (null, $"The promotion history does not record what production held before '{currentProduction}'. "

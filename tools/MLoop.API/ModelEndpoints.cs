@@ -212,6 +212,24 @@ public static class ModelEndpoints
                     });
                 }
 
+                // Promoting what is already in production changes nothing — as `mloop promote` says: no backup of the model onto itself,
+                // no record in the history, and a later rollback finds what production held before. `force` promotes it again.
+                if (!request.Force
+                    && (await registry.GetProductionAsync(modelName, ct))?.ExperimentId is { } inProduction
+                    && inProduction.Equals(experimentId, StringComparison.OrdinalIgnoreCase))
+                {
+                    return Results.Ok(new
+                    {
+                        modelName,
+                        experimentId,
+                        previousExperimentId = inProduction,
+                        unchanged = true,
+                        task = experiment.Task,
+                        metrics = experiment.Metrics,
+                        bestTrainer = experiment.Result?.BestTrainer,
+                    });
+                }
+
                 // The same gate `mloop promote` and training apply; `force` is the deliberate override.
                 var refusal = MLoop.CLI.Infrastructure.FileSystem.ModelRegistry.QualityGateRefusal(experiment, experiment.Config?.Metric);
                 if (refusal != null && !request.Force)

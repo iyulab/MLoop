@@ -42,6 +42,26 @@ public class RollbackTargetTests
     }
 
     [Fact]
+    public void AForcedRePromotionOfTheCurrentProduction_IsNotWhatItReplaced()
+    {
+        // exp-004 took the slot from exp-002 and was later promoted again over itself: «before» is still exp-002.
+        PromotionRecord[] history = [.. History, Record("exp-004", "exp-004")];
+
+        Assert.Equal(("exp-002", null), RollbackTarget.Resolve(history, "exp-004"));
+    }
+
+    [Fact]
+    public void AProductionThatOnlyEverReplacedItself_HasNothingToReturnTo()
+    {
+        PromotionRecord[] history = [Record("exp-001", null), Record("exp-001", "exp-001")];
+
+        var (target, error) = RollbackTarget.Resolve(history, "exp-001");
+
+        Assert.Null(target);
+        Assert.Contains("--to", error);
+    }
+
+    [Fact]
     public void NoProductionMeansNothingToRollBack()
         => Assert.Null(RollbackTarget.Resolve(History, null).ExperimentId);
 

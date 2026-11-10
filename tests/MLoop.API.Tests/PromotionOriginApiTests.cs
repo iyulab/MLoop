@@ -95,6 +95,24 @@ public class PromotionOriginApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task PromotingTheExperimentAlreadyInProduction_ChangesNothing_UnlessForced()
+    {
+        await SeedAsync("same", "exp-001");
+        (await _client.SendAsync(Post("/promote", new { experimentId = "exp-001", name = "same" }, null))).EnsureSuccessStatusCode();
+
+        var again = await _client.SendAsync(Post("/promote", new { experimentId = "exp-001", name = "same" }, null));
+        again.EnsureSuccessStatusCode();
+        JsonDocument.Parse(await again.Content.ReadAsStringAsync()).RootElement.GetProperty("unchanged").GetBoolean().Should().BeTrue();
+        CountPromotions("same").Should().Be(1, "a promotion that changes nothing is not a change of production");
+
+        (await _client.SendAsync(Post("/promote", new { experimentId = "exp-001", name = "same", force = true }, null))).EnsureSuccessStatusCode();
+        CountPromotions("same").Should().Be(2);
+    }
+
+    private int CountPromotions(string model)
+        => JsonDocument.Parse(_client.GetStringAsync("/promotions?name=" + model).GetAwaiter().GetResult()).RootElement.GetProperty("promotions").GetArrayLength();
+
+    [Fact]
     public async Task ThePromotionHistory_ReadsARecordWrittenBeforeWhoWasRecorded_WithNoNameAndNoDoor()
     {
         // history.json files of earlier versions have neither field: they read as unknown, not as a failure.
