@@ -66,6 +66,50 @@ public class ProjectLayoutTests
         }
     }
 
+    /// <summary>
+    /// The file is written when the prediction ends, so a second run that asks for a path while the first is still predicting
+    /// must not be given the first one's: the name is taken when it is chosen, not when it is written. (Parallel runs of one
+    /// script in one second chose one name and the later writer replaced the earlier.)
+    /// </summary>
+    [Fact]
+    public void AvailablePredictionPath_ReservesTheNameWhenItIsChosen_BeforeAnythingIsWritten()
+    {
+        var dir = Directory.CreateTempSubdirectory("layout-").FullName;
+        try
+        {
+            var at = new DateTimeOffset(2026, 3, 4, 15, 6, 7, TimeSpan.Zero);
+
+            var first = ProjectLayout.AvailablePredictionPath(dir, "churn", ProjectLayout.PredictionKind.Rows, at);
+            var second = ProjectLayout.AvailablePredictionPath(dir, "churn", ProjectLayout.PredictionKind.Rows, at);   // the first is still "predicting"
+
+            Assert.NotEqual(first, second);
+            Assert.True(File.Exists(first));
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void AvailablePredictionPath_GivesParallelAskersDistinctNames()
+    {
+        var dir = Directory.CreateTempSubdirectory("layout-").FullName;
+        try
+        {
+            var at = new DateTimeOffset(2026, 3, 4, 15, 6, 7, TimeSpan.Zero);
+
+            var paths = Enumerable.Range(0, 32).AsParallel().WithDegreeOfParallelism(16)
+                .Select(_ => ProjectLayout.AvailablePredictionPath(dir, "churn", ProjectLayout.PredictionKind.Rows, at)).ToList();
+
+            Assert.Equal(32, paths.Distinct().Count());
+        }
+        finally
+        {
+            Directory.Delete(dir, recursive: true);
+        }
+    }
+
     /// <summary>The reader of prediction files finds the suffixed ones too: the search patterns end in a wildcard before the extension.</summary>
     [Fact]
     public void AvailablePredictionPath_SuffixedNamesAreFoundByTheSearchPatterns()

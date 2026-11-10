@@ -42,7 +42,8 @@ public class PredictForecastingTests : IDisposable
         var conventional = PredictCommand.ForecastOutputPath(null, root, "default", at);
         Assert.Equal(Path.Combine(root, "predictions"), Path.GetDirectoryName(conventional));
         Assert.StartsWith("default-forecast-", Path.GetFileName(conventional));
-        Assert.Equal(conventional, PredictCommand.ForecastOutputPath("", root, "default", at));
+        // The conventional name is reserved as it is chosen, so asking again is the next name beside it, in the same place.
+        Assert.Equal(Path.GetDirectoryName(conventional), Path.GetDirectoryName(PredictCommand.ForecastOutputPath("", root, "default", at)));
     }
 
     private class ProbePoint

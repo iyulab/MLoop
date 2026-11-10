@@ -94,21 +94,62 @@ public static class ProjectLayout
     /// second, so two runs of a script in the same second were given one name and the second silently replaced the first
     /// (a 700-row output became a 60-row one). The search patterns still find the suffixed names.
     /// </summary>
+    /// <remarks>
+    /// The name is <b>reserved</b> as it is chosen: an empty file of that name is created in one atomic step, so a run that
+    /// asks while another is still predicting — the file is written when the prediction ends — gets the next name instead
+    /// of the same one. Checking that the name was free and creating it later left that whole prediction as the window in
+    /// which two parallel runs chose one name and the later writer replaced the earlier. A run that ends without writing
+    /// leaves its reservation empty; the empty files are removed when the process exits (a killed process leaves one).
+    /// </remarks>
     public static string AvailablePredictionPath(string directory, string modelName, PredictionKind kind, DateTimeOffset at)
     {
+        Directory.CreateDirectory(directory);
         var name = PredictionFileName(modelName, kind, at);
-        var path = Path.Combine(directory, name);
-        if (!File.Exists(path))
-            return path;
-
         var stem = Path.GetFileNameWithoutExtension(name);
         var extension = Path.GetExtension(name);
-        for (var n = 2; ; n++)
+        for (var n = 1; ; n++)
         {
-            var candidate = Path.Combine(directory, $"{stem}-{n}{extension}");
-            if (!File.Exists(candidate))
-                return candidate;
+            var path = Path.Combine(directory, n == 1 ? name : $"{stem}-{n}{extension}");
+            try
+            {
+                using (new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.ReadWrite))
+                {
+                }
+                RemoveWhenStillEmptyAtExit(path);
+                return path;
+            }
+            catch (IOException) when (File.Exists(path))
+            {
+                // Taken — by an earlier run, or by one that is predicting now: the next name.
+            }
         }
+    }
+
+    private static readonly System.Collections.Concurrent.ConcurrentBag<string> Reserved = [];
+    private static int _exitHookRegistered;
+
+    private static void RemoveWhenStillEmptyAtExit(string path)
+    {
+        Reserved.Add(path);
+        if (Interlocked.Exchange(ref _exitHookRegistered, 1) == 1)
+            return;
+        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+        {
+            foreach (var reserved in Reserved)
+            {
+                try
+                {
+                    if (new FileInfo(reserved) is { Exists: true, Length: 0 })
+                        File.Delete(reserved);
+                }
+                catch (IOException)
+                {
+                }
+                catch (UnauthorizedAccessException)
+                {
+                }
+            }
+        };
     }
 
     /// <summary>
