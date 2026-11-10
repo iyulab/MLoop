@@ -165,6 +165,19 @@ public class DetectCommandTests : IDisposable
     }
 
     [Fact]
+    public async Task A_column_the_file_does_not_have_is_refused_with_the_file_the_columns_it_has_and_the_option()
+    {
+        var csv = WriteCsv(["time,temp", "1,20", "2,21", "3,22"]);
+
+        var (exitCode, _, stderr) = await CliRunner.RunAsync(["detect", csv, "--column", "nosuch"]);
+
+        Assert.Equal(1, exitCode);
+        Assert.Contains("'nosuch' not found in " + Path.GetFileName(csv), stderr, StringComparison.Ordinal);
+        Assert.Contains("Available columns: time, temp", stderr, StringComparison.Ordinal);
+        Assert.Contains("--column", stderr, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task WriteCsv_EmitsOneRowPerPointWithTheControlBand()
     {
         var path = Path.Combine(Path.GetTempPath(), $"mloop-detect-out-{Guid.NewGuid():N}.csv");

@@ -217,7 +217,8 @@ public static class DetectCommand
             resolved = headers.FirstOrDefault(h => string.Equals(h, column, StringComparison.OrdinalIgnoreCase));
             if (resolved == null)
             {
-                ErrorConsole.Error(Markup.Escape($"Column '{column}' not found. Available columns: {string.Join(", ", headers)}"));
+                ErrorConsole.Error(Markup.Escape($"Column '{column}' not found in {Path.GetFileName(dataFile)}. " +
+                           $"Available columns: {string.Join(", ", headers)} — name one with --column."));
                 return null;
             }
         }
