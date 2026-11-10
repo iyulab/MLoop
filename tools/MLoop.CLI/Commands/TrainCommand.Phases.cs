@@ -177,11 +177,15 @@ public static partial class TrainCommand
             ErrorConsole.Error(refusal.Message, refusal.Hint);
     }
 
-    /// <summary>The file or directory the run trains on, named and announced — null after an error was shown.</summary>
+    /// <summary>
+    /// The file or directory the run trains on, named and announced — null after an error was shown. When several files were merged
+    /// into the one it returns, the files they came from are added to <paramref name="mergedSources"/>: they were used, and the
+    /// unused-data scan after training must not name them.
+    /// </summary>
     private static async Task<string?> ResolveDataFileAsync(
         ModelDefinition effectiveDefinition, string? dataFile, string[]? dataPaths, bool autoMerge,
         bool autoTime, bool noAutoTime, int? time, string? records, string projectRoot,
-        MLoopConfig userConfig, FileSystemManager fileSystem, DatasetDiscovery datasetDiscovery)
+        MLoopConfig userConfig, FileSystemManager fileSystem, DatasetDiscovery datasetDiscovery, List<string> mergedSources)
     {
         // Resolve data file path
         string? resolvedDataFile;
@@ -280,6 +284,7 @@ public static partial class TrainCommand
                 AnsiConsole.WriteLine();
 
                 resolvedDataFile = merge.Path;
+                mergedSources.AddRange(resolvedPaths);
             }
         }
         // Auto-merge if requested and no specific data file provided
@@ -318,6 +323,7 @@ public static partial class TrainCommand
                         AnsiConsole.WriteLine();
 
                         resolvedDataFile = mergedPath;
+                        mergedSources.AddRange(primaryGroup.FilePaths);
                     }
                     else
                     {

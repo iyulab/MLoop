@@ -346,9 +346,10 @@ public static partial class TrainCommand
                 return 1;
             }
 
+            var mergedSources = new List<string>();
             var resolvedDataFile = await ResolveDataFileAsync(
                 effectiveDefinition, dataFile, dataPaths, autoMerge, autoTime, noAutoTime, time, records,
-                projectRoot, userConfig, fileSystem, datasetDiscovery);
+                projectRoot, userConfig, fileSystem, datasetDiscovery, mergedSources);
             if (resolvedDataFile is null)
                 return 1;
 
@@ -524,7 +525,7 @@ public static partial class TrainCommand
                     declaredElsewhere.Add(ProjectPaths.Resolve(userConfig.Data.Predict, projectRoot));
 
                 var unusedDataScanner = new UnusedDataScanner();
-                var scanResult = unusedDataScanner.Scan(datasetsDir, allDataFilesUsed, declaredElsewhere);
+                var scanResult = unusedDataScanner.Scan(datasetsDir, allDataFilesUsed.Concat(mergedSources), declaredElsewhere);
                 TrainPresenter.DisplayUnusedDataWarning(scanResult);
             }
 

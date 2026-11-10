@@ -54,4 +54,27 @@ public class TrainMultiFileMergeTests : IDisposable
         Assert.Equal(["x", "y"], merged[0].TrimStart('﻿').Split(','));
         Assert.Equal(6, merged.Length);
     }
+
+    [Fact]
+    public async Task The_files_that_were_merged_are_not_named_as_unused_after_training()
+    {
+        // The files of a merge were used: the scan of datasets/ after training named a merged file — `train.csv`, the
+        // standard one — as «not used», beside the run that had just trained on it.
+        var (initExit, initOutput, _) = await CliRunner.RunAsync("init", "p", "--task", "regression");
+        Assert.True(initExit == 0, initOutput);
+        Directory.SetCurrentDirectory(Path.Combine(_workspace, "p"));
+        string Rows(int from) => string.Join('\n', Enumerable.Range(from, 30).Select(i => $"{i},{i * 2 + (i % 5)}"));
+        await File.WriteAllTextAsync("datasets/train.csv", "x,y\n" + Rows(1) + "\n");
+        await File.WriteAllTextAsync("datasets/extra.csv", "x,y\n" + Rows(40) + "\n");
+        await File.WriteAllTextAsync("datasets/stray.csv", "q,r\n1,2\n");
+
+        var (exit, coloured, _) = await CliRunner.RunAsync(
+            "train", "--data", "datasets/train.csv", "--data", "datasets/extra.csv", "--label", "y", "--max-trials", "3", "--no-promote");
+        var output = System.Text.RegularExpressions.Regex.Replace(coloured, @"\e\[[0-9;]*m", "");
+
+        Assert.True(exit == 0, output);
+        Assert.Contains("stray.csv", output);                                   // a file nothing used is still named
+        Assert.DoesNotContain("Standard data file(s) not used", output);
+        Assert.DoesNotContain("extra.csv (", output);                           // …but not a file that was merged
+    }
 }
