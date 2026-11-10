@@ -89,7 +89,7 @@ public static class DriftEvaluator
             return new DriftCheck(DriftCheckStatus.NoProfile, experimentId, 0, null, null,
                 // A task whose model reads no feature columns never has a profile, so retraining would not start anything.
                 metadata.Task is { } task && !DriftProfile.IsRecordedFor(task)
-                    ? $"The production model ({experimentId}) is a {task} model: it reads no feature columns, so there is no input to profile and drift is not measured for it."
+                    ? $"The production model ({experimentId}) is {(IsVowel(task[0]) ? "an" : "a")} {task} model: it reads no feature columns, so there is no input to profile and drift is not measured for it."
                     : $"The production model ({experimentId}) has no drift profile — it was trained before profiles were recorded. "
                       + "Retrain and promote to start measuring drift.");
         DriftProfile profile;
@@ -209,4 +209,6 @@ public static class DriftEvaluator
         JsonElement j => j.GetRawText(),
         _ => Convert.ToString(value, System.Globalization.CultureInfo.InvariantCulture) ?? "(missing)",
     };
+
+    private static bool IsVowel(char c) => "aeiouAEIOU".Contains(c);
 }

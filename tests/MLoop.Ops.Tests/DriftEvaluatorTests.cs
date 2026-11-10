@@ -88,16 +88,17 @@ public class DriftEvaluatorTests : IDisposable
     }
 
     [Theory]
-    [InlineData("recommendation")]
-    [InlineData("forecasting")]
-    public async Task ATaskThatReadsNoFeatureColumns_IsToldItHasNothingToProfile_NotToRetrain(string task)
+    [InlineData("recommendation", "a")]
+    [InlineData("forecasting", "a")]
+    [InlineData("image-anomaly", "an")]
+    public async Task ATaskThatReadsNoFeatureColumns_IsToldItHasNothingToProfile_NotToRetrain(string task, string article)
     {
         Promote("exp-001", withProfile: false, task: task);
 
         var check = await DriftEvaluator.CheckAsync(_root, _logs, "m");
 
         check.Status.Should().Be(DriftCheckStatus.NoProfile);
-        check.Message.Should().Contain("reads no feature columns").And.Contain(task).And.NotContain("Retrain");
+        check.Message.Should().Contain("reads no feature columns").And.Contain($"is {article} {task} model").And.NotContain("Retrain");
     }
 
     [Theory]
