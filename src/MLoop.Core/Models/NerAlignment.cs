@@ -18,7 +18,7 @@ namespace MLoop.Core.Models;
 /// is read right too. In front of the model the sentence gets one more word (<see cref="TextPadding.PadWord"/>) so the last real
 /// word has a successor to be read at; behind it the first answer is dropped; the sentence is given back as it was.
 /// The sentence column is read from the transformer itself — the column it was trained on.
-/// TODO(upstream: dotnet/machinelearning — the NamedEntityRecognition transformer writes its tags one word to the right) — drop this
+/// TODO(upstream: https://github.com/dotnet/machinelearning/issues/7889 — the NamedEntityRecognition transformer writes its tags one word to the right) — drop this
 /// layer when a release writes one tag per word at its own position.
 /// </remarks>
 public static class NerAlignment

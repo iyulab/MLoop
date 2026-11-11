@@ -18,7 +18,7 @@ namespace MLoop.Core.Models;
 /// The text of an answer is never changed, only how far the trainer is told it reaches. A model trained before this is
 /// read through the same padded passage, harmlessly, and still answers without its last token — retrain it.
 /// Measured with the fix on the same set: <c>exact_match</c> 0.93 · <c>char_f1</c> 0.96.
-/// TODO(upstream: dotnet/machinelearning — the question-answering decoder reads the inclusive span end as exclusive) — when a
+/// TODO(upstream: https://github.com/dotnet/machinelearning/issues/7890 — the question-answering decoder reads the inclusive span end as exclusive) — when a
 /// release decodes the span as it trains it, drop the extension here and stamp the models trained with it: a model trained
 /// this way would answer one token too long.
 /// </remarks>
