@@ -119,6 +119,11 @@ public static class ListCommand
                 AnsiConsole.MarkupLine(
                     "[yellow]Ranked by an unrecognized metric — trials are listed in completion order, not ranked.[/]");
             }
+            else if (leaderboard.Direction == "unranked")
+            {
+                AnsiConsole.MarkupLine(
+                    $"[grey]Trials are listed in completion order, not ranked — without labels nothing tells one model from another ([cyan]{Markup.Escape(leaderboard.Metric)}[/] is the share of rows flagged).[/]");
+            }
             else
             {
                 var arrow = leaderboard.Direction == "lower_is_better" ? "↓ lower is better" : "↑ higher is better";

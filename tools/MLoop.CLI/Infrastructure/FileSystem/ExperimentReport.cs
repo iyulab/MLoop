@@ -107,7 +107,9 @@ internal static class ExperimentReport
         Row(sb, "Test split", Percent(config.TestSplit));
         var seconds = $"{config.TimeLimitSeconds.ToString(CultureInfo.InvariantCulture)} s";
         Row(sb, "Time limit", config.AutoTime == true ? $"auto — {seconds} granted" : seconds);
-        Row(sb, "Optimized for", OptimizedFor(config.Metric, experiment.RankingMetric, experiment.Task));
+        Row(sb, "Optimized for", IsUnjudged(experiment)
+            ? "nothing - without labels there is no score to judge a model by, so the one model is fitted once"
+            : OptimizedFor(config.Metric, experiment.RankingMetric, experiment.Task));
         sb.AppendLine();
     }
 
@@ -225,7 +227,14 @@ internal static class ExperimentReport
         var trials = rankedTrials ?? experiment.Trials;
         var count = experiment.Trials.Count.ToString(CultureInfo.InvariantCulture);
 
-        if (rankedTrials is not null && metric is not null)
+        if (IsUnjudged(experiment))
+        {
+            // The one trial's "detection_rate" is the share of rows it flagged - a property of the
+            // threshold, not a quality. Calling it "best first by detection_rate (higher is better)"
+            // would tell the reader that flagging more rows is the better model.
+            sb.AppendLine($"{count} trial(s) in completion order - no labels, so nothing is ranked.");
+        }
+        else if (rankedTrials is not null && metric is not null)
         {
             var direction = MetricDirection.IsLowerBetter(metric) ? "lower is better" : "higher is better";
             sb.AppendLine($"{count} trial(s), best first by `{metric}` ({direction}).");
@@ -319,6 +328,13 @@ internal static class ExperimentReport
     /// otherwise say "optimized for accuracy" above a leaderboard ranked by F1. Two spellings of one
     /// metric (<c>F1Score</c> in an older record, <c>f1_score</c>) are the same metric and get no note.
     /// </summary>
+    /// <summary>
+    /// A table anomaly run without a label column: the model is fitted once and nothing in the run
+    /// can tell a better one from a worse one.
+    /// </summary>
+    private static bool IsUnjudged(ExperimentData experiment) =>
+        TaskMetadata.IsUnjudged(experiment.Task, experiment.Config?.LabelColumn);
+
     private static string OptimizedFor(string? asked, string? ranked, string? task)
     {
         if (string.IsNullOrEmpty(asked))

@@ -45,7 +45,7 @@ public class ExperimentTrialHistoryTests : IDisposable
         };
 
     private static ExperimentData Experiment(
-        string experimentId, IReadOnlyList<TrialRecord> trials, string? rankingMetric, string task = "regression") =>
+        string experimentId, IReadOnlyList<TrialRecord> trials, string? rankingMetric, string task = "regression", string label = "label") =>
         new()
         {
             ModelName = ModelName,
@@ -56,7 +56,7 @@ public class ExperimentTrialHistoryTests : IDisposable
             Config = new ExperimentConfig
             {
                 DataFile = "test.csv",
-                LabelColumn = "label",
+                LabelColumn = label,
                 TimeLimitSeconds = 60,
                 Metric = rankingMetric ?? "r_squared",
                 TestSplit = 0.2
@@ -65,10 +65,10 @@ public class ExperimentTrialHistoryTests : IDisposable
             RankingMetric = rankingMetric
         };
 
-    private async Task<string> SaveAsync(IReadOnlyList<TrialRecord> trials, string? rankingMetric, string task = "regression")
+    private async Task<string> SaveAsync(IReadOnlyList<TrialRecord> trials, string? rankingMetric, string task = "regression", string label = "label")
     {
         var id = await _experimentStore.GenerateIdAsync(ModelName, CancellationToken.None);
-        await _experimentStore.SaveAsync(ModelName, Experiment(id, trials, rankingMetric, task), CancellationToken.None);
+        await _experimentStore.SaveAsync(ModelName, Experiment(id, trials, rankingMetric, task, label), CancellationToken.None);
         return _experimentStore.GetExperimentPath(ModelName, id);
     }
 
@@ -154,6 +154,40 @@ public class ExperimentTrialHistoryTests : IDisposable
         Assert.Equal("lower_is_better", leaderboard.GetProperty("direction").GetString());
         Assert.Equal(
             ["B", "C", "A"],
+            leaderboard.GetProperty("trials").EnumerateArray().Select(t => t.GetProperty("trainerName").GetString()));
+    }
+
+    [Fact]
+    public async Task A_table_anomaly_run_without_labels_records_its_trials_unranked()
+    {
+        // The share of rows a label-less anomaly model flags is the threshold's doing, not a quality: ranking by it
+        // as "higher is better" would name the model that flags the most rows the best one.
+        var path = await SaveAsync([
+            Trial(1, "A", "detection_rate", 0.05),
+            Trial(2, "B", "detection_rate", 0.30)
+        ], rankingMetric: "detection_rate", task: "anomaly-detection", label: "");
+
+        var leaderboard = ReadLeaderboard(path);
+
+        Assert.Equal("unranked", leaderboard.GetProperty("direction").GetString());
+        Assert.Equal(
+            ["A", "B"],
+            leaderboard.GetProperty("trials").EnumerateArray().Select(t => t.GetProperty("trainerName").GetString()));
+    }
+
+    [Fact]
+    public async Task A_table_anomaly_run_with_labels_is_ranked_by_what_it_detected()
+    {
+        var path = await SaveAsync([
+            Trial(1, "A", "detection_rate", 0.05),
+            Trial(2, "B", "detection_rate", 0.30)
+        ], rankingMetric: "detection_rate", task: "anomaly-detection", label: "IsFault");
+
+        var leaderboard = ReadLeaderboard(path);
+
+        Assert.Equal("higher_is_better", leaderboard.GetProperty("direction").GetString());
+        Assert.Equal(
+            ["B", "A"],
             leaderboard.GetProperty("trials").EnumerateArray().Select(t => t.GetProperty("trainerName").GetString()));
     }
 

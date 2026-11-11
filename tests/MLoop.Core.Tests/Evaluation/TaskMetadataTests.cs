@@ -129,4 +129,17 @@ public class TaskMetadataTests
         Assert.Null(TaskMetadata.ResolvePrimaryMetricValue(
             new Dictionary<string, double>(), "accuracy", "binary-classification"));
     }
+
+    [Theory]
+    [InlineData("anomaly-detection", null, true)]
+    [InlineData("anomaly-detection", "", true)]
+    [InlineData("Anomaly-Detection ", "  ", true)]
+    [InlineData("anomaly-detection", "IsFault", false)]
+    [InlineData("time-series-anomaly", null, false)]
+    [InlineData("clustering", null, false)]
+    [InlineData(null, null, false)]
+    public void IsUnjudged_is_a_table_anomaly_run_without_a_label(string? task, string? label, bool expected)
+    {
+        Assert.Equal(expected, TaskMetadata.IsUnjudged(task, label));
+    }
 }

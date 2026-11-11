@@ -65,6 +65,15 @@ public static class TaskMetadata
         => task != null && PrimaryMetrics.TryGetValue(task.Trim(), out var metric) ? metric : null;
 
     /// <summary>
+    /// Whether a run has nothing to judge one model by: a table anomaly run without a label column fits one
+    /// model and has no score to compare it with. The share of rows that model flags is the threshold's
+    /// doing, not a quality - so no page may rank by it or call it the thing that was optimized.
+    /// </summary>
+    public static bool IsUnjudged(string? task, string? labelColumn)
+        => string.Equals(task?.Trim(), "anomaly-detection", StringComparison.OrdinalIgnoreCase)
+           && string.IsNullOrWhiteSpace(labelColumn);
+
+    /// <summary>
     /// The task's primary metric, or the literal <c>"auto"</c> when none is defined — the value
     /// the init yaml template emits so AutoML defers metric selection.
     /// </summary>

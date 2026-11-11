@@ -137,6 +137,7 @@ public class ExperimentStore : IExperimentStore
         // Ranked once, here, so the leaderboard and the report cannot disagree about which trial
         // came first — a second ordering would be a second implementation of the same rule.
         var rankedTrials = experiment.RankingMetric is { } rankingMetric && MetricDirection.IsKnown(rankingMetric)
+                           && !TaskMetadata.IsUnjudged(experiment.Task, experiment.Config.LabelColumn)
             ? Rank(experiment.Trials, rankingMetric)
             : null;
 
@@ -202,7 +203,9 @@ public class ExperimentStore : IExperimentStore
         await _fileSystem.WriteJsonAsync(leaderboardPath, new
         {
             Metric = metric,
-            Direction = metric is not null && MetricDirection.IsKnown(metric)
+            Direction = TaskMetadata.IsUnjudged(experiment.Task, experiment.Config.LabelColumn)
+                ? "unranked"
+                : metric is not null && MetricDirection.IsKnown(metric)
                 ? (MetricDirection.IsLowerBetter(metric) ? "lower_is_better" : "higher_is_better")
                 : "unknown",
             TrialCount = experiment.Trials.Count,

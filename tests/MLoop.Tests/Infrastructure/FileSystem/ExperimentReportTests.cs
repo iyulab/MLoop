@@ -373,4 +373,52 @@ public class ExperimentReportTests
 
         Assert.Contains($"| Data | {elsewhere} |", page);
     }
+    private static ExperimentData TableAnomaly(string label)
+    {
+        var baseline = Completed(
+            trials: [Trial(1, TrainerDescriptor.Of("RandomizedPca"), "detection_rate", 0.05)],
+            rankingMetric: "detection_rate");
+        return new()
+        {
+            ModelName = baseline.ModelName,
+            ExperimentId = baseline.ExperimentId,
+            Timestamp = baseline.Timestamp,
+            Status = baseline.Status,
+            Task = "anomaly-detection",
+            Config = new ExperimentConfig
+            {
+                DataFile = baseline.Config.DataFile,
+                LabelColumn = label,
+                TimeLimitSeconds = baseline.Config.TimeLimitSeconds,
+                Metric = "detection_rate",
+                TestSplit = baseline.Config.TestSplit
+            },
+            Result = baseline.Result,
+            Metrics = baseline.Metrics,
+            Trials = baseline.Trials,
+            RankingMetric = baseline.RankingMetric
+        };
+    }
+
+    [Fact]
+    public void A_table_anomaly_run_without_labels_does_not_call_the_share_it_flagged_a_quality()
+    {
+        // "Optimized for detection_rate (higher is better)" told the reader that flagging more rows is the better model.
+        var page = ExperimentReport.Render(TableAnomaly(label: ""), null, Root, Version);
+
+        Assert.DoesNotContain("higher is better", page, StringComparison.Ordinal);
+        Assert.DoesNotContain("best first", page, StringComparison.Ordinal);
+        Assert.Contains("| Optimized for | nothing", page, StringComparison.Ordinal);
+        Assert.Contains("nothing is ranked", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void A_table_anomaly_run_with_labels_is_still_ranked_by_what_it_detected()
+    {
+        var experiment = TableAnomaly(label: "IsFault");
+        var ranked = ExperimentReport.Render(experiment, experiment.Trials, Root, Version);
+
+        Assert.Contains("best first by `detection_rate` (higher is better)", ranked, StringComparison.Ordinal);
+        Assert.Contains("| Optimized for | detection_rate |", ranked, StringComparison.Ordinal);
+    }
 }

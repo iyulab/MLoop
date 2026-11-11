@@ -308,7 +308,7 @@ weights and the out-of-fold score of the blend and of the best trial.
   expected calibration error of the model's probabilities (ten bins; 0 = a stated 0.8 is right 80% of
   the time) — read it before using a confidence as a threshold. It is reported, never optimized, and
   absent for a model without probabilities.
-- `trials.ndjson`, `leaderboard.json` — every trial the search completed, in completion order and ranked.
+- `trials.ndjson`, `leaderboard.json` — every trial the search completed, in completion order and ranked (`direction` in `leaderboard.json` says which way is better — `unranked` for a table anomaly run without labels, whose one model has no score to be judged by).
   The model is not always the top-ranked trial: when the top trial's model is large (100,000 tree leaves or
   more — tens of megabytes), the search keeps the smallest model within one standard error of its score
   (across folds, or across slices of a large dataset's holdout) — trees × leaves, a linear model being the
