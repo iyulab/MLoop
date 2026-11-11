@@ -187,6 +187,10 @@ if [[ " ${RUNTIMES[*]} " == *" tf "* ]]; then
   for e in exp-001 exp-002; do echo "\$hist" | grep -q "\"experimentId\": *\"\$e\"" || fail "promotion history lacks \$e: \$hist"; done
   echo "\$hist" | grep -q '"action": *"rollback"' || fail "promotion history lacks the rollback: \$hist"
   echo "\$hist" | grep -q '"by": *"smoke"' || fail "promotion history lacks the actor: \$hist"
+  # The commands after training answer on the same runtime: evaluate reads the picture folder it trained on and scores it as a classifier
+  ev=\$(mloop evaluate exp-001 datasets/images --json 2>/dev/null | sed -n '/^{/,\$p')
+  echo "\$ev" | grep -q '"testMetrics"' || fail "evaluate (image classification): \$ev"
+  echo "\$ev" | grep -q '"micro_accuracy"' || fail "evaluate (image classification) reports no micro_accuracy: \$ev"
   echo "tf: ok"
 fi
 
@@ -201,6 +205,10 @@ if [[ " ${RUNTIMES[*]} " == *" torch "* ]]; then
   echo "\$out" | grep -q '"probabilities"' || fail "text predictions: \$out"
   # Probabilities, not the network's logits: none below zero.
   if echo "\$out" | grep -o '"probabilities":{[^}]*}' | grep -q -- ':-'; then fail "logits reported as probabilities: \$out"; fi
+  # evaluate on the text it trained on: scored as a classifier, with the metric the project optimizes
+  ev=\$(mloop evaluate exp-001 /work/data/text.csv --json 2>/dev/null | sed -n '/^{/,\$p')
+  echo "\$ev" | grep -q '"testMetrics"' || fail "evaluate (text classification): \$ev"
+  echo "\$ev" | grep -q '"micro_accuracy"' || fail "evaluate (text classification) reports no micro_accuracy: \$ev"
   # Object detection, on the same runtime: train, then the lifecycle - a second experiment kept in staging, a shadow
   # prediction by it, promotion, rollback, the promotion history, and the same boxes over HTTP.
   cd /tmp && mloop init det --task object-detection >/tmp/od-init.log 2>&1 || { cat /tmp/od-init.log; fail "mloop init (object detection)"; }
@@ -233,6 +241,10 @@ if [[ " ${RUNTIMES[*]} " == *" torch "* ]]; then
   P=\$(base64 -w0 datasets/coco/img000.png)
   served=\$(curl -s -X POST localhost:5098/predict -H "Authorization: Bearer \$T" -H "Content-Type: application/json" -d "{\"images\":[\"\$P\"]}")
   echo "\$served" | grep -q '"detections":\[{"label":"box"' || fail "boxes over HTTP: \$served"
+  # evaluate over the COCO folder it trained on: scored by mAP over the predicted boxes
+  ev=\$(mloop evaluate exp-001 datasets/coco --json 2>/dev/null | sed -n '/^{/,\$p')
+  echo "\$ev" | grep -q '"testMetrics"' || fail "evaluate (object detection): \$ev"
+  echo "\$ev" | grep -q '"map_50"' || fail "evaluate (object detection) reports no map_50: \$ev"
   echo "torch: ok"
 fi
 if [[ " ${RUNTIMES[*]} " == *" text "* ]]; then
