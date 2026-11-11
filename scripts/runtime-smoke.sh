@@ -8,12 +8,14 @@
 #          the served answers and the promotion history following production
 #   torch  runtime install → text classification training → predictions whose probabilities sum to one → object detection: train, a
 #          second experiment in staging, shadow prediction (predict --json), promote, rollback, the history, and the boxes over HTTP
+#   text   libtorch, named entities and extractive answers: train, then a held-out score and one training row read back whole
+#          (ML.NET's own output is off by one for both - MLoop reads it back into place; the real transformer is checked here)
 #   anomaly  onnxruntime + the dinov2-small encoder install -> image anomaly training -> the same lifecycle (staging, shadow prediction, promote,
 #          rollback, history) -> an odd picture scores higher than a normal one, on the CLI and over HTTP
 #
 # Usage:
 #   ./scripts/runtime-smoke.sh            # both
-#   ./scripts/runtime-smoke.sh tf         # one (tf, torch, anomaly)
+#   ./scripts/runtime-smoke.sh tf         # one (tf, torch, text, anomaly)
 #
 # Needs Docker (on an arm64 machine the container runs emulated — minutes, not seconds) and python3 for the synthetic
 # images and sentences. The CLI is packed from this tree; nothing is published.
@@ -21,7 +23,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-if [[ $# -eq 0 ]]; then RUNTIMES=(tf torch anomaly); else RUNTIMES=("$@"); fi
+if [[ $# -eq 0 ]]; then RUNTIMES=(tf torch text anomaly); else RUNTIMES=("$@"); fi
 
 # A directory Docker can mount on every host (Docker Desktop shares the home directory, not the temp directory).
 WORK="${HOME}/.cache/mloop-runtime-smoke"
@@ -86,6 +88,53 @@ for i in range(48):
     anns.append({"id": i + 1, "image_id": i + 1, "category_id": 1, "bbox": [x, y, w, h], "area": w * h, "iscrowd": 0})
 with open(f"{root}/coco/annotations.json", "w") as f:
     json.dump({"images": images, "annotations": anns, "categories": [{"id": 1, "name": "box"}]}, f)
+
+# Token-level text tasks (named entities, extractive answers): synthetic English that a model learns trivially, so a low
+# score can only mean the answers are read wrong. The files carry the expected answer of one training row (a probe) for
+# the shell side, which has no python.
+import csv, itertools
+rng = random.Random(7)
+PEOPLE = ["Alice", "Bob", "Carol", "David", "Emma", "Frank", "Grace", "Henry", "Irene", "Jack", "Karen", "Leo"]
+CITIES = ["Paris", "London", "Berlin", "Madrid", "Rome", "Vienna", "Oslo", "Lisbon", "Dublin", "Prague"]
+DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]
+TIMES = ["7 pm", "9 am", "noon", "6 pm", "8 am"]
+COMPANIES = ["Acme", "Globex", "Initech", "Soylent", "Hooli", "Vandelay", "Stark", "Wayne", "Wonka", "Tyrell"]
+FILLER = ["The office is busy.", "It opened last year.", "Lunch is served at noon.", "Parking is limited."]
+
+def ner_rows(n):
+    rows, seen = [], set()
+    while len(rows) < n:
+        p, c, d, t = rng.choice(PEOPLE), rng.choice(CITIES), rng.choice(DAYS), rng.choice(TIMES)
+        tt = "B-TIME" if " " not in t else "B-TIME I-TIME"
+        row = [(f"{p} lives in {c}", "B-PER O O B-LOC"),
+               (f"We meet {d} at {t}", f"O O B-DATE O {tt}"),
+               (f"{p} flew to {c} on {d}", "B-PER O O B-LOC O B-DATE"),
+               (f"The train from {c} arrives at {t}", f"O O O B-LOC O O {tt}")][rng.randint(0, 3)]
+        if row[0] not in seen:
+            seen.add(row[0]); rows.append(row)
+    return rows
+
+def write(path, header, rows):
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f); w.writerow(header); w.writerows(rows)
+
+ner_train, ner_test = ner_rows(300), ner_rows(50)
+write(f"{root}/ner-train.csv", ["Sentence", "Label"], ner_train)
+write(f"{root}/ner-test.csv", ["Sentence", "Label"], ner_test)
+write(f"{root}/ner-probe.csv", ["Sentence"], [(ner_train[0][0],)])
+open(f"{root}/ner-probe.expected", "w").write(ner_train[0][1])
+
+combos = list(itertools.product(PEOPLE, COMPANIES, CITIES)); rng.shuffle(combos)
+qa = []
+for p, c, t in combos[:360]:
+    ctx = f"{p} works at {c} in {t}. {rng.choice(FILLER)}"
+    qa.append((ctx, f"Where does {p} work?", c) if rng.random() < .5 else (ctx, f"Which city is {c} in?", t))
+head = ["context", "question", "answer", "answer_start"]
+write(f"{root}/qa-train.csv", head, [(c, q, a, c.index(a)) for c, q, a in qa[:300]])
+write(f"{root}/qa-test.csv", head, [(c, q, a, c.index(a)) for c, q, a in qa[300:]])
+write(f"{root}/qa-predict.csv", ["context", "question"], [(c, q) for c, q, _ in qa[300:]])
+write(f"{root}/qa-probe.csv", ["context", "question"], [qa[0][:2]])
+open(f"{root}/qa-probe.expected", "w").write(qa[0][2])
 PY
 
 cat > "$WORK/run.sh" <<SH
@@ -185,6 +234,44 @@ if [[ " ${RUNTIMES[*]} " == *" torch "* ]]; then
   served=\$(curl -s -X POST localhost:5098/predict -H "Authorization: Bearer \$T" -H "Content-Type: application/json" -d "{\"images\":[\"\$P\"]}")
   echo "\$served" | grep -q '"detections":\[{"label":"box"' || fail "boxes over HTTP: \$served"
   echo "torch: ok"
+fi
+if [[ " ${RUNTIMES[*]} " == *" text "* ]]; then
+  echo "== text"
+  mloop runtime install torch
+  # ML.NET's transformers read their own output off by one - the NER tags one word to the right, the question-answering
+  # span without its last token - and MLoop corrects it on the reading side (NerAlignment, AnswerAlignment). The unit
+  # tests run against stand-ins for the transformer; this is the real one on libtorch, where a model that has learned a
+  # trivially learnable task must also be *scored* as one that has.
+  # the held-out metrics, not the training ones that come first in the same document
+  num() { sed -n '/"testMetrics"/,\$p' | grep -o "\"\$1\": *[-0-9.eE]*" | head -1 | grep -o '[-0-9.eE]*\$'; }
+  atleast() { awk "BEGIN{exit !(\$1 >= \$2)}"; }
+  # named entities
+  cd /tmp && mloop init ner --task ner >/tmp/ner-init.log 2>&1 || { cat /tmp/ner-init.log; fail "mloop init (ner)"; }
+  cd ner
+  mloop train /work/data/ner-train.csv --label Label >/tmp/ner-train.log 2>&1 || { tail -20 /tmp/ner-train.log; fail "ner did not train"; }
+  ev=\$(mloop evaluate exp-001 /work/data/ner-test.csv --json 2>/dev/null | sed -n '/^{/,\$p')
+  macro=\$(echo "\$ev" | num macro_accuracy || true); f1=\$(echo "\$ev" | num entity_f1 || true)
+  atleast "\${macro:-0}" 0.9 || fail "ner macro_accuracy \${macro:-none} - tags read off by one? \$ev"
+  atleast "\${f1:-0}" 0.8 || fail "ner entity_f1 \${f1:-none} - tags read off by one? \$ev"
+  # the model's own training sentence comes back with its own tags, one per word, in place
+  want=\$(cat /work/data/ner-probe.expected)
+  got=\$(mloop predict /work/data/ner-probe.csv --experiment exp-001 --json 2>/dev/null | sed -n '/^{/,\$p')
+  echo "\$got" | grep -q "\"predictedLabel\": *\"\$want\"" || fail "ner tags are not at their own words: want \$want, got \$got"
+  # extractive answers
+  cd /tmp && mloop init qa --task question-answering >/tmp/qa-init.log 2>&1 || { cat /tmp/qa-init.log; fail "mloop init (question-answering)"; }
+  cd qa
+  mloop train /work/data/qa-train.csv --label answer >/tmp/qa-train.log 2>&1 || { tail -20 /tmp/qa-train.log; fail "question-answering did not train"; }
+  ev=\$(mloop evaluate exp-001 /work/data/qa-test.csv --json 2>/dev/null | sed -n '/^{/,\$p')
+  em=\$(echo "\$ev" | num exact_match || true); cf=\$(echo "\$ev" | num char_f1 || true)
+  atleast "\${em:-0}" 0.8 || fail "qa exact_match \${em:-none} - answers lose their last token? \$ev"
+  atleast "\${cf:-0}" 0.9 || fail "qa char_f1 \${cf:-none} - answers lose their last token? \$ev"
+  want=\$(cat /work/data/qa-probe.expected)
+  got=\$(mloop predict /work/data/qa-probe.csv --experiment exp-001 --json 2>/dev/null | sed -n '/^{/,\$p')
+  echo "\$got" | grep -q "\"predictedLabel\": *\"\$want\"" || fail "qa answer is not the whole span: want \$want, got \$got"
+  all=\$(mloop predict /work/data/qa-predict.csv --experiment exp-001 --json 2>/dev/null | sed -n '/^{/,\$p')
+  empty=\$(echo "\$all" | grep -c '"predictedLabel": *""' || true)
+  [[ \$empty -le 3 ]] || fail "qa: \$empty of 60 answers are empty"
+  echo "text: ok"
 fi
 if [[ " ${RUNTIMES[*]} " == *" anomaly "* ]]; then
   echo "== anomaly"
