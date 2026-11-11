@@ -59,22 +59,22 @@ public class MulticlassLabelKindTests : IDisposable
     [Fact]
     public async Task AFileSortedByItsClassIds_Trains_Evaluates_AndPredicts()
     {
-        var (initExit, initOutput, _) = await CliRunner.RunAsync("init", ".", "--task", "multiclass-classification", "--label", "class");
-        Assert.True(initExit == 0, initOutput);
+        var (initExit, initOutput, initError) = await CliRunner.RunAsync("init", ".", "--task", "multiclass-classification", "--label", "class");
+        Assert.True(initExit == 0, initOutput + initError);
 
         // Enough leading zeros that the training partition's first ten thousand rows are all class 0,
         // while the test partition (a fifth) reaches class 2 well inside its own.
         WriteSorted(Path.Combine("datasets", "train.csv"), (0, 15_000), (1, 3_000), (2, 3_000));
         WriteSorted(Path.Combine("datasets", "test.csv"), (2, 50), (1, 50), (0, 50));
 
-        var (trainExit, trainOutput, _) = await CliRunner.RunAsync(
+        var (trainExit, trainOutput, trainError) = await CliRunner.RunAsync(
             "train", "datasets/train.csv", "--label", "class", "--time", "60", "--max-trials", "10");
-        Assert.True(trainExit == 0, $"train exited {trainExit}:\n{trainOutput}");
+        Assert.True(trainExit == 0, $"train exited {trainExit}:\n{trainOutput}\n{trainError}");
 
-        var (evaluateExit, evaluateOutput, _) = await CliRunner.RunAsync("evaluate", "exp-001", "datasets/test.csv");
-        Assert.True(evaluateExit == 0, $"evaluate exited {evaluateExit}:\n{evaluateOutput}");
+        var (evaluateExit, evaluateOutput, evaluateError) = await CliRunner.RunAsync("evaluate", "exp-001", "datasets/test.csv");
+        Assert.True(evaluateExit == 0, $"evaluate exited {evaluateExit}:\n{evaluateOutput}\n{evaluateError}");
 
-        var (predictExit, predictOutput, _) = await CliRunner.RunAsync("predict", "datasets/test.csv");
-        Assert.True(predictExit == 0, $"predict exited {predictExit}:\n{predictOutput}");
+        var (predictExit, predictOutput, predictError) = await CliRunner.RunAsync("predict", "datasets/test.csv");
+        Assert.True(predictExit == 0, $"predict exited {predictExit}:\n{predictOutput}\n{predictError}");
     }
 }
