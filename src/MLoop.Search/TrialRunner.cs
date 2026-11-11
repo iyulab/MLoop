@@ -509,15 +509,15 @@ public sealed class TrialRunner
     private bool Reproduces(Scored trial, double? learned)
     {
         var error = trial.Score.StandardError is { } errors && errors.TryGetValue(_request.Metric.Name, out var se) && double.IsFinite(se) ? se : 0;
-        return RefitReproduces(trial.Value, learned, error, _request.Metric.HigherIsBetter);
+        return RefitReproduces(trial.Value, learned, error, _request.Metric.HigherIsBetter, _request.Metric.AbsoluteSlack);
     }
 
-    internal static bool RefitReproduces(double validated, double? learned, double standardError, bool higherIsBetter)
+    internal static bool RefitReproduces(double validated, double? learned, double standardError, bool higherIsBetter, double absoluteSlack = 0)
     {
         if (learned is not { } value)
             return true;
         var shortfall = higherIsBetter ? validated - value : value - validated;
-        return shortfall <= Math.Max(RefitSlackErrors * standardError, RefitSlackShare * Math.Abs(validated));
+        return shortfall <= Math.Max(Math.Max(RefitSlackErrors * standardError, RefitSlackShare * Math.Abs(validated)), absoluteSlack);
     }
 
     private static string Format(double value) => value.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);

@@ -35,6 +35,15 @@ public sealed class RefitReproducesTests
         double validated, double learned, double standardError, bool higherIsBetter, bool reproduces)
         => Assert.Equal(reproduces, TrialRunner.RefitReproduces(validated, learned, standardError, higherIsBetter));
 
+    // A loss that a model drives to zero has no share of itself to be slack with: a refit scoring 0.0113 against a validated 0.00001
+    // (standard error 1e-8) is a good model, not a broken one. The metric's own smallest meaningful difference is the floor.
+    [Theory]
+    [InlineData(0.00001, 0.0113, 1e-8, 0.0, false)]    // no floor: 4 standard errors and a tenth of nothing
+    [InlineData(0.00001, 0.0113, 1e-8, 0.05, true)]    // a floor of 0.05: the refit stands
+    [InlineData(0.00001, 0.70, 1e-8, 0.05, false)]     // a refit at chance level is still caught
+    public void ALossNearZeroHasAnAbsoluteSlack(double validated, double learned, double standardError, double absoluteSlack, bool reproduces)
+        => Assert.Equal(reproduces, TrialRunner.RefitReproduces(validated, learned, standardError, higherIsBetter: false, absoluteSlack));
+
     [Fact]
     public void ARefitWithNoScoreToJudgeByStands()
         => Assert.True(TrialRunner.RefitReproduces(0.9, null, 0.01, true));

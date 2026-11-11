@@ -768,11 +768,16 @@ public partial class TrainingRunner
             var selected = IndexOf(search.Trials, search.Best);
             if (selected >= 0 && selected < records.Count)
                 records = [.. records.Select((r, i) => i == selected ? r.AsSelected() : r)];
-            search.TopScoring.Metrics!.TryGetValue(metric, out var topValue);
-            search.Best.Metrics!.TryGetValue(metric, out var keptValue);
-            _logger.Info($"Kept {search.Best.Trainer} ({metric} {keptValue:0.####}, model size {TrainerSize(search.Best)}) over " +
-                $"{search.TopScoring.Trainer} ({topValue:0.####}, size {TrainerSize(search.TopScoring)}): within one standard error " +
-                "of the top score, the smaller model.");
+            // Another model stands because the top one's refit did not reproduce its score: that is said with the fallback
+            // (FallbackReason), not as a choice by size.
+            if (!search.RefitNotReproduced)
+            {
+                search.TopScoring.Metrics!.TryGetValue(metric, out var topValue);
+                search.Best.Metrics!.TryGetValue(metric, out var keptValue);
+                _logger.Info($"Kept {search.Best.Trainer} ({metric} {keptValue:0.####}, model size {TrainerSize(search.Best)}) over " +
+                    $"{search.TopScoring.Trainer} ({topValue:0.####}, size {TrainerSize(search.TopScoring)}): within one standard error " +
+                    "of the top score, the smaller model.");
+            }
         }
 
         (ITransformer? Model, EnsemblePlan? Plan, EnsembleOutcome Outcome)? ensemble = UsesEnsemble(config)

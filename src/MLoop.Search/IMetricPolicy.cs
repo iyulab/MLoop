@@ -11,6 +11,13 @@ public interface IMetricPolicy
 
     /// <summary>True when a larger value is better (accuracy); false when smaller is (log loss).</summary>
     bool HigherIsBetter { get; }
+
+    /// <summary>
+    /// The smallest difference in this metric worth reading as a different model, in the metric's own unit; 0 when the host knows of
+    /// none. A loss that a model drives toward zero has no share of itself to be slack with, so a refit that scores 0.011 against a
+    /// validated 0.00001 would otherwise read as a broken one.
+    /// </summary>
+    double AbsoluteSlack => 0;
 }
 
 /// <summary>Ranking by an <see cref="IMetricPolicy"/>.</summary>

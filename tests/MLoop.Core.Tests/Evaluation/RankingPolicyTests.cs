@@ -27,6 +27,16 @@ public class RankingPolicyTests
         Assert.Equal(!MetricDirection.IsLowerBetter(metric), policy.HigherIsBetter);
     }
 
+    // A loss a model drives toward zero (log loss, calibration error) has an absolute smallest difference worth reading; a metric on
+    // another scale has none the policy can know.
+    [Theory]
+    [InlineData("log_loss", 0.05)]
+    [InlineData("ece", 0.02)]
+    [InlineData("macro_accuracy", 0.0)]
+    [InlineData("rmse", 0.0)]
+    public void ALossBoundedAtZeroHasAnAbsoluteSlack(string metric, double slack)
+        => Assert.Equal(slack, RankingPolicy.For(metric).AbsoluteSlack);
+
     [Fact]
     public void ItRanksTrials()
     {
