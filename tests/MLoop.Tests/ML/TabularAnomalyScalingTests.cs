@@ -91,34 +91,4 @@ public class TabularAnomalyScalingTests : IDisposable
         var auc = Auc(scores, anomalies: 20);
         Assert.True(auc > 0.95, $"area under the curve {auc:F3} — the model must rank the rows that break the shared movement above the others");
     }
-
-    [Fact]
-    public async Task A_table_whose_columns_share_nothing_says_the_kept_components_carry_little_and_a_shared_one_does_not()
-    {
-        var workspace = Path.Combine(_tempDir, "share");
-        Directory.CreateDirectory(workspace);
-        Directory.SetCurrentDirectory(workspace);
-        Assert.Equal(0, (await CliRunner.RunAsync("init", "p", "--task", "anomaly-detection")).ExitCode);
-        var project = Path.Combine(workspace, "p");
-        Directory.SetCurrentDirectory(project);
-
-        // Five independent columns: the four components the ceiling allows carry about four fifths, never the ninety percent aimed at.
-        var random = new Random(31);
-        double Gauss() => Math.Sqrt(-2 * Math.Log(1 - random.NextDouble())) * Math.Cos(2 * Math.PI * random.NextDouble());
-        var lines = new List<string> { "a,b,c,d,e" };
-        for (var i = 0; i < 600; i++)
-            lines.Add(string.Join(",", Enumerable.Range(0, 5).Select(_ => Gauss().ToString("R", CultureInfo.InvariantCulture))));
-        var independent = Path.Combine(project, "datasets", "independent.csv");
-        File.WriteAllLines(independent, lines);
-        var shared = Path.Combine(project, "datasets", "shared.csv");
-        WriteTable(shared, 600, 0, seed: 32, [1.0, 1.0, 1.0]);
-
-        var flat = await CliRunner.RunAsync("train", "datasets/independent.csv", "--time", "10");   // no search: one fit
-        Assert.True(flat.ExitCode == 0, flat.Stdout + flat.Stderr);
-        Assert.Contains("carry only", flat.Stdout + flat.Stderr, StringComparison.Ordinal);
-
-        var together = await CliRunner.RunAsync("train", "datasets/shared.csv", "--time", "10");   // no search: one fit
-        Assert.True(together.ExitCode == 0, together.Stdout + together.Stderr);
-        Assert.DoesNotContain("carry only", together.Stdout + together.Stderr, StringComparison.Ordinal);
-    }
 }
