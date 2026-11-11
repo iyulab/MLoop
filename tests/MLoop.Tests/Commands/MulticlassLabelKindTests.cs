@@ -75,6 +75,6 @@ public class MulticlassLabelKindTests : IDisposable
         Assert.True(evaluateExit == 0, $"evaluate exited {evaluateExit}:\n{evaluateOutput}\n{evaluateError}");
 
         var (predictExit, predictOutput, predictError) = await CliRunner.RunAsync("predict", "datasets/test.csv");
-        Assert.True(predictExit == 0, $"predict exited {predictExit}:\n{predictOutput}\n{predictError}");
+        Assert.True(predictExit == 0, $"predict exited {predictExit}:\n{predictOutput}\n{predictError}\n--- the train before it:\n{trainOutput}");
     }
 }
