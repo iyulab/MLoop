@@ -86,7 +86,9 @@ public class FoldCalibrationTests
         var before = LogLoss(ml, honest);
         var after = LogLoss(ml, FoldCalibration.Temper(ml, honest, "Label", null));
 
-        Assert.InRange(after, before - 0.02, before + 1e-9);   // a temperature is never worse than leaving the probabilities as they are
+        // Fitted on a sample of the part (FitRows), a temperature is not guaranteed better on every row of it: a model that was already
+        // calibrated stays where it was to within the sample's noise.
+        Assert.InRange(after, before - 0.02, before + 0.005);
     }
 
     [Fact]

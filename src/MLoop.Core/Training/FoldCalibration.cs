@@ -21,7 +21,7 @@ namespace MLoop.Core.Training;
 internal static class FoldCalibration
 {
     // The rows a temperature is fitted on: one parameter needs few, and every trial of every fold pays for the fit.
-    private const int FitRows = 5000;
+    private const int FitRows = 1000;
 
     /// <summary>
     /// <paramref name="scored"/> with every row's class probabilities tempered, or <paramref name="scored"/> itself where
