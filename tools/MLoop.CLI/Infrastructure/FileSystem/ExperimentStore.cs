@@ -637,6 +637,10 @@ public class ExperimentStore : IExperimentStore
         // The value and the name come from one resolution, so the entry names the metric it holds.
         var best = TaskMetadata.ResolvePrimaryMetric(
             experiment.Metrics, experiment.Config.Metric, experiment.Task);
+        // A metric the run never measured is not a measurement of 0: a table anomaly model trained without labels has no area under
+        // the curve, and its index line said "0.0000 auc" - which `status` and `list` then showed as the model's best result.
+        if (best is { } resolved && experiment.Metrics is { } measured && !measured.ContainsKey(resolved.Name))
+            best = null;
 
         return new ExperimentSummary
         {

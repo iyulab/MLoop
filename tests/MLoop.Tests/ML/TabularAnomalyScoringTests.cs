@@ -105,6 +105,21 @@ public class TabularAnomalyScoringTests : IDisposable
     }
 
     [Fact]
+    public async Task StatusDoesNotReportAnAreaUnderTheCurveThatWasNeverMeasured()
+    {
+        await ProjectAsync("status");
+        var train = await CliRunner.RunAsync("train", "datasets/train.csv", "--time", "10");   // no search: one fit
+        Assert.True(train.ExitCode == 0, train.Stdout + train.Stderr);
+
+        var status = await CliRunner.RunAsync("status", "--json");
+        Assert.True(status.ExitCode == 0, status.Stdout + status.Stderr);
+        using var document = JsonDocument.Parse(status.Stdout);
+        var model = document.RootElement.GetProperty("models").EnumerateArray().Single();
+        // No label, so no area under the curve: the best result is absent, not 0.
+        Assert.True(!model.TryGetProperty("bestMetric", out var best) || best.ValueKind == JsonValueKind.Null, status.Stdout);
+    }
+
+    [Fact]
     public async Task TheContaminationInTheYaml_MovesTheThreshold()
     {
         await ProjectAsync("twenty", yamlContamination: "0.2");
