@@ -40,6 +40,10 @@ public static class Validator
     /// <param name="score">The metrics of a scored validation part — the host's metric authority, weights included.</param>
     /// <param name="cancellationToken">Stops the fit in progress (<see cref="FitCancellation"/>) — and with it every later use of <paramref name="mlContext"/>.</param>
     /// <param name="scoredPart">Given each validated part scored by the model fitted without it — what out-of-fold answers are read from.</param>
+    /// <param name="asServed">
+    /// Rewrites a validated part's scored rows as the model will answer once served; the part and its slices are measured on the
+    /// rewrite, once. <paramref name="scoredPart"/> is given the part as the model gave it.
+    /// </param>
     public static ValidationScore Validate(
         MLContext mlContext,
         IDataView data,
@@ -47,7 +51,8 @@ public static class Validator
         IEstimator<ITransformer> pipeline,
         Func<IDataView, IReadOnlyDictionary<string, double>> score,
         CancellationToken cancellationToken = default,
-        Action<IDataView>? scoredPart = null)
+        Action<IDataView>? scoredPart = null,
+        Func<IDataView, IDataView>? asServed = null)
     {
         ArgumentNullException.ThrowIfNull(mlContext);
         ArgumentNullException.ThrowIfNull(data);
@@ -71,10 +76,11 @@ public static class Validator
             // on 87,000 rows, and a different model kept.
             if (scoredPart is not null)
                 scored = RowCache.Of(mlContext, scored);
-            folds.Add(score(scored));
+            var measured = asServed is null ? scored : asServed(scored);
+            folds.Add(score(measured));
             scoredPart?.Invoke(scored);
             if (plan.IsHoldout)
-                slices = Slices(mlContext, scored, plan.HoldoutSliceOf!, score);
+                slices = Slices(mlContext, measured, plan.HoldoutSliceOf!, score);
         }
 
         var (mean, std) = Summarize(folds);

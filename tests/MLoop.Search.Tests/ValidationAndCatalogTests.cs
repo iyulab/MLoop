@@ -121,6 +121,40 @@ public sealed class ValidationAndCatalogTests
         Assert.InRange(score.StandardError!["auc"], 1e-6, 0.05);
     }
 
+    /// <summary>
+    /// A host that rewrites a part's answers as the model will give them once served (a calibration fitted to the part) does it
+    /// once for the part: the holdout and every slice of it are measured on that rewrite, and the answers kept for fitting
+    /// a calibration are the part as the model gave it. Rewritten inside the metric, each slice fitted its own.
+    /// </summary>
+    [Fact]
+    public void AScoredPartIsRewrittenOnce_ForTheHoldoutAndItsSlices_WhileTheKeptAnswersAreTheModelsOwn()
+    {
+        var ml = new MLContext(seed: 1);
+        var data = Data(ml, FoldPlan.HoldoutThreshold);
+        var plan = FoldPlan.For(data, "Label", stratify: true, seed: 4);
+        var candidate = CandidateCatalog.Binary().Single(c => c.Name == "LbfgsLogisticRegression");
+        var pipeline = candidate.Build(ml, candidate.Space.PointAt(candidate.Space.Default), new TrainerColumns("Label", "Features"), new SearchSettings());
+        var rewrites = 0;
+        IDataView? given = null;
+        IDataView? kept = null;
+        var scored = 0;
+
+        Validator.Validate(ml, data, plan, pipeline, view =>
+        {
+            scored++;
+            return new Dictionary<string, double> { ["auc"] = ml.BinaryClassification.EvaluateNonCalibrated(view).AreaUnderRocCurve };
+        }, scoredPart: part => kept = part, asServed: part =>
+        {
+            rewrites++;
+            given = part;
+            return ml.Data.Cache(part);   // a different view of the same answers
+        });
+
+        Assert.Equal(1, rewrites);
+        Assert.Equal(6, scored);                       // the holdout, then its five slices - on the one rewrite
+        Assert.Same(given, kept);                      // what was kept is what the model gave, not the rewrite
+    }
+
     [Fact]
     public void TheSwitchThatStopsAFitInProgress_IsFound()
     {

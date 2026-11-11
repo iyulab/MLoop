@@ -733,7 +733,7 @@ public partial class TrainingRunner
         var request = new SearchRequest(
             candidates,
             RankingPolicy.For(metric),
-            scored => ScoreFold(IsMulticlass(config) ? TemperedFold(scored, config) : scored, config, score),
+            scored => ScoreFold(scored, config, score),
             // A blend is fitted after the search, so the search leaves part of the budget for it.
             TimeSpan.FromSeconds(config.TimeLimitSeconds * (UsesEnsemble(config) ? EnsembleBudget.SearchShare : 1)),
             config.SearchSettings ?? Settings,
@@ -742,7 +742,9 @@ public partial class TrainingRunner
             MaxTrials: config.MaxTrials,
             Preprocess: config.PreFeaturizer,
             KeepOutOfFold: IsBinary(config) || IsMulticlass(config) || UsesEnsemble(config),
-            KeepTopOutOfFold: UsesEnsemble(config) ? 2 * EnsembleSelection.DefaultMaxMembers : 0);
+            KeepTopOutOfFold: UsesEnsemble(config) ? 2 * EnsembleSelection.DefaultMaxMembers : 0,
+            // A multiclass part is measured as the run will serve it - tempered, by a temperature fitted once to the whole part.
+            AsServed: IsMulticlass(config) ? scored => TemperedFold(scored, config) : null);
 
         SearchResult search;
         try

@@ -36,6 +36,11 @@ namespace MLoop.Search;
 /// on. A regression's answers are read too. Needs <see cref="KeepOutOfFold"/>. Costs memory in proportion to the rows and
 /// this number, and nothing when 0 (the default), which keeps only what a calibration of the kept trial needs.
 /// </param>
+/// <param name="AsServed">
+/// Rewrites a validated part's scored rows as the model will answer once served (a calibration fitted to the part), before they are
+/// measured: the holdout and each of its slices are measured on the one rewrite, so a calibration is fitted once per part, not once per
+/// slice. The answers kept for a calibration of the refit model (<see cref="KeepOutOfFold"/>) stay the model's own. Null: measured as scored.
+/// </param>
 public sealed record SearchRequest(
     IReadOnlyList<TrainerCandidate> Candidates,
     IMetricPolicy Metric,
@@ -48,7 +53,8 @@ public sealed record SearchRequest(
     IEstimator<ITransformer>? Preprocess = null,
     bool KeepOutOfFold = false,
     int KeepTopOutOfFold = 0,
-    bool SampleLargeTables = true);
+    bool SampleLargeTables = true,
+    Func<IDataView, IDataView>? AsServed = null);
 
 /// <summary>A trial whose answers on its validated parts were kept beyond the winner's (<see cref="SearchRequest.KeepTopOutOfFold"/>).</summary>
 /// <param name="Trial">The trial.</param>
@@ -307,7 +313,7 @@ public sealed class TrialRunner
                 // Built inside the trial: a trainer that cannot even be constructed is a failed trial, not a failed search.
                 pipeline = PipelineIn(trialContext);
                 var score = Validator.Validate(trialContext, searchTrain, plan, pipeline, _request.Score, budgetCut.Token,
-                    _request.KeepOutOfFold ? Keep : null);
+                    _request.KeepOutOfFold ? Keep : null, _request.AsServed);
                 var seconds = (clock.Elapsed - started).TotalSeconds;
                 Took(seconds);
                 var trial = new TrialResult
@@ -497,7 +503,10 @@ public sealed class TrialRunner
     {
         try
         {
-            return _request.Score(model.Transform(rows)).TryGetValue(_request.Metric.Name, out var value) && double.IsFinite(value) ? value : null;
+            var scored = model.Transform(rows);
+            if (_request.AsServed is { } asServed)
+                scored = asServed(scored);
+            return _request.Score(scored).TryGetValue(_request.Metric.Name, out var value) && double.IsFinite(value) ? value : null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException and not OutOfMemoryException)
         {
@@ -565,7 +574,7 @@ public sealed class TrialRunner
             cut.CancelAfter(TimeSpan.FromSeconds(cutAfter));
             try
             {
-                Validator.Validate(context, data, probePlan, pipeline, _request.Score, cut.Token);
+                Validator.Validate(context, data, probePlan, pipeline, _request.Score, cut.Token, asServed: _request.AsServed);
             }
             catch (Exception ex) when (ex is not OutOfMemoryException && !cancellationToken.IsCancellationRequested && cut.IsCancellationRequested)
             {
