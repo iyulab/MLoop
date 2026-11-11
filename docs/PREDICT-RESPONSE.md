@@ -121,7 +121,7 @@ one per task family:
 - anomaly detection → distance from the 0.5 decision boundary
 - regression → how narrow this row's conformal band is against the model's typical error
 
-It is `null` when the model exposes no usable signal — including for **time-series** anomaly, whose
+It is absent when the model exposes no usable signal — including for **time-series** anomaly, whose
 raw detector score is not a probability with a 0.5 boundary, so mapping it would fabricate a number.
 
 Do not confuse it with `intervalConfidence`, which is the band's **coverage level** (0.90 = "90% of

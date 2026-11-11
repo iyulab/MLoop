@@ -181,7 +181,7 @@ public static class PredictEndpoint
                         task = "forecasting",
                         count = forecastRows.Count,
                         predictions = forecastRows,
-                        warnings = new List<string>()
+                        warnings = ForecastRequestNotes.Of(input)
                     });
                 }
 

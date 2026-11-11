@@ -27,8 +27,8 @@ public static class TimeSeriesAnomalyWarmup
             marked.Add(i < unjudged ? rows[i] with { IsAnomaly = null, AnomalyScore = null } : rows[i]);
 
         var warning = unjudged == rows.Count
-            ? $"None of the {rows.Count} row(s) was judged: the detector needs a window of earlier points before it can say whether a point belongs to the series, so these rows carry no verdict (isAnomaly and anomalyScore are null). Send the series with the earlier rows in front of the ones you ask about."
-            : $"The first {unjudged} of {rows.Count} rows were not judged: the detector needs a window of earlier points before it can say whether a point belongs to the series, so these rows carry no verdict (isAnomaly and anomalyScore are null). Send the series with at least {unjudged} earlier rows in front of the ones you ask about.";
+            ? $"None of the {rows.Count} row(s) was judged: the detector needs a window of earlier points before it can say whether a point belongs to the series, so these rows carry no verdict (isAnomaly and anomalyScore are absent). Send the series with the earlier rows in front of the ones you ask about."
+            : $"The first {unjudged} of {rows.Count} rows were not judged: the detector needs a window of earlier points before it can say whether a point belongs to the series, so these rows carry no verdict (isAnomaly and anomalyScore are absent). Send the series with at least {unjudged} earlier rows in front of the ones you ask about.";
         return (marked, warning);
     }
 }
