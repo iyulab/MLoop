@@ -111,7 +111,8 @@ mloop train [data-file] [options]    # the label is --label, or the one in mloop
 #   --label, -l <column>        Label column (default: from mloop.yaml)
 #   --task, -t <type>           ML task type (default: from mloop.yaml)
 #   --metric, -m <name>         Metric to optimize (default `auto`: AUC for a binary task, log-loss for a
-#                               multiclass one, the task's primary metric otherwise; promotion is judged
+#                               multiclass one — the log-loss of the calibrated probabilities, as the
+#                               model is served —, the task's primary metric otherwise; promotion is judged
 #                               on the primary metric either way). Case and
 #                               separators do not matter (F1Score, f1-score and f1_score are one
 #                               name); an unknown name, or one the task cannot optimize, is

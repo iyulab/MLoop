@@ -113,6 +113,41 @@ public class ClassifierCalibrationTrainingTests
     }
 
     [Fact]
+    public async Task AMulticlassSearch_ScoresEveryTrialOnTemperedProbabilities()
+    {
+        var ctx = new MLContext(seed: 42);
+        var random = new Random(3);
+        var rows = Enumerable.Range(0, 900).Select(_ =>
+        {
+            var x = (float)random.NextDouble();
+            var label = random.NextDouble() < 0.1 ? "abc"[random.Next(3)].ToString() : x < 0.33 ? "a" : x < 0.66 ? "b" : "c";
+            return new ClassRow { X = x, Noise = (float)random.NextDouble(), Label = label };
+        }).ToList();
+        var data = ctx.Data.LoadFromEnumerable(rows);
+        var config = new TrainingConfig
+        {
+            ModelName = "m",
+            DataFile = "synthetic",
+            LabelColumn = "Label",
+            Task = "multiclass-classification",
+            TimeLimitSeconds = 60,
+            Metric = "log_loss",
+            MaxTrials = 6,
+        };
+
+        var result = await new TrainingRunner(ctx, new InMemoryDataProvider(ctx, data)).RunAsync(config);
+
+        // A trial's ece is that of the calibrated model, whichever trainer made it: a one-versus-all tree's own
+        // probabilities sit far from how often it is right (measured here 0.45 for the first trial, the cheapest tree),
+        // and a temperature brings them to a few hundredths. Scored raw, the trial recorded the raw figure — and ranked by it.
+        // Only trials that learned the rows are read: a model that answers one class for every row has no honest probability to fit.
+        var learned = result.Trials.Where(t => t.Error is null && t.Trainer.Display.Contains("Ova", StringComparison.Ordinal)
+                                               && t.Metrics.TryGetValue("macro_accuracy", out var accuracy) && accuracy > 0.8).ToList();
+        Assert.NotEmpty(learned);
+        Assert.All(learned, t => Assert.True(t.Metrics["ece"] < 0.15, $"{t.TrainerName}: ece {t.Metrics["ece"]:F3} is not that of a calibrated model"));
+    }
+
+    [Fact]
     public async Task AMulticlassRun_IsTemperedOnItsOutOfFoldAnswers_AndKeepsItsAnswers()
     {
         var ctx = new MLContext(seed: 42);

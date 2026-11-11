@@ -733,7 +733,7 @@ public partial class TrainingRunner
         var request = new SearchRequest(
             candidates,
             RankingPolicy.For(metric),
-            scored => ScoreFold(scored, config, score),
+            scored => ScoreFold(IsMulticlass(config) ? TemperedFold(scored, config) : scored, config, score),
             // A blend is fitted after the search, so the search leaves part of the budget for it.
             TimeSpan.FromSeconds(config.TimeLimitSeconds * (UsesEnsemble(config) ? EnsembleBudget.SearchShare : 1)),
             config.SearchSettings ?? Settings,
@@ -741,7 +741,7 @@ public partial class TrainingRunner
             Stratify: !IsRegression(config),
             MaxTrials: config.MaxTrials,
             Preprocess: config.PreFeaturizer,
-            KeepOutOfFold: IsBinary(config) || config.Task.Equals("multiclass-classification", StringComparison.OrdinalIgnoreCase) || UsesEnsemble(config),
+            KeepOutOfFold: IsBinary(config) || IsMulticlass(config) || UsesEnsemble(config),
             KeepTopOutOfFold: UsesEnsemble(config) ? 2 * EnsembleSelection.DefaultMaxMembers : 0);
 
         SearchResult search;
@@ -975,6 +975,18 @@ public partial class TrainingRunner
 
     private static bool IsBinary(TrainingConfig config)
         => config.Task.Equals("binary-classification", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsMulticlass(TrainingConfig config)
+        => config.Task.Equals("multiclass-classification", StringComparison.OrdinalIgnoreCase);
+
+    // A multiclass trial's validated part with its probabilities tempered (FoldCalibration), held when it is — the metrics
+    // read it more than once. The search ranks trials by the probabilities the run will serve, which FinishMulticlass
+    // calibrates the same way; read raw, the ranking preferred a trainer whose probabilities were honest over a better one.
+    private IDataView TemperedFold(IDataView scored, TrainingConfig config)
+    {
+        var tempered = FoldCalibration.Temper(_mlContext, scored, config.LabelColumn, string.IsNullOrEmpty(config.WeightColumn) ? null : config.WeightColumn);
+        return ReferenceEquals(tempered, scored) ? scored : ScoredOnce(tempered);
+    }
 
     private static bool IsRegression(TrainingConfig config)
         => config.Task.Equals("regression", StringComparison.OrdinalIgnoreCase);
