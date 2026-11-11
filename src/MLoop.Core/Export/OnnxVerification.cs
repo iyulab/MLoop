@@ -36,7 +36,10 @@ public sealed record OnnxVerificationResult
                           && (Layered is null || (Layered.LabelMismatches == 0 && Layered.MaxAbsDifference.Values.All(d => d <= Tolerance)));
 }
 
-/// <summary>The manifest's decision rule replayed on the graph's outputs, against <c>mloop predict</c>'s answer.</summary>
+/// <summary>
+/// The manifest's decision rule replayed, against <c>mloop predict</c>'s answer: a binary rule on the graph's outputs, a multiclass
+/// temperature on the model's own scores (the graph's agreement with the model is the comparison of the outputs themselves).
+/// </summary>
 public sealed record OnnxLayeredCheck
 {
     /// <summary>The largest absolute difference per probability output after the rule.</summary>
@@ -140,13 +143,13 @@ public static class OnnxVerification
             Tolerance = tolerance,
             Runtime = SafeVersion(),
             Layered = recipe is { HasLayers: true } && layered is not null
-                ? CompareLayered(recipe, layered.Transform(input), byName, export, rows)
+                ? CompareLayered(recipe, layered.Transform(input), expected, byName, export, rows)
                 : null,
         };
     }
 
     private static OnnxLayeredCheck CompareLayered(
-        OnnxDecisionRecipe recipe, IDataView expected, Dictionary<string, NamedOnnxValue> graph, OnnxExportResult export, int rows)
+        OnnxDecisionRecipe recipe, IDataView expected, IDataView modelOutputs, Dictionary<string, NamedOnnxValue> graph, OnnxExportResult export, int rows)
     {
         Tensor<T> Output<T>(string column)
         {
@@ -158,10 +161,14 @@ public static class OnnxVerification
 
         if (recipe.Task == "multiclass-classification")
         {
-            var score = Output<float>("Score").ToArray();
-            var width = score.Length / Math.Max(rows, 1);
+            // The temperature raises each probability to the power 1/T, and below 1 that has no Lipschitz bound at zero: two scores
+            // that agree to 1e-9 (the graph's 0 and the model's 9.6e-10 for a class that is never the answer) come out 0.005 apart
+            // at T = 3.5. The graph's agreement with the model is the comparison above; what is checked here is that the rule, the
+            // one a consumer is told to apply, gives mloop predict's answer on the model's own scores - which it either does or does not.
+            var modelScore = ExpectedFloats(modelOutputs, "Score", rows);
+            var width = modelScore.Length / Math.Max(rows, 1);
             var answered = Enumerable.Range(0, rows)
-                .SelectMany(r => recipe.AnswerMulticlass(score[(r * width)..((r + 1) * width)]))
+                .SelectMany(r => recipe.AnswerMulticlass(modelScore[(r * width)..((r + 1) * width)]))
                 .ToArray();
             return new OnnxLayeredCheck
             {
