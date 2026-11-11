@@ -505,6 +505,12 @@ public class PerformanceDiagnostics
             }
         }
 
+        // The kept components carry less of the variance than the rank aims at (0.9): the columns share little to rebuild, so the
+        // rebuild error that is the score is mostly ordinary variation. Says it beside whatever the area or the rate said.
+        if (metrics.TryGetValue("pca_variance_share", out var varianceShare) && varianceShare < 0.9)
+            result.Suggestions.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                $"The kept components carry only {varianceShare:P0} of the columns' variance, so the score mostly measures ordinary variation: add columns that move together when something is wrong, or drop columns that are independent noise"));
+
         if (metrics.TryGetValue("anomaly_count", out var anomalyCount))
             result.SecondaryMetrics["Anomaly Count"] = anomalyCount;
         if (metrics.TryGetValue("total_count", out var totalCount))

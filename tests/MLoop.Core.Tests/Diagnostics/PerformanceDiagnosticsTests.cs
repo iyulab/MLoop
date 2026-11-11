@@ -401,6 +401,27 @@ public class PerformanceDiagnosticsTests
         Assert.Equal(PerformanceLevel.Good, result.OverallAssessment);
     }
 
+    [Theory]
+    [InlineData(0.45, true)]
+    [InlineData(0.9, false)]
+    [InlineData(0.97, false)]
+    public void Analyze_AnomalyDetection_SaysWhenTheKeptComponentsCarryLittleOfTheVariance(double share, bool says)
+    {
+        var metrics = new Dictionary<string, double>
+        {
+            ["detection_rate"] = 0.05,
+            ["anomaly_count"] = 50,
+            ["total_count"] = 1000,
+            ["pca_variance_share"] = share
+        };
+
+        var result = _diagnostics.Analyze("anomaly-detection", metrics);
+
+        Assert.Equal(says, result.Suggestions.Any(s => s.Contains("ordinary variation", StringComparison.Ordinal)));
+        if (says)
+            Assert.Contains(result.Suggestions, s => s.Contains("45 %", StringComparison.Ordinal) || s.Contains("45%", StringComparison.Ordinal));
+    }
+
     [Fact]
     public void Analyze_AnomalyDetection_HighDetectionRate_WarnsOversensitive()
     {

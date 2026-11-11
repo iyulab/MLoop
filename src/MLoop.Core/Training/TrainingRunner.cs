@@ -1574,8 +1574,12 @@ public partial class TrainingRunner
             var (componentVariance, totalVariance) = AnomalyPcaRank.Measure(featurizedTrainSet, widest.Model);
             var rank = AnomalyPcaRank.Choose(componentVariance, totalVariance, ceiling);
             var pca = rank == ceiling ? widest : FitPca(rank);
+            var carriedShare = AnomalyPcaRank.CarriedShare(componentVariance, totalVariance, rank);
 
             _logger.Info($"Anomaly detection: {featureColumns.Count} feature columns, standardized, RandomizedPca keeping {rank} of at most {ceiling} components (the fewest that carry {AnomalyPcaRank.ExplainedShare:P0} of the variance)");
+            if (carriedShare is { } share && share < AnomalyPcaRank.ExplainedShare)
+                _logger.Warning(string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"Anomaly detection: the {rank} kept components carry only {share:P0} of the variance (the rank aims at {AnomalyPcaRank.ExplainedShare:P0}) - the columns share little structure to rebuild, so the rebuild error mostly measures ordinary variation and its ranking of rows is weak"));
 
             // The trial and the result describe the same single fit — one descriptor, named by the
             // rank that identifies this configuration.
@@ -1597,6 +1601,8 @@ public partial class TrainingRunner
             var predictions = scoring.Apply(_mlContext, pca).Transform(featurizedTestSet);
 
             var metricsDict = new Dictionary<string, double>();
+            if (carriedShare is { } kept)
+                metricsDict["pca_variance_share"] = kept;
 
             // Try ML.NET's built-in anomaly evaluation (requires label column)
             if (!string.IsNullOrEmpty(config.LabelColumn))

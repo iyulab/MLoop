@@ -49,6 +49,21 @@ internal static class AnomalyPcaRank
     }
 
     /// <summary>
+    /// The share of the variance the <paramref name="rank"/> largest components carry; null when there is no variance to share.
+    /// Below <see cref="ExplainedShare"/> the rank fell back to its ceiling: the columns are close to independent, or more
+    /// than <see cref="MaxRank"/> directions vary — either way the rebuild error leaves ordinary variation in the score.
+    /// </summary>
+    public static double? CarriedShare(IReadOnlyList<double> componentVariance, double totalVariance, int rank)
+    {
+        ArgumentNullException.ThrowIfNull(componentVariance);
+        if (!double.IsFinite(totalVariance) || totalVariance <= 0)
+            return null;
+
+        var carried = componentVariance.OrderByDescending(v => v).Take(Math.Max(rank, 0)).Sum();
+        return Math.Min(1.0, carried / totalVariance);
+    }
+
+    /// <summary>
     /// The variance each of the fitted model's components carries over <paramref name="featurized"/> (rows with a
     /// <c>Features</c> vector), and the variance in all directions together.
     /// </summary>

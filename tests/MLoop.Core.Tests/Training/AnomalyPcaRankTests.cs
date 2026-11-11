@@ -39,6 +39,24 @@ public class AnomalyPcaRankTests
         Assert.Equal(3, AnomalyPcaRank.Choose(new[] { 1.0 }, double.NaN, ceiling: 3));
     }
 
+    [Fact]
+    public void TheCarriedShare_IsWhatTheKeptComponentsCarry_AndNullWhereThereIsNothingToShare()
+    {
+        // 6 + 3 + 0.6 + 0.4 = 10: two components carry 90 %, one carries 60 %.
+        var variance = new[] { 0.6, 6.0, 0.4, 3.0 };
+        Assert.Equal(0.9, AnomalyPcaRank.CarriedShare(variance, 10, rank: 2)!.Value, 6);
+        Assert.Equal(0.6, AnomalyPcaRank.CarriedShare(variance, 10, rank: 1)!.Value, 6);
+        // Ten equal components held to a ceiling of four: the rank fell back, and the share says so (0.4 < 0.9).
+        var flat = Enumerable.Repeat(1.0, 10).ToArray();
+        var rank = AnomalyPcaRank.Choose(flat, 10, ceiling: 4);
+        Assert.True(AnomalyPcaRank.CarriedShare(flat, 10, rank)!.Value < AnomalyPcaRank.ExplainedShare);
+        // A rank that reached 90 % never reports below it.
+        var reached = AnomalyPcaRank.Choose(variance, 10, ceiling: 3);
+        Assert.True(AnomalyPcaRank.CarriedShare(variance, 10, reached)!.Value >= AnomalyPcaRank.ExplainedShare);
+        Assert.Null(AnomalyPcaRank.CarriedShare(variance, 0, rank: 2));
+        Assert.Null(AnomalyPcaRank.CarriedShare(variance, double.NaN, rank: 2));
+    }
+
     private sealed class Row
     {
         [VectorType(4)]
