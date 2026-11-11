@@ -455,7 +455,7 @@ public class PerformanceDiagnostics
             {
                 result.OverallAssessment = PerformanceLevel.Moderate;
                 result.Summary = $"Moderate anomaly detection (AUC = {auc:F4})";
-                result.Suggestions.Add("Consider increasing PCA rank or adding more features");
+                result.Suggestions.Add("Add columns that carry the unusual behavior, and train on rows that are mostly normal");
             }
             else
             {
@@ -464,6 +464,12 @@ public class PerformanceDiagnostics
                 result.Suggestions.Add("Review feature selection — current features may not capture anomaly patterns");
                 result.Suggestions.Add("Consider using more training data of normal behavior");
             }
+
+            // The area says how well the score ranks; the rate says what the answers are. A model that calls most of the rows
+            // it was not fitted on anomalous (its threshold leaves only the `contamination` share of its own training rows
+            // above it) is describing a change in the data, not anomalies.
+            if (metrics.TryGetValue("detection_rate", out var labeledRate) && labeledRate > 0.5)
+                result.Warnings.Add("More than half of data flagged as anomalous");
         }
         else
         {
@@ -476,14 +482,15 @@ public class PerformanceDiagnostics
                 if (detRate > 0.5)
                 {
                     result.OverallAssessment = PerformanceLevel.Low;
-                    result.Summary = $"High anomaly rate ({detRate:P1}) — model may be oversensitive";
+                    result.Summary = $"High anomaly rate ({detRate:P1}) — these rows differ from the rows the model was trained on";
                     result.Warnings.Add("More than half of data flagged as anomalous");
-                    result.Suggestions.Add("Verify training data represents normal behavior");
+                    result.Suggestions.Add("The threshold leaves only the `contamination` share of the training rows above it (5 % unless set): check that this file is the same kind of data as the training file, and train again on rows like it");
                 }
                 else if (detRate > 0.1)
                 {
                     result.OverallAssessment = PerformanceLevel.Moderate;
                     result.Summary = $"Anomaly detection rate: {detRate:P1}";
+                    result.Suggestions.Add("A rate well above `contamination` (5 % unless set under the model in mloop.yaml) means these rows differ from the training rows; if it is the share of unusual rows you expect, raise `contamination` and train again");
                 }
                 else
                 {

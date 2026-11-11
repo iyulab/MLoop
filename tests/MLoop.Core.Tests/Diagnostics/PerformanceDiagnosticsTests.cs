@@ -418,6 +418,36 @@ public class PerformanceDiagnosticsTests
     }
 
     [Fact]
+    public void Analyze_AnomalyDetection_ModerateAuc_AdvisesOnlyWhatTheUserCanChange()
+    {
+        var result = _diagnostics.Analyze("anomaly-detection", new Dictionary<string, double> { ["auc"] = 0.75 });
+
+        Assert.Equal(PerformanceLevel.Moderate, result.OverallAssessment);
+        // The number of components is chosen from the data (the fewest that carry 90 % of the variance), not set by the user.
+        Assert.DoesNotContain(result.Suggestions, s => s.Contains("PCA rank", StringComparison.Ordinal));
+        Assert.NotEmpty(result.Suggestions);
+    }
+
+    [Fact]
+    public void Analyze_AnomalyDetection_AucWithMostRowsFlagged_StillWarns()
+    {
+        var result = _diagnostics.Analyze("anomaly-detection", new Dictionary<string, double> { ["auc"] = 0.9, ["detection_rate"] = 0.62 });
+
+        Assert.Contains(result.Warnings, w => w.Contains("More than half", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Analyze_AnomalyDetection_RateAboveTheTrainingShare_NamesContamination()
+    {
+        var moderate = _diagnostics.Analyze("anomaly-detection", new Dictionary<string, double> { ["detection_rate"] = 0.2 });
+        Assert.Equal(PerformanceLevel.Moderate, moderate.OverallAssessment);
+        Assert.Contains(moderate.Suggestions, s => s.Contains("contamination", StringComparison.Ordinal));
+
+        var high = _diagnostics.Analyze("anomaly-detection", new Dictionary<string, double> { ["detection_rate"] = 0.7 });
+        Assert.Contains(high.Suggestions, s => s.Contains("contamination", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void Analyze_AnomalyDetection_NoMetrics_ReturnsUnknown()
     {
         var metrics = new Dictionary<string, double>();
