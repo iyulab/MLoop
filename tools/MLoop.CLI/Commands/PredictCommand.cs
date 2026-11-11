@@ -692,49 +692,79 @@ public static partial class PredictCommand
     internal static int DistributionColumn(string[] headers) =>
         Array.FindIndex(headers, h => h.Equals("PredictedLabel", StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>
+    /// What <see cref="ReadPredictionDistribution"/> counted: the answered classes, and the rows that
+    /// carry no answer at all. A time-series detector cannot judge the first rows of a series (it
+    /// needs a window of earlier points), so their <c>PredictedLabel</c> is empty — counted as a
+    /// class it read as a third answer beside False and True.
+    /// </summary>
+    internal sealed record PredictionDistribution(
+        string Column, IReadOnlyList<KeyValuePair<string, int>> Classes, int Unanswered);
+
+    /// <summary>
+    /// Counts the predicted classes in an output file's lines, or <c>null</c> when there is nothing
+    /// worth a chart: no class column, a score (more than 50 distinct values), or fewer than two
+    /// answered classes. Rows with an empty answer are counted apart, never as a class.
+    /// </summary>
+    internal static PredictionDistribution? ReadPredictionDistribution(IEnumerable<string> lines)
+    {
+        var values = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+        string[]? headers = null;
+        var predIdx = 0;
+        var unanswered = 0;
+
+        foreach (var line in lines)
+        {
+            if (headers == null)
+            {
+                headers = CsvFieldParser.ParseFields(line);
+                predIdx = DistributionColumn(headers);
+                if (predIdx < 0) return null;
+                continue;
+            }
+
+            var fields = CsvFieldParser.ParseFields(line);
+            if (predIdx < fields.Length)
+            {
+                var val = fields[predIdx].Trim();
+                if (val.Length == 0) unanswered++;
+                else values[val] = values.GetValueOrDefault(val) + 1;
+            }
+
+            // Early exit if too many unique values (regression output)
+            if (values.Count > 50) return null;
+        }
+
+        if (headers == null || values.Count < 2) return null;
+
+        return new PredictionDistribution(
+            headers[predIdx], values.OrderByDescending(kv => kv.Value).ToList(), unanswered);
+    }
+
     private static void DisplayPredictionDistribution(string outputPath)
     {
         try
         {
             // Stream file instead of loading entirely into memory
-            var values = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            string[]? headers = null;
-            int predIdx = 0;
+            var distribution = ReadPredictionDistribution(File.ReadLines(outputPath));
+            if (distribution is null) return;
 
-            foreach (var line in File.ReadLines(outputPath))
-            {
-                if (headers == null)
-                {
-                    headers = CsvFieldParser.ParseFields(line);
-                    predIdx = DistributionColumn(headers);
-                    if (predIdx < 0) return;
-                    continue;
-                }
-
-                var fields = CsvFieldParser.ParseFields(line);
-                if (predIdx < fields.Length)
-                {
-                    var val = fields[predIdx].Trim();
-                    values[val] = values.GetValueOrDefault(val) + 1;
-                }
-
-                // Early exit if too many unique values (regression output)
-                if (values.Count > 50) return;
-            }
-
-            if (headers == null || values.Count < 2) return;
-
-            AnsiConsole.Write(new Rule($"[blue]Prediction Distribution ({headers[predIdx]})[/]").LeftJustified());
+            AnsiConsole.Write(new Rule($"[blue]Prediction Distribution ({distribution.Column})[/]").LeftJustified());
             AnsiConsole.WriteLine();
 
-            var total = values.Values.Sum();
-            foreach (var (label, count) in values.OrderByDescending(kv => kv.Value))
+            // Shares are of the rows that were answered: an unjudged row is neither class.
+            var total = distribution.Classes.Sum(kv => kv.Value);
+            foreach (var (label, count) in distribution.Classes)
             {
                 var pct = (double)count / total * 100;
                 var barWidth = (int)(pct / 100 * 30);
                 var bar = new string('#', Math.Max(barWidth, 1));
                 AnsiConsole.MarkupLine($"  [cyan]{Markup.Escape(label),-20}[/] [yellow]{bar}[/] {count} ({pct:F1}%)");
             }
+
+            if (distribution.Unanswered > 0)
+                AnsiConsole.MarkupLine(
+                    $"  [grey]{distribution.Unanswered} row(s) without an answer are not counted above.[/]");
 
             AnsiConsole.WriteLine();
         }

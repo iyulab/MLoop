@@ -85,4 +85,38 @@ public class PredictCommandTests
         // A ranking prediction file's distribution counted its first column — the query ids.
         Assert.Equal(expected, PredictCommand.DistributionColumn(headers));
     }
+
+    [Fact]
+    public void Rows_without_an_answer_are_not_a_class_of_the_distribution()
+    {
+        // A time-series detector cannot judge the first rows of a series, so their label is empty;
+        // counted as a class they read as a third answer beside False and True.
+        var lines = new[] { "Value,PredictedLabel,Score" }
+            .Concat(Enumerable.Repeat("1,,", 3))
+            .Concat(Enumerable.Repeat("1,False,0.1", 6))
+            .Concat(Enumerable.Repeat("9,True,0.9", 2));
+
+        var distribution = PredictCommand.ReadPredictionDistribution(lines);
+
+        Assert.NotNull(distribution);
+        Assert.Equal(3, distribution!.Unanswered);
+        Assert.Equal(["False", "True"], distribution.Classes.Select(c => c.Key));
+        Assert.Equal([6, 2], distribution.Classes.Select(c => c.Value));
+    }
+
+    [Fact]
+    public void A_single_answered_class_has_no_distribution_even_with_unanswered_rows()
+    {
+        var lines = new[] { "PredictedLabel", "", "", "yes", "yes" };
+
+        Assert.Null(PredictCommand.ReadPredictionDistribution(lines));
+    }
+
+    [Fact]
+    public void A_score_file_has_no_distribution()
+    {
+        var lines = new[] { "x,Score", "1,0.5", "2,0.7" };
+
+        Assert.Null(PredictCommand.ReadPredictionDistribution(lines));
+    }
 }
