@@ -1186,6 +1186,16 @@ public class TrainingEngine : ITrainingEngine
                     dataType = SchemaDataTypes.Categorical;
                 }
 
+                // A binary label written as other numbers (0.0 / 1.0, 1 / 2) is read as its two spellings, as OK / NG are
+                // (CsvDataLoader): the schema records it so too, with its vocabulary, so that evaluate and predict name and score
+                // the classes the way the data wrote them. Recorded as a number it had no vocabulary, and evaluate's metrics
+                // read every actual label as the second class.
+                if (purpose == "Label" && labelInferredKind is DataKind.Single or DataKind.Double && dataType == SchemaDataTypes.Numeric
+                    && string.Equals(TaskTypes.Canonical(taskType), "binary-classification", StringComparison.Ordinal))
+                {
+                    dataType = SchemaDataTypes.Categorical;
+                }
+
                 // If InferColumns classified a text column as Ignored,
                 // but InferColumnTypeFromData detected it as Text, override purpose to Feature.
                 // This aligns schema metadata with TrainingRunner's BuildColumnInformation behavior.

@@ -379,6 +379,7 @@ public class EvaluationEngine
         var recordedLabel = trainedSchema?.Columns.FirstOrDefault(c => c.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase));
         bool isMulticlass = taskType.Equals("multiclass-classification", StringComparison.OrdinalIgnoreCase);
         bool isRegressionEval = taskType.Equals("regression", StringComparison.OrdinalIgnoreCase);
+        bool isBinaryEvaluation = taskType.Equals("binary-classification", StringComparison.OrdinalIgnoreCase);
         if (loaderOptions.Columns != null)
         {
             foreach (var col in loaderOptions.Columns)
@@ -391,6 +392,10 @@ public class EvaluationEngine
                     col.DataKind = DataKind.String;
                 else if (col.DataKind == DataKind.Boolean && isRegressionEval)
                     col.DataKind = DataKind.Single;
+                // A binary label written as other numbers (0.0 / 1.0) is read as its two spellings, as training read it
+                // (CsvDataLoader), and converted below with the vocabulary the schema recorded.
+                else if (col.DataKind is DataKind.Single or DataKind.Double && isBinaryEvaluation)
+                    col.DataKind = DataKind.String;
             }
         }
 

@@ -648,6 +648,22 @@ public class CsvDataLoaderTests : IDisposable
         return (train, test);
     }
 
+    // A binary label written as decimals (a pandas export of a 0/1 column) is inferred as a number, and no binary trainer takes
+    // a number: every trainer failed its first trials with "expected Boolean, got Single". It is read as the two spellings it is.
+    [Theory]
+    [InlineData("0.0", "1.0")]
+    [InlineData("1", "2")]
+    [InlineData("0.5", "1.5")]
+    public void LoadData_ReadsABinaryLabelWrittenAsNumbersAsABooleanColumn(string negative, string positive)
+    {
+        var path = Path.Combine(_tempDirectory, "numeric_binary.csv");
+        File.WriteAllText(path, "x,y\n" + string.Join("\n", Enumerable.Range(0, 40).Select(i => $"{i * 3 % 17},{(i % 3 == 0 ? positive : negative)}")) + "\n");
+
+        var view = _loader.LoadData(path, "y", "binary-classification");
+
+        Assert.IsType<BooleanDataViewType>(view.Schema["y"].Type);
+    }
+
     [Fact]
     public void LoadDataSharingLayout_ReadsTheTestFileWithTheTrainingFilesColumns()
     {

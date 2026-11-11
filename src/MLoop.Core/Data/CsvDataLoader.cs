@@ -210,6 +210,22 @@ public class CsvDataLoader : DataProviderBase
             }
         }
 
+        // A binary label written as numbers other than 0/1 (0.0 / 1.0 from a pandas export, 1 / 2) is inferred as a number, and
+        // no binary trainer takes one ("expected Boolean, got Single"). Reading it as text sends it through the same
+        // two-spellings conversion as OK / NG (ConvertStringLabelToBoolean below), which refuses nothing a number did not.
+        if (sharedLayout is null && isBinaryTask && !string.IsNullOrEmpty(labelColumn) && loaderOptions.Columns != null)
+        {
+            foreach (var col in loaderOptions.Columns)
+            {
+                if (col.Name != null &&
+                    col.Name.Equals(labelColumn, StringComparison.OrdinalIgnoreCase) &&
+                    col.DataKind is DataKind.Single or DataKind.Double)
+                {
+                    col.DataKind = DataKind.String;
+                }
+            }
+        }
+
         // The run's decision overrides every inference above: the partitions of one split type the
         // label alike, as the saved schema recorded it (LabelKinds).
         if (sharedLayout is null && labelKind is { } decidedLabelKind && !string.IsNullOrEmpty(labelColumn) && loaderOptions.Columns != null)
