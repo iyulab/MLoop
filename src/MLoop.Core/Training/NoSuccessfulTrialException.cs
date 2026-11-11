@@ -42,7 +42,12 @@ public sealed class NoSuccessfulTrialException : InvalidOperationException
                 "(most often memory exhaustion on wide or large data).";
         }
 
-        var why = string.Join("; ", search.Trials.Where(t => t.Error is not null).Select(t => $"{t.Trainer}: {t.Error}").Distinct().Take(5));
+        var failed = search.Trials.Where(t => t.Error is not null).ToList();
+        var errors = failed.Select(t => t.Error!).Distinct(StringComparer.Ordinal).ToList();
+        // One cause hitting every trainer is said once, with who it hit: the same sentence once per trainer reads as four problems.
+        var why = errors.Count == 1 && failed.Select(t => t.Trainer).Distinct(StringComparer.Ordinal).Count() > 1
+            ? $"Every trainer failed with the same error: {errors[0]} ({string.Join(", ", failed.Select(t => t.Trainer).Distinct(StringComparer.Ordinal))})"
+            : string.Join("; ", failed.Select(t => $"{t.Trainer}: {t.Error}").Distinct(StringComparer.Ordinal).Take(5));
         return $"The trainer search stopped early: every trainer failed {MLoop.Search.TrialRunner.FailuresToRetire} times in a row without completing a trial, " +
             $"so the time budget ({timeLimitSeconds}s) was not the cause. {why}";
     }

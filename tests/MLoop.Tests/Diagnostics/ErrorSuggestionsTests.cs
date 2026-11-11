@@ -293,6 +293,25 @@ public class ErrorSuggestionsTests
         Assert.False(new NoSuccessfulTrialException(900, null).AllTrainersFailed);
     }
 
+    // Four trainers that fail on the same label read the same sentence four times; the cause is one, and said once with who it hit.
+    [Fact]
+    public void NoSuccessfulTrial_WhenEveryTrainerFailedWithTheSameError_SaysItOnceAndNamesTheTrainers()
+    {
+        MLoop.Search.TrialResult Failed(string trainer, string error) => new() { Trainer = trainer, Error = error };
+        const string error = "Schema mismatch for label column 'y': expected Boolean, got Single";
+        var search = new MLoop.Search.SearchFailedException(
+            [Failed("FastTree", error), Failed("FastTree", error), Failed("FastForest", error), Failed("Lbfgs", error), Failed("Sdca", error)],
+            "every trainer failed", allTrainersRetired: true);
+
+        var ex = new NoSuccessfulTrialException(60, search);
+
+        Assert.Single(System.Text.RegularExpressions.Regex.Matches(ex.Message, System.Text.RegularExpressions.Regex.Escape(error)));
+        Assert.Contains("same error", ex.Message);
+        foreach (var trainer in new[] { "FastTree", "FastForest", "Lbfgs", "Sdca" })
+            Assert.Contains(trainer, ex.Message);
+        Assert.Contains("stopped early", ex.Message);
+    }
+
     [Fact]
     public void GetSuggestions_NoSuccessfulTrial_WhenEveryTrainerWasRetired_DoesNotAskForMoreTime()
     {
