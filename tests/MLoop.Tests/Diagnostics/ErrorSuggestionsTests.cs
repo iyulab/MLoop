@@ -1,4 +1,5 @@
 using MLoop.CLI.Infrastructure.Diagnostics;
+using MLoop.Core.Data;
 using MLoop.Core.Detection;
 using MLoop.Core.Training;
 
@@ -402,6 +403,20 @@ public class ErrorSuggestionsTests
         Assert.Contains(suggestions, s => s.Contains("plain numbers", StringComparison.Ordinal));
         Assert.DoesNotContain(suggestions, s => s.Contains("label column name matches", StringComparison.Ordinal));
         Assert.DoesNotContain(suggestions, s => s.Contains("mloop train --label", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void GetSuggestions_AGapInATimeSeries_IsNotAdviceAboutColumnNames()
+    {
+        // The message names the series, the rows and the fill (`--columns value`). The keyword rule that reads "column" answered with
+        // "Verify the data file has the expected columns" and "Check if the label column name matches" - neither is wrong in this file.
+        var cause = new SeriesGapException(
+            "The series 'value' has 1 missing value (data row 60). A time-series model reads every point in order. Fill the gaps first - for example `mloop prep plan --set fill-missing:forward --columns value` - or fill them in the file.");
+        var wrapped = new InvalidOperationException($"Training failed for experiment default/exp-001: {cause.Message}", cause);
+
+        var suggestions = ErrorSuggestions.GetSuggestions(wrapped, "training", "time-series-anomaly");
+
+        Assert.Empty(suggestions);
     }
 
     [Fact]

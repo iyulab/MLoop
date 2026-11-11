@@ -97,7 +97,7 @@ public static class MissingNumbers
     /// Throws when the series in <paramref name="column"/> has a gap — a time-series model reads the values in
     /// order, and a missing one would reach it as NaN.
     /// </summary>
-    /// <exception cref="InvalidOperationException">The column holds a missing value.</exception>
+    /// <exception cref="SeriesGapException">The column holds a missing value.</exception>
     public static void RefuseGapsInSeries(IDataView data, string column)
     {
         var gaps = CountIn(data, column);
@@ -107,7 +107,7 @@ public static class MissingNumbers
             var where = rows.Count == 0 ? "" : gaps == 1
                 ? $" (data row {rows[0]})"
                 : $" (the first at data row{(rows.Count == 1 ? "" : "s")} {string.Join(", ", rows)})";
-            throw new InvalidOperationException(
+            throw new SeriesGapException(
                 $"The series '{column}' has {gaps} missing value{(gaps == 1 ? "" : "s")}{where}. A time-series model reads every point in order, " +
                 "and dropping a row would close up the time around it. Fill the gaps first — for example " +
                 $"`mloop prep plan --set fill-missing:forward --columns {column}` — or fill them in the file.");

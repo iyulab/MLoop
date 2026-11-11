@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Text.RegularExpressions;
+using MLoop.Core.Data;
 using MLoop.Core.Detection;
 using MLoop.Core.Training;
 using Spectre.Console;
@@ -141,6 +142,11 @@ public static partial class ErrorSuggestions
             suggestions.Add("See what MLoop reads from the file: [cyan]mloop info <data-file>[/]");
             return suggestions;
         }
+        // A gap in a time series: the message names the series, the rows and the fill that mends it. It also carries the word
+        // "column" (the fill's --columns option), which the keyword rules below answer with advice about column names.
+        // The message is the whole answer, so there is nothing to add (the screen's "Diagnostic commands" already offers `mloop info`).
+        if (HasInChain<SeriesGapException>(ex))
+            return suggestions;
         // The time-series native library is missing: the message already names it and the way out, and advice about the data
         // (the keyword rules below) would point away from the cause. The one thing worth adding is what does not need it.
         if (InChainCarriesMessage(ex, TimeSeriesNativeSupport.UnavailableLead))
