@@ -38,6 +38,29 @@ public class ConfidencePolicyTests
         Assert.Equal(expected, ConfidencePolicy.Compute(row, "anomaly-detection")!.Value, 3);
     }
 
+    // A table anomaly model judged against its own threshold T: the share of T between the score and T, up to one. With T = 0.5
+    // (a model without the file) this is the rule above.
+    [Theory]
+    [InlineData(2.0, 2.0, 0.0)]     // on the threshold: no confidence either way
+    [InlineData(0.0, 2.0, 1.0)]     // a perfect inlier
+    [InlineData(1.0, 2.0, 0.5)]
+    [InlineData(3.0, 2.0, 0.5)]
+    [InlineData(4.0, 2.0, 1.0)]     // twice the threshold
+    [InlineData(40.0, 2.0, 1.0)]    // far beyond: clamped, not above one
+    public void Anomaly_DistanceFromTheModelsOwnThreshold(double anomalyScore, double threshold, double expected)
+    {
+        var row = new PredictionRow { IsAnomaly = anomalyScore > threshold, AnomalyScore = anomalyScore };
+        Assert.Equal(expected, ConfidencePolicy.Compute(row, "anomaly-detection", anomalyThreshold: threshold)!.Value, 3);
+    }
+
+    [Fact]
+    public void Anomaly_WithoutAThreshold_KeepsTheHalfBoundary()
+    {
+        var row = new PredictionRow { IsAnomaly = false, AnomalyScore = 0.25 };
+        Assert.Equal(0.5, ConfidencePolicy.Compute(row, "anomaly-detection", anomalyThreshold: null)!.Value, 3);
+        Assert.Equal(0.5, ConfidencePolicy.Compute(row, "anomaly-detection", anomalyThreshold: 0)!.Value, 3);
+    }
+
     // Guard: a time-series-anomaly row carries the detector's RAW score (SrCnn spectral residual /
     // SSA raw score), not a [0,1] probability with a 0.5 boundary — applying the anomaly boundary rule
     // to it would fabricate a confidence. TS-anomaly stays null until its signal mapping lands (P3-3).

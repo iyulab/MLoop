@@ -90,6 +90,7 @@ public class ConfigMerger
             WindowSize = baseDefinition?.WindowSize,
             SeriesLength = baseDefinition?.SeriesLength,
             AnomalyThreshold = baseDefinition?.AnomalyThreshold,
+            Contamination = baseDefinition?.Contamination,
             UserColumn = baseDefinition?.UserColumn,
             ItemColumn = baseDefinition?.ItemColumn
         };

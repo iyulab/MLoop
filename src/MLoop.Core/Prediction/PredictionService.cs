@@ -431,7 +431,7 @@ public class PredictionService
 
         // Single authority for the normalized per-row confidence — computed once here so every consumer
         // of PredictionService (serve, CLI) gets the same value and none re-derives it (ConfidencePolicy).
-        ApplyConfidence(rows, taskType, interval);
+        ApplyConfidence(rows, taskType, interval, MLoop.Core.Models.AnomalyScoring.ThresholdOf(predictions.Schema));
 
         return new PredictionResult
         {
@@ -456,7 +456,7 @@ public class PredictionService
     public static IReadOnlyList<double?> ComputeRowConfidences(IDataView predictions, string taskType, RegressionInterval? interval = null)
     {
         var rows = ExtractRows(predictions, taskType, interval);
-        ApplyConfidence(rows, taskType, interval);
+        ApplyConfidence(rows, taskType, interval, MLoop.Core.Models.AnomalyScoring.ThresholdOf(predictions.Schema));
         return rows.Select(r => r.Confidence).ToList();
     }
 
@@ -474,11 +474,11 @@ public class PredictionService
         => RequireNonDegenerateOutput(ExtractRows(predictions, taskType, interval), taskType);
 
     /// <summary>Fills each row's <see cref="PredictionRow.Confidence"/> via the single ConfidencePolicy authority.</summary>
-    private static void ApplyConfidence(List<PredictionRow> rows, string taskType, RegressionInterval? interval)
+    private static void ApplyConfidence(List<PredictionRow> rows, string taskType, RegressionInterval? interval, double? anomalyThreshold = null)
     {
         double? residualStd = interval?.ResidualStd;
         for (int r = 0; r < rows.Count; r++)
-            rows[r] = rows[r] with { Confidence = ConfidencePolicy.Compute(rows[r], taskType, residualStd) };
+            rows[r] = rows[r] with { Confidence = ConfidencePolicy.Compute(rows[r], taskType, residualStd, anomalyThreshold) };
     }
 
     /// <summary>

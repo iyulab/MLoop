@@ -139,6 +139,17 @@ public static class MetricPolicy
     }
 
     /// <summary>
+    /// The share of the held-out rows a table anomaly model calls anomalous, when that is more than half — otherwise <c>null</c>.
+    /// The model's threshold is placed on its <i>training</i> rows (the point a chosen share of them score above), so on the
+    /// rows it was fitted on the share flagged is that choice and says nothing; on rows it has not seen it is the check: a model
+    /// that calls most of them anomalous has read ordinary variation as strange, or the file it is judged on is not the kind of
+    /// data it was trained on. Either way its answers are not anomalies.
+    /// </summary>
+    public static double? FlagsMostHeldOutRows(string? task, IReadOnlyDictionary<string, double> metrics)
+        => MLoop.Core.Models.TaskTypes.Canonical(task) is "anomaly-detection"
+           && metrics.TryGetValue("detection_rate", out var rate) && rate > 0.5 ? rate : null;
+
+    /// <summary>
     /// True when the metric is error-direction (lower is better). Delegates to the shared
     /// <see cref="MetricDirection"/> authority so the promotion gate's compare direction cannot
     /// drift from the rest of the system.

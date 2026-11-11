@@ -48,6 +48,7 @@ public static class ModelTrainingConfig
             WindowSize = definition.WindowSize ?? 0,
             SeriesLength = definition.SeriesLength ?? 0,
             AnomalyThreshold = definition.AnomalyThreshold,
+            Contamination = definition.Contamination,
             UserColumn = definition.UserColumn,
             ItemColumn = definition.ItemColumn,
             PreFeaturizer = preFeaturizer,
@@ -161,6 +162,23 @@ public static class ModelTrainingConfig
             ? null
             : string.Create(System.Globalization.CultureInfo.InvariantCulture,
                 $"anomaly threshold: {threshold} is not a score threshold. It must be above 0 and below 1 (the default is {MLoop.Core.Training.TrainingRunner.DefaultAnomalyThreshold}); a lower value flags more points.");
+    }
+
+    /// <summary>
+    /// Why the contamination in <paramref name="definition"/> cannot be honoured, or <c>null</c>. It is the share of the training rows
+    /// a table anomaly model calls anomalous, so it lies above 0 and below one half, and only an <c>anomaly-detection</c> model has
+    /// one: set on another task it would be accepted and meant nothing.
+    /// </summary>
+    public static string? ContaminationConflict(ModelDefinition definition)
+    {
+        if (definition.Contamination is not { } contamination)
+            return null;
+        if (!MLoop.Core.Training.TrainingRunner.SupportsContamination(definition.Task))
+            return $"contamination: '{definition.Task}' has no table anomaly threshold to place; it is a setting of anomaly-detection.";
+        return MLoop.Core.Models.AnomalyScoring.IsValidContamination(contamination)
+            ? null
+            : string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                $"contamination: {contamination} is not a share of rows. It must be above 0 and below 0.5 (the default is {MLoop.Core.Models.AnomalyScoring.DefaultContamination}).");
     }
 
     /// <summary>

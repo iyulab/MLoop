@@ -114,7 +114,7 @@ public class ModelRegistry : IModelRegistry
         {
             ExperimentLayout.DecisionThresholdFileName, ExperimentLayout.CalibrationFileName, ExperimentLayout.TextEncodersFileName,
             ExperimentLayout.ImageAnomalyFileName, ExperimentLayout.PatchBankFileName, ExperimentLayout.SeriesFileName,
-            ExperimentLayout.ForecastBandFileName,
+            ExperimentLayout.ForecastBandFileName, ExperimentLayout.AnomalyScoringFileName,
         })
         {
             var sourceLayerPath = _fileSystem.CombinePath(experimentPath, layer);
@@ -513,6 +513,13 @@ public class ModelRegistry : IModelRegistry
         if (MetricPolicy.IsClassificationDegenerateModel(metrics))
         {
             return "it predicts only one class (its accuracy reflects the class balance, not learning)";
+        }
+
+        // A table anomaly model that calls most of the rows it was not fitted on anomalous has not found anomalies.
+        if (MetricPolicy.FlagsMostHeldOutRows(experiment.Task, metrics) is { } flagged)
+        {
+            return string.Create(CultureInfo.InvariantCulture,
+                $"it calls {flagged:P0} of the held-out rows anomalous (its threshold leaves only a small share of the training rows above it, so most of the data it was not fitted on reads as strange to it)");
         }
 
         return null;

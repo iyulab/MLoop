@@ -196,6 +196,9 @@ public partial class TrainingRunner
     /// <summary>Whether <paramref name="threshold"/> can be a spectral-residual score threshold: the score lies between 0 and 1, so a value outside flags every point or none.</summary>
     public static bool IsValidAnomalyThreshold(double threshold) => threshold is > 0 and < 1;
 
+    /// <summary>Whether <paramref name="task"/> has a table anomaly threshold a contamination can place: only <c>anomaly-detection</c> does.</summary>
+    public static bool SupportsContamination(string? task) => Models.TaskTypes.Canonical(task) is "anomaly-detection";
+
     /// <summary>
     /// Whether <paramref name="task"/>'s model reads the table's other columns as features. A series model
     /// reads its one series column, matrix factorization its user and item, and a deep-learning trainer the
@@ -1562,8 +1565,17 @@ public partial class TrainingRunner
 
             var model = featurizer.Append(pca);
 
+            // What the score and the answer mean: the raw rebuild distance, and "anomalous" above the point this share of the training
+            // rows themselves score above. ML.NET's own relative score and its fixed 0.5 flagged a third to two thirds of the rows of
+            // public tables whose true anomalies were 1.5-6 % (AnomalyScoring). The held-out rows are judged by the same layer every
+            // later path applies, so what training reports is what predict answers.
+            var contamination = config.Contamination ?? AnomalyScoring.DefaultContamination;
+            var scoring = AnomalyScoring.Fit(featurizedTrainSet, pca.Model, contamination);
+            _logger.Info(string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                $"Anomaly detection: a row is anomalous above a rebuild error of {scoring.Threshold:G4} - the point {contamination:P0} of the {scoring.Rows} training rows score above"));
+
             // Evaluate on test set
-            var predictions = pca.Transform(featurizedTestSet);
+            var predictions = scoring.Apply(_mlContext, pca).Transform(featurizedTestSet);
 
             var metricsDict = new Dictionary<string, double>();
 
@@ -1619,7 +1631,8 @@ public partial class TrainingRunner
                 Metrics = metricsDict,
                 RowCount = RowsIn(trainSet),
                 Trials = trialChannel.Records,
-                RankingMetric = trialChannel.RankingMetric
+                RankingMetric = trialChannel.RankingMetric,
+                AnomalyScoring = scoring
             };
         }, cancellationToken).ConfigureAwait(false);
     }
@@ -2763,6 +2776,12 @@ public record TrainedModel
     /// the series was too short to score enough points (the native band stands) and for every other task.
     /// </summary>
     public ForecastBandCalibration? ForecastBand { get; init; }
+
+    /// <summary>
+    /// What a table anomaly model's score and answer mean — the threshold its training rows placed — saved beside it
+    /// (<see cref="AnomalyScoring.WriteBeside"/>), where every scoring path applies it. Null for every other task.
+    /// </summary>
+    public AnomalyScoring? AnomalyScoring { get; init; }
 
     /// <summary>
     /// What a run asked for a blend (<see cref="TrainingConfig.Ensemble"/>) came to — the blend it answers with, or why the single

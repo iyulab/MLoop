@@ -210,6 +210,8 @@ public class TrainingEngine : ITrainingEngine
             trained.Calibration?.WriteBeside(modelPath);
             // A forecasting model's band width, fitted on forecasts of points it had not seen — applied where the forecast is replayed.
             trained.ForecastBand?.WriteBeside(modelPath);
+            // A table anomaly model's score definition and threshold - applied by every path that loads the model.
+            trained.AnomalyScoring?.WriteBeside(modelPath);
             // The encoders of the text columns it reads as vectors — every loading path puts them in front of it.
             trained.TextEncodings?.WriteBeside(modelPath);
             // An image-anomaly model is its bank: the header above is only the experiment's.

@@ -216,6 +216,12 @@ public record TrainingConfig
     public double? AnomalyThreshold { get; init; }
 
     /// <summary>
+    /// The share of the training rows a table <c>anomaly-detection</c> model calls anomalous (the threshold is the point that share
+    /// of its own training scores exceed); <see langword="null"/> for <see cref="AnomalyScoring.DefaultContamination"/>.
+    /// </summary>
+    public double? Contamination { get; init; }
+
+    /// <summary>
     /// User column name for recommendation task
     /// </summary>
     public string? UserColumn { get; init; }

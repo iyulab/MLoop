@@ -149,6 +149,14 @@ public class ModelDefinition
     public double? AnomalyThreshold { get; set; }
 
     /// <summary>
+    /// The share of the training rows an <c>anomaly-detection</c> (table) model calls anomalous: the threshold is placed so that
+    /// this share of the rows it was trained on score above it, and a later file is judged against that threshold. Above 0 and
+    /// below 0.5; unset: 0.05. Set it to the share of unusual rows you expect — a table with more of them than this is flagged
+    /// for the excess, a table with fewer is flagged for rows that are ordinary.
+    /// </summary>
+    public double? Contamination { get; set; }
+
+    /// <summary>
     /// User column for recommendation task.
     /// </summary>
     public string? UserColumn { get; set; }

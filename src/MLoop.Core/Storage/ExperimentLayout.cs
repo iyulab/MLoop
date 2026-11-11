@@ -74,6 +74,15 @@ public static class ExperimentLayout
     public const string DecisionThresholdFileName = "decision-threshold.json";
 
     /// <summary>
+    /// What a table anomaly-detection model's score and answer mean (<c>MLoop.Core.Models.AnomalyScoring</c>): the squared
+    /// distance from the principal components' rebuild, and the threshold above which a row is called anomalous — the point
+    /// the training run's <c>contamination</c> share of its own rows exceed. Beside <see cref="ModelFileName"/>, applied by
+    /// every path that loads the model, and copied on promote like the threshold. Absent (a model trained before it, or any
+    /// other task): the trainer's own relative score and its 0.5.
+    /// </summary>
+    public const string AnomalyScoringFileName = "anomaly-scoring.json";
+
+    /// <summary>
     /// A binary classifier's probability calibration, when one was fit for it on labeled rows
     /// (<c>MLoop.Core.Models.ProbabilityCalibration</c>) — the map from the model's own probability to
     /// a calibrated one. Beside <see cref="ModelFileName"/>, applied by every path that loads the model

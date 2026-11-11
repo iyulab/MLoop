@@ -120,6 +120,7 @@ public static partial class TrainCommand
              ?? ModelTrainingConfig.TestSplitConflict(effectiveDefinition)
              ?? ModelTrainingConfig.EpochsConflict(effectiveDefinition)
              ?? ModelTrainingConfig.AnomalyThresholdConflict(effectiveDefinition)
+             ?? ModelTrainingConfig.ContaminationConflict(effectiveDefinition)
              ?? TrainingInput.BalanceConflict(effectiveDefinition, balance)
              ?? ModelTrainingConfig.WeightConflict(effectiveDefinition, balance)) is { } weightError)
         {

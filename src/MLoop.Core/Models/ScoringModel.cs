@@ -24,7 +24,7 @@ public static class ScoringModel
     /// <summary>
     /// The model at <paramref name="modelPath"/>, ready to score: its task's runtime ensured (when
     /// <paramref name="task"/> is given), then the <paramref name="layers"/> beside it applied in their
-    /// order — the probability calibration, then the decision threshold, which answers from the
+    /// order — the anomaly scoring of a table anomaly model, the probability calibration, then the decision threshold, which answers from the
     /// calibrated probability — and, always, the text encodings beside it (<see cref="TextEncodings"/>) in front. A caller that converts the saved model itself passes
     /// <see cref="ScoringLayers.None"/> (ONNX export: the graph carries the trained model, the manifest
     /// names the layers); fitting a calibration reads the model's own probabilities the same way.
@@ -49,6 +49,8 @@ public static class ScoringModel
         // A NER model's tags are put back on their words (NerAlignment) — the transformer answers one word to the right — and a
         // question-answering model is given a word after its passage (AnswerAlignment) — its decoder cuts the last token off.
         var model = ClassScores.AsProbabilities(mlContext, AnswerAlignment.Apply(mlContext, NerAlignment.Apply(mlContext, LoadArchive(mlContext, modelPath, out inputSchema))));
+        if (layers.HasFlag(ScoringLayers.AnomalyScoring))
+            model = Models.AnomalyScoring.ApplyBeside(mlContext, model, modelPath);
         if (layers.HasFlag(ScoringLayers.Calibration))
             model = ProbabilityCalibration.ApplyBeside(mlContext, model, modelPath);
         if (layers.HasFlag(ScoringLayers.DecisionThreshold))
@@ -115,6 +117,8 @@ public enum ScoringLayers
     Calibration = 1,
     /// <summary>The decision threshold beside it (<see cref="DecisionThreshold"/>).</summary>
     DecisionThreshold = 2,
+    /// <summary>What a table anomaly model's score and answer mean (<see cref="Models.AnomalyScoring"/>).</summary>
+    AnomalyScoring = 4,
     /// <summary>Everything a scoring path answers with.</summary>
-    All = Calibration | DecisionThreshold,
+    All = Calibration | DecisionThreshold | AnomalyScoring,
 }

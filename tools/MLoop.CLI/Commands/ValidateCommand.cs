@@ -270,6 +270,8 @@ public static class ValidateCommand
             errors.Add(new ValidationError($"{prefix}.ensemble", ensembleProblem));
         if (MLoop.CLI.Infrastructure.Configuration.ModelTrainingConfig.AnomalyThresholdConflict(model) is { } thresholdProblem)
             errors.Add(new ValidationError($"{prefix}.anomaly_threshold", thresholdProblem));
+        if (MLoop.CLI.Infrastructure.Configuration.ModelTrainingConfig.ContaminationConflict(model) is { } contaminationProblem)
+            errors.Add(new ValidationError($"{prefix}.contamination", contaminationProblem));
         if (taskName.Equals("forecasting", StringComparison.OrdinalIgnoreCase) && (model.Horizon ?? 0) <= 0)
         {
             errors.Add(new ValidationError($"{prefix}.horizon",

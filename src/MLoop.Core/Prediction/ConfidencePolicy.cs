@@ -11,9 +11,11 @@ namespace MLoop.Core.Prediction;
 /// Task-family rules:
 /// <list type="bullet">
 /// <item><b>Classification</b> → the maximum class probability (argmax confidence).</item>
-/// <item><b>Anomaly detection</b> → distance from the 0.5 decision boundary, <c>|anomalyScore − 0.5|·2</c>
-/// (RandomizedPca Score ∈ [0,1], threshold 0.5 — Microsoft.ML). Confidence is in the anomaly/normal
-/// DECISION, so a strong anomaly and a strong inlier are both confident; only boundary scores are not.</item>
+/// <item><b>Anomaly detection</b> → distance from the decision boundary as a share of the boundary, <c>|anomalyScore − T| / T</c>
+/// with T the threshold the model judged the row against (<see cref="MLoop.Core.Models.AnomalyScoring"/>; 0.5 for a model without one —
+/// RandomizedPca's own Score ∈ [0,1] and threshold, where this is <c>|anomalyScore − 0.5|·2</c>). A raw rebuild distance has no upper end, so
+/// the share is measured against T: a row at T has no confidence, a row at 0 or at 2T and beyond has all of it. Confidence is in the
+/// anomaly/normal DECISION, so a strong anomaly and a strong inlier are both confident; only boundary scores are not.</item>
 /// <item><b>Regression</b> with a conformal band → <c>1 − clamp(halfWidth / (k·residualStd))</c>: a narrow
 /// band (model locally certain) is high-confidence, a wide band low. Normalizing by <c>residual_std</c>
 /// (the model's typical error scale, from <c>metrics.json</c>) makes this dataset-scale-stable, which is
@@ -54,7 +56,8 @@ public static class ConfidencePolicy
     /// <param name="row">The materialized prediction row (raw signals already populated).</param>
     /// <param name="taskType">Canonical task type (e.g. "regression", "binary-classification").</param>
     /// <param name="residualStd">The model's residual standard deviation (regression only, from metrics).</param>
-    public static double? Compute(PredictionRow row, string? taskType, double? residualStd = null)
+    /// <param name="anomalyThreshold">The score above which the model calls a row anomalous (anomaly detection only); unset: 0.5.</param>
+    public static double? Compute(PredictionRow row, string? taskType, double? residualStd = null, double? anomalyThreshold = null)
     {
         // Classification: the winning class probability.
         if (row.Probabilities is { Count: > 0 } probs)
@@ -66,7 +69,10 @@ public static class ConfidencePolicy
         // running it through this rule would fabricate a confidence, so TS-anomaly stays null until
         // its own signal mapping is designed and measured (P3-3).
         if (taskType is "anomaly-detection" && row.AnomalyScore is double anomaly)
-            return Clamp(Math.Abs(anomaly - 0.5) * 2.0);
+        {
+            var boundary = anomalyThreshold is > 0 ? anomalyThreshold.Value : 0.5;
+            return Clamp(Math.Abs(anomaly - boundary) / boundary);
+        }
 
         // Regression with a conformal band: narrower band = higher confidence.
         if (row.ScoreUpperBound is double upper && row.ScoreLowerBound is double lower)

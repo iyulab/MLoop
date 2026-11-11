@@ -1168,6 +1168,23 @@ and answers the horizon's steps, each with `score`, `scoreLowerBound` and `score
 file whose last `horizon` rows are the values that followed: they are scored against the forecast made before them, and
 two forecasters are compared (`evaluate --against`, a project `gate:`) on the squared error of those same steps.
 
+**Table anomaly (`anomaly-detection`).** The model learns what the rows of a table look like (their columns standardized, then the few
+directions that carry 90 % of the variance) and scores a row by how far it lies from what those directions rebuild: `anomalyScore` is that squared
+distance, larger for a stranger row, with no upper end. A row is anomalous (`isAnomaly: true`) when its score is above the point that `contamination`
+of the training rows score above — 5 % unless you set it. So the answer is a statement about the data it was trained on: on a file like the training
+one about 5 % of the rows are flagged, on a file with more unusual rows more are, and on a file of another kind most may be (the promotion gate refuses a
+model that calls more than half of its held-out rows anomalous). Set `contamination` (above 0, below 0.5) under the model in `mloop.yaml` to the share of
+unusual rows you expect; it is placed when the model is trained, so retrain to change it, and it lives beside the model in `anomaly-scoring.json`.
+`confidence` is how far the score lies from the threshold, as a share of the threshold. A table with no structure to rebuild — columns that are mostly
+independent, such as many yes/no flags — gives scores that are small noise: check the area under the curve on labeled rows before trusting it.
+
+```yaml
+models:
+  default:
+    task: anomaly-detection
+    contamination: 0.02
+```
+
 **Time-series anomaly.** The detector judges a point against a window of the points before it (up to 64), so the first
 rows of any file or request have no verdict: `isAnomaly` and `anomalyScore` are `null` in `--json` and `POST /predict`,
 the `PredictedLabel` and `Score` cells are empty in the prediction file, and a warning says how many. Send the series with
