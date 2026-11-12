@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.ML;
@@ -31,7 +32,7 @@ public static class MonitoringEndpoints
     public static void MapMonitoringEndpoints(this WebApplication app)
     {
         // Prediction logs endpoint (secured)
-        app.MapGet("/logs", async (
+        app.MapGet("/logs", async Task<Results<Ok<LogListResponse>, BadRequest<ErrorResponse>, ProblemHttpResult>> (
             [FromQuery] string? name,
             [FromQuery] string? from,
             [FromQuery] string? to,
@@ -48,7 +49,7 @@ public static class MonitoringEndpoints
                 logger.LogInformation("Retrieving prediction logs (filter: '{ModelName}')", modelName ?? "all");
 
                 if (!TryParseDateRange(from, to, out var fromDate, out var toDate, out var dateError))
-                    return Results.BadRequest(new { error = dateError });
+                    return TypedResults.BadRequest(new ErrorResponse(dateError));
                 var maxEntries = limit ?? 1000;
 
                 var logs = await predictionLogger.GetLogsAsync(modelName, fromDate, toDate, maxEntries, ct);
@@ -56,26 +57,15 @@ public static class MonitoringEndpoints
                 logger.LogInformation("Retrieved {Count} log entries in {ElapsedMs}ms",
                     logs.Count, stopwatch.ElapsedMilliseconds);
 
-                return Results.Ok(new
-                {
-                    count = logs.Count,
-                    filter = modelName,
-                    logs = logs.Select(l => new
-                    {
-                        id = l.Id,
-                        modelName = l.ModelName,
-                        experimentId = l.ExperimentId,
-                        input = l.Input,
-                        output = l.Output,
-                        confidence = l.Confidence,
-                        timestamp = l.Timestamp
-                    })
-                });
+                return TypedResults.Ok(new LogListResponse(
+                    logs.Count,
+                    modelName,
+                    [.. logs.Select(l => new LogEntryView(l.Id, l.ModelName, l.ExperimentId, l.Input, l.Output, l.Confidence, l.Timestamp))]));
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Failed to retrieve logs after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
-                return Results.Problem(
+                return TypedResults.Problem(
                     title: "Failed to retrieve prediction logs",
                     detail: ex.Message,
                     statusCode: StatusCodes.Status500InternalServerError
@@ -84,12 +74,10 @@ public static class MonitoringEndpoints
         })
         .WithName("GetPredictionLogs")
         .WithTags("Monitoring")
-        .Produces<object>(StatusCodes.Status200OK)
-        .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
         .RequireAuthorization();
 
         // Get feedback endpoint (secured)
-        app.MapGet("/feedback", async (
+        app.MapGet("/feedback", async Task<Results<Ok<FeedbackListResponse>, BadRequest<ErrorResponse>, ProblemHttpResult>> (
             [FromQuery] string? name,
             [FromQuery] string? from,
             [FromQuery] string? to,
@@ -106,7 +94,7 @@ public static class MonitoringEndpoints
                 logger.LogInformation("Retrieving feedback for model '{ModelName}'", modelName);
 
                 if (!TryParseDateRange(from, to, out var fromDate, out var toDate, out var dateError))
-                    return Results.BadRequest(new { error = dateError });
+                    return TypedResults.BadRequest(new ErrorResponse(dateError));
                 var maxEntries = limit ?? 1000;
 
                 var feedback = await feedbackCollector.GetFeedbackAsync(modelName, fromDate, toDate, maxEntries, ct);
@@ -114,26 +102,15 @@ public static class MonitoringEndpoints
                 logger.LogInformation("Retrieved {Count} feedback entries in {ElapsedMs}ms",
                     feedback.Count, stopwatch.ElapsedMilliseconds);
 
-                return Results.Ok(new
-                {
-                    count = feedback.Count,
+                return TypedResults.Ok(new FeedbackListResponse(
+                    feedback.Count,
                     modelName,
-                    feedback = feedback.Select(f => new
-                    {
-                        predictionId = f.PredictionId,
-                        modelName = f.ModelName,
-                        predictedValue = f.PredictedValue,
-                        actualValue = f.ActualValue,
-                        source = f.Source,
-                        weight = f.Weight,
-                        timestamp = f.Timestamp
-                    })
-                });
+                    [.. feedback.Select(f => new FeedbackEntryView(f.PredictionId, f.ModelName, f.PredictedValue, f.ActualValue, f.Source, f.Weight, f.Timestamp))]));
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Failed to retrieve feedback after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
-                return Results.Problem(
+                return TypedResults.Problem(
                     title: "Failed to retrieve feedback",
                     detail: ex.Message,
                     statusCode: StatusCodes.Status500InternalServerError
@@ -142,13 +119,11 @@ public static class MonitoringEndpoints
         })
         .WithName("GetFeedback")
         .WithTags("Monitoring")
-        .Produces<object>(StatusCodes.Status200OK)
-        .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
         .RequireAuthorization();
 
         // A retraining set from logged predictions and their feedback — `mloop sample create --name` over HTTP.
         // The file it writes is what POST /train takes in additionalDataFiles.
-        app.MapPost("/samples", async (
+        app.MapPost("/samples", async Task<Results<Ok<SampleResponse>, BadRequest<ErrorResponse>, NotFound<ErrorResponse>>> (
             [FromBody] SampleRequest request,
             ProjectRootPath projectRootPath,
             IFileSystemManager fileSystem,
@@ -159,13 +134,13 @@ public static class MonitoringEndpoints
             var modelName = MLoop.Core.Storage.ModelName.Resolve(request.Name);
             var strategy = FeedbackSamples.ParseStrategy(request.Strategy ?? "random");
             if (strategy is null)
-                return Results.BadRequest(new { error = $"Unknown strategy '{request.Strategy}'. {FeedbackSamples.StrategyGuidance}." });
+                return TypedResults.BadRequest(new ErrorResponse($"Unknown strategy '{request.Strategy}'. {FeedbackSamples.StrategyGuidance}."));
             if (request.Rows is <= 0)
-                return Results.BadRequest(new { error = "rows is a positive number of rows." });
+                return TypedResults.BadRequest(new ErrorResponse("rows is a positive number of rows."));
 
             var columns = await FeedbackSamples.ColumnsAsync(fileSystem, discovery, modelName, ct);
             if (columns is null)
-                return Results.BadRequest(new { error = FeedbackSamples.NoLabelError(modelName) });
+                return TypedResults.BadRequest(new ErrorResponse(FeedbackSamples.NoLabelError(modelName)));
 
             var projectRoot = projectRootPath.Value;
             var outputPath = FeedbackSamples.DefaultPath(projectRoot, modelName);
@@ -175,33 +150,28 @@ public static class MonitoringEndpoints
                     modelName, request.Rows ?? 1000, strategy.Value, outputPath, columns, ct);
                 logger.LogInformation("Sampled {Count} rows ({Labeled} with feedback) for model '{ModelName}'",
                     result.SampledCount, result.LabeledCount, modelName);
-                return Results.Ok(new
-                {
+                return TypedResults.Ok(new SampleResponse(
                     modelName,
-                    path = Path.GetRelativePath(projectRoot, result.OutputPath),
-                    sampledCount = result.SampledCount,
-                    labeledCount = result.LabeledCount,
-                    totalAvailable = result.TotalAvailable,
-                    strategy = result.StrategyUsed.ToString(),
-                    labelColumn = result.LabelColumn,
-                    weightColumn = result.WeightColumn,
-                });
+                    Path.GetRelativePath(projectRoot, result.OutputPath),
+                    result.SampledCount,
+                    result.LabeledCount,
+                    result.TotalAvailable,
+                    result.StrategyUsed.ToString(),
+                    result.LabelColumn,
+                    result.WeightColumn));
             }
             catch (InvalidOperationException ex)
             {
                 // No logged predictions for the model: nothing to sample, said as the CLI says it.
-                return Results.NotFound(new { error = ex.Message });
+                return TypedResults.NotFound(new ErrorResponse(ex.Message));
             }
         })
         .WithName("CreateSample")
         .WithTags("Monitoring")
-        .Produces<object>(StatusCodes.Status200OK)
-        .Produces<object>(StatusCodes.Status400BadRequest)
-        .Produces<object>(StatusCodes.Status404NotFound)
         .RequireAuthorization("Admin");
 
         // Submit feedback endpoint (secured)
-        app.MapPost("/feedback", async (
+        app.MapPost("/feedback", async Task<Results<Ok<FeedbackRecordedResponse>, ProblemHttpResult>> (
             [FromBody] FeedbackRequest request,
             IFeedbackCollector feedbackCollector,
             ILogger<Program> logger,
@@ -218,27 +188,22 @@ public static class MonitoringEndpoints
 
                 logger.LogInformation("Feedback recorded in {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
 
-                return Results.Ok(new
-                {
-                    predictionId = request.PredictionId,
-                    recorded = true,
-                    timestamp = DateTime.UtcNow
-                });
+                return TypedResults.Ok(new FeedbackRecordedResponse(request.PredictionId, Recorded: true, DateTime.UtcNow));
             }
             catch (ArgumentException ex)
             {
-                return Results.Problem(title: "Invalid feedback", detail: ex.Message,
+                return TypedResults.Problem(title: "Invalid feedback", detail: ex.Message,
                     statusCode: StatusCodes.Status400BadRequest);
             }
             catch (PredictionNotFoundException ex)
             {
-                return Results.Problem(title: "Prediction not found", detail: ex.Message,
+                return TypedResults.Problem(title: "Prediction not found", detail: ex.Message,
                     statusCode: StatusCodes.Status404NotFound);
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Failed to record feedback after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
-                return Results.Problem(
+                return TypedResults.Problem(
                     title: "Failed to record feedback",
                     detail: ex.Message,
                     statusCode: StatusCodes.Status500InternalServerError
@@ -247,14 +212,10 @@ public static class MonitoringEndpoints
         })
         .WithName("SubmitFeedback")
         .WithTags("Monitoring")
-        .Produces<object>(StatusCodes.Status200OK)
-        .Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
-        .Produces<ProblemDetails>(StatusCodes.Status404NotFound)
-        .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
         .RequireAuthorization();
 
         // Input drift: the production model's recent inputs against its training profile (secured)
-        app.MapGet("/drift", async (
+        app.MapGet("/drift", async Task<Results<Ok<DriftResponse>, ProblemHttpResult>> (
             [FromQuery] string? name,
             [FromQuery] int? rows,
             [FromQuery] string? sliceBy,
@@ -265,30 +226,26 @@ public static class MonitoringEndpoints
             var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
             var window = rows ?? MLoop.Ops.Services.DriftEvaluator.DefaultWindowRows;
             if (window < MLoop.Ops.Services.DriftEvaluator.MinimumRows)
-                return Results.Problem(
+                return TypedResults.Problem(
                     title: "Invalid window",
                     detail: $"rows must be at least {MLoop.Ops.Services.DriftEvaluator.MinimumRows}.",
                     statusCode: StatusCodes.Status400BadRequest);
             var check = await MLoop.Ops.Services.DriftEvaluator.CheckAsync(root.Value, predictionLogs, modelName, window, sliceBy, ct);
-            return Results.Ok(new
-            {
+            return TypedResults.Ok(new DriftResponse(
                 modelName,
-                status = check.Status.ToString(),
-                experimentId = check.ExperimentId,
-                message = check.Message,
-                drift = check.Report is { } r ? MLoop.Ops.Services.DriftEvaluator.Signal(r) : null,
+                check.Status.ToString(),
+                check.ExperimentId,
+                check.Message,
+                check.Report is { } r ? MLoop.Ops.Services.DriftEvaluator.Signal(r) : null,
                 sliceBy,
-                slices = check.Slices?.Select(sl => new { value = sl.Value, drift = MLoop.Ops.Services.DriftEvaluator.Signal(sl.Report) }),
-            });
+                check.Slices is null ? null : [.. check.Slices.Select(sl => new SliceDriftView(sl.Value, MLoop.Ops.Services.DriftEvaluator.Signal(sl.Report)))]));
         })
         .WithName("Drift")
         .WithTags("Monitoring")
-        .Produces<object>(StatusCodes.Status200OK)
-        .Produces<ProblemDetails>(StatusCodes.Status400BadRequest)
         .RequireAuthorization();
 
         // Retraining trigger evaluation endpoint (secured)
-        app.MapGet("/trigger", async (
+        app.MapGet("/trigger", async Task<Results<Ok<TriggerResponse>, ProblemHttpResult>> (
             [FromQuery] string? name,
             IRetrainingTrigger trigger,
             ILogger<Program> logger,
@@ -307,28 +264,24 @@ public static class MonitoringEndpoints
                 logger.LogInformation("Trigger evaluation completed in {ElapsedMs}ms: shouldRetrain={ShouldRetrain}",
                     stopwatch.ElapsedMilliseconds, evaluation.ShouldRetrain);
 
-                return Results.Ok(new
-                {
+                return TypedResults.Ok(new TriggerResponse(
                     modelName,
-                    shouldRetrain = evaluation.ShouldRetrain,
-                    recommendedAction = evaluation.RecommendedAction,
-                    evaluatedAt = evaluation.EvaluatedAt,
-                    conditions = evaluation.ConditionResults.Select(cr => new
-                    {
-                        type = cr.Condition.Type.ToString(),
-                        name = cr.Condition.Name,
-                        threshold = cr.Condition.Threshold,
-                        currentValue = cr.CurrentValue,
-                        isMet = cr.IsMet,
-                        details = cr.Details,
-                        drift = cr.Drift is { } d ? MLoop.Ops.Services.DriftEvaluator.Signal(d) : null
-                    })
-                });
+                    evaluation.ShouldRetrain,
+                    evaluation.RecommendedAction,
+                    evaluation.EvaluatedAt,
+                    [.. evaluation.ConditionResults.Select(cr => new TriggerConditionView(
+                        cr.Condition.Type.ToString(),
+                        cr.Condition.Name,
+                        cr.Condition.Threshold,
+                        cr.CurrentValue,
+                        cr.IsMet,
+                        cr.Details,
+                        cr.Drift is { } d ? MLoop.Ops.Services.DriftEvaluator.Signal(d) : null))]));
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Trigger evaluation failed after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
-                return Results.Problem(
+                return TypedResults.Problem(
                     title: "Trigger evaluation failed",
                     detail: ex.Message,
                     statusCode: StatusCodes.Status500InternalServerError
@@ -337,8 +290,6 @@ public static class MonitoringEndpoints
         })
         .WithName("EvaluateTrigger")
         .WithTags("Monitoring")
-        .Produces<object>(StatusCodes.Status200OK)
-        .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
         .RequireAuthorization();
     }
 

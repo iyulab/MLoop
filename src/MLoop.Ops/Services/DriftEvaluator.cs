@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using MLoop.Core.Monitoring;
 using MLoop.Core.Storage;
 using MLoop.DataStore.Interfaces;
@@ -149,15 +150,13 @@ public static class DriftEvaluator
     /// gives (<c>rangeNotable</c>, apart from <c>level</c>), and the answers' drift — <c>null</c> when the model
     /// was trained without an answer profile.
     /// </summary>
-    public static object Signal(DriftReport report) => new
-    {
-        rows = report.Rows,
-        level = report.Level.ToString(),
-        maxPsi = report.MaxPsi,
-        rangeNotable = report.RangeNotable.Select(f => f.Column),
-        features = report.Features.Select(Signal),
-        prediction = report.Prediction is { } p ? Signal(p) : null,
-    };
+    public static DriftSignal Signal(DriftReport report) => new(
+        report.Rows,
+        report.Level.ToString(),
+        report.MaxPsi,
+        [.. report.RangeNotable.Select(f => f.Column)],
+        [.. report.Features.Select(Signal)],
+        report.Prediction is { } p ? Signal(p) : null);
 
     /// <summary>
     /// A sentence naming the columns whose values left the training range by more than chance allows, or <c>null</c> when none did. It is read apart
@@ -183,17 +182,15 @@ public static class DriftEvaluator
         return $"Values past the training range, counted apart from the PSI: {string.Join(", ", parts)}{more}.";
     }
 
-    private static object Signal(FeatureDrift f) => new
-    {
-        column = f.Column,
-        psi = f.Psi,
-        level = f.Level.ToString(),
-        mostChangedBin = f.MostChangedBin,
-        referenceShare = f.ReferenceShare,
-        currentShare = f.CurrentShare,
-        noDriftBound = f.Bound,
-        range = f.Range is { } r ? new { below = r.Below, above = r.Above, windowValues = r.WindowValues, referenceValues = r.ReferenceValues, p = r.P, notable = r.Notable } : null,
-    };
+    private static FeatureDriftSignal Signal(FeatureDrift f) => new(
+        f.Column,
+        f.Psi,
+        f.Level.ToString(),
+        f.MostChangedBin,
+        f.ReferenceShare,
+        f.CurrentShare,
+        f.Bound,
+        f.Range is { } r ? new RangeCountsSignal(r.Below, r.Above, r.WindowValues, r.ReferenceValues, r.P, r.Notable) : null);
 
     private static string Describe(DriftLevel level) => level switch
     {
@@ -212,3 +209,36 @@ public static class DriftEvaluator
 
     private static bool IsVowel(char c) => "aeiouAEIOU".Contains(c);
 }
+
+// The drift signal as a client reads it (mloop drift --json, trigger check --json, GET /drift and GET /trigger). The property names
+// are fixed on the records, so each host writes them the same way whatever naming policy its serializer has; a null property is
+// written or left out as the host's options say.
+
+/// <summary>The whole-window drift: its size, its level, the worst column and what each column and the answers did.</summary>
+public sealed record DriftSignal(
+    [property: JsonPropertyName("rows")] int Rows,
+    [property: JsonPropertyName("level")] string Level,
+    [property: JsonPropertyName("maxPsi")] double MaxPsi,
+    [property: JsonPropertyName("rangeNotable")] IReadOnlyList<string> RangeNotable,
+    [property: JsonPropertyName("features")] IReadOnlyList<FeatureDriftSignal> Features,
+    [property: JsonPropertyName("prediction")] FeatureDriftSignal? Prediction);
+
+/// <summary>One column's (or the answers') drift.</summary>
+public sealed record FeatureDriftSignal(
+    [property: JsonPropertyName("column")] string Column,
+    [property: JsonPropertyName("psi")] double Psi,
+    [property: JsonPropertyName("level")] string Level,
+    [property: JsonPropertyName("mostChangedBin")] string MostChangedBin,
+    [property: JsonPropertyName("referenceShare")] double ReferenceShare,
+    [property: JsonPropertyName("currentShare")] double CurrentShare,
+    [property: JsonPropertyName("noDriftBound")] double NoDriftBound,
+    [property: JsonPropertyName("range")] RangeCountsSignal? Range);
+
+/// <summary>How many of a numeric column's values left the range it was trained on.</summary>
+public sealed record RangeCountsSignal(
+    [property: JsonPropertyName("below")] int Below,
+    [property: JsonPropertyName("above")] int Above,
+    [property: JsonPropertyName("windowValues")] int WindowValues,
+    [property: JsonPropertyName("referenceValues")] int ReferenceValues,
+    [property: JsonPropertyName("p")] double P,
+    [property: JsonPropertyName("notable")] bool Notable);
