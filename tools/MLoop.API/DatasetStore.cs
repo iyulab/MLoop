@@ -27,6 +27,9 @@ public sealed class DatasetRefusedException(string message, int statusCode = Sta
     public int StatusCode { get; } = statusCode;
 }
 
+/// <summary>What a retention pass did: uploads removed (and their bytes), uploads kept because a job still reads them, and the cutoff used.</summary>
+public sealed record DatasetPruneReport(int Removed, int KeptForJobs, long Bytes, DateTime Cutoff);
+
 /// <summary>One stored upload: where it is in the project (relative, <c>/</c>-separated — what <c>POST /train</c> takes as <c>dataFile</c>) and what it holds.</summary>
 public sealed record StoredDataset(string Id, string Kind, string Path, int Files, long Bytes, DateTime CreatedAt);
 
@@ -147,6 +150,48 @@ public sealed class DatasetStore(string projectRoot)
     /// <summary>The upload's folder (for a caller that asks whether a job still reads it), or <c>null</c> for an id that is not one.</summary>
     public string? FolderOf(string id) => IsId(id) ? Path.Combine(UploadsDirectory, id) : null;
 
+    /// <summary>
+    /// The queued or running job that reads upload <paramref name="id"/> by path, or <c>null</c>. Removing the data under such a
+    /// job would fail it minutes in, so neither <c>DELETE /datasets/{id}</c> nor the retention sweep does.
+    /// </summary>
+    public TrainingJob? JobReading(string id, TrainingJobStore jobs)
+    {
+        var folder = FolderOf(id);
+        return folder is null ? null : jobs.GetAllJobs().FirstOrDefault(job =>
+            job.Status is JobStatus.Queued or JobStatus.Running
+            && new[] { job.DataFile }.Concat(job.AdditionalDataFiles).Any(file => ProjectPaths.IsWithin(Path.GetFullPath(file), folder)));
+    }
+
+    /// <summary>When upload <paramref name="id"/> was made — the second its id names, UTC — or <c>null</c> for an id that is not one.</summary>
+    public static DateTime? CreatedAtOf(string id) => IsId(id)
+        && DateTime.TryParseExact(id.AsSpan(3, 15), TimestampKeys.StampFormat, CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var at) ? at : null;
+
+    /// <summary>
+    /// Removes the uploads older than <paramref name="days"/> days at <paramref name="now"/>, except one a queued or running
+    /// job reads. The age is the id's, not a file's modification time: copying or touching the files does not renew an upload.
+    /// </summary>
+    public DatasetPruneReport Prune(int days, DateTimeOffset now, TrainingJobStore jobs)
+    {
+        var cutoff = now.UtcDateTime.AddDays(-days);
+        int removed = 0, kept = 0;
+        long bytes = 0;
+        foreach (var dataset in List())
+        {
+            if (CreatedAtOf(dataset.Id) is not { } madeAt || madeAt >= cutoff)
+                continue;
+            if (JobReading(dataset.Id, jobs) is not null)
+            {
+                kept++;
+                continue;
+            }
+            Directory.Delete(Path.Combine(UploadsDirectory, dataset.Id), recursive: true);
+            removed++;
+            bytes += dataset.Bytes;
+        }
+        return new DatasetPruneReport(removed, kept, bytes, cutoff);
+    }
+
     /// <summary>Removes one upload; <c>false</c> when there is none by that id.</summary>
     public bool Delete(string id)
     {
@@ -179,7 +224,7 @@ public sealed class DatasetStore(string projectRoot)
         }
         var (files, bytes) = Count(path);
         var relative = Path.GetRelativePath(projectRoot, path).Replace(Path.DirectorySeparatorChar, '/');
-        return new StoredDataset(id, kind, relative, files, bytes, Directory.GetCreationTimeUtc(folder));
+        return new StoredDataset(id, kind, relative, files, bytes, CreatedAtOf(id) ?? Directory.GetCreationTimeUtc(folder));
     }
 
     private static (int Files, long Bytes) Count(string path)

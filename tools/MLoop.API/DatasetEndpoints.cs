@@ -81,11 +81,8 @@ public static class DatasetEndpoints
             var store = new DatasetStore(projectRootPath.Value);
             if (store.Find(id) is null)
                 return TypedResults.NotFound(new ErrorResponse($"No dataset '{id}' (GET /datasets lists them)."));
-            var folder = store.FolderOf(id)!;
             // A queued or running job reads the data by path: removing it would fail the job minutes in.
-            var reading = jobStore.GetAllJobs().FirstOrDefault(job =>
-                job.Status is JobStatus.Queued or JobStatus.Running
-                && new[] { job.DataFile }.Concat(job.AdditionalDataFiles).Any(file => ProjectPaths.IsWithin(Path.GetFullPath(file), folder)));
+            var reading = store.JobReading(id, jobStore);
             if (reading is not null)
                 return TypedResults.Conflict(new ErrorResponse($"Job '{reading.JobId}' is training on dataset '{id}'; remove it when the job has finished."));
             store.Delete(id);

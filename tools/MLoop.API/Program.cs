@@ -228,6 +228,7 @@ try
     builder.Services.AddSingleton<IModelCache, ModelCache>();
     builder.Services.AddHostedService<ModelCachePreloader>();
     builder.Services.AddHostedService<RetentionService>();
+    builder.Services.AddHostedService<DatasetRetentionService>();
     // Pretrained encoders for POST /embed — outside any project (MLOOP_ENCODERS or ~/.mloop/encoders) — in the process's
     // pool, which the models that read text through an encoder open theirs from too: each graph opened once and shared.
     // Registered as an instance, so the container does not dispose it: it lives as long as the process.
