@@ -22,6 +22,8 @@
 
   <ItemGroup>
     <None Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+    <!-- The field names and kinds the HTTP API answers with (WireShapeContractTests). -->
+    <None Include="WireShapes.baseline.txt" CopyToOutputDirectory="PreserveNewest" />
     <!-- The image-encoder fixtures MLoop.Core.Tests writes its expectations from (make_fixtures.py there). -->
     <None Include="..\MLoop.Core.Tests\Fixtures\embedding\*.png;..\MLoop.Core.Tests\Fixtures\embedding\*.onnx;..\MLoop.Core.Tests\Fixtures\embedding\*.json;..\MLoop.Core.Tests\Fixtures\embedding\*.model" Link="Fixtures\embedding\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

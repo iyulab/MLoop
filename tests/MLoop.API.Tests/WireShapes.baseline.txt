@@ -1,0 +1,328 @@
+## health | GET /health -> 200
+$: object
+$.status: string
+$.timestamp: string
+$.version: string
+## cache-stats | GET /cache/stats -> 200
+$: object
+$.cachedCount: number
+$.maxCachedModels: number
+$.models: array
+$.totalEvictions: number
+$.totalHits: number
+$.totalMisses: number
+$.totalReloads: number
+## cache-clear | POST /cache/clear -> 204 (no body)
+## promote-ranks | POST /promote -> 200
+$: object
+$.experimentId: string
+$.metrics: object
+$.metrics.accuracy: number
+$.metrics.auc: number
+$.metrics.f1_score: number
+$.metrics.negative_recall: number
+$.modelName: string
+$.promotedAt: string
+$.qualityWarning: string
+$.task: string
+## promote-first | POST /promote -> 200
+$: object
+$.experimentId: string
+$.metrics: object
+$.metrics.accuracy: number
+$.metrics.auc: number
+$.metrics.f1_score: number
+$.metrics.negative_recall: number
+$.modelName: string
+$.promotedAt: string
+$.task: string
+## promote-weaker | POST /promote -> 200
+$: object
+$.experimentId: string
+$.metrics: object
+$.metrics.accuracy: number
+$.metrics.auc: number
+$.metrics.f1_score: number
+$.metrics.negative_recall: number
+$.modelName: string
+$.notBetterThanProduction: string
+$.previousExperimentId: string
+$.promotedAt: string
+$.task: string
+## promote-better | POST /promote -> 200
+$: object
+$.experimentId: string
+$.metrics: object
+$.metrics.accuracy: number
+$.metrics.auc: number
+$.metrics.f1_score: number
+$.metrics.negative_recall: number
+$.modelName: string
+$.previousExperimentId: string
+$.promotedAt: string
+$.task: string
+## promote-unknown | POST /promote -> 404
+$: object
+$.error: string
+## promote-refused | POST /promote -> 422
+$: object
+$.error: string
+## promote-no-id | POST /promote -> 400
+$: object
+$.error: string
+## info | GET /info -> 200
+$: object
+$.experimentId: string
+$.metadata: object
+$.metadata.bestTrainer: null
+$.metadata.experimentId: string
+$.metadata.labelColumn: string
+$.metadata.metrics: object
+$.metadata.metrics.accuracy: number
+$.metadata.metrics.auc: number
+$.metadata.metrics.f1_score: number
+$.metadata.metrics.negative_recall: number
+$.metadata.modelName: string
+$.metadata.modelSha256: string
+$.metadata.promotedAt: string
+$.metadata.task: string
+$.metrics: object
+$.metrics.accuracy: number
+$.metrics.auc: number
+$.metrics.f1_score: number
+$.metrics.negative_recall: number
+$.modelName: string
+$.promotedAt: string
+$.task: string
+## info-none | GET /info -> 404
+$: object
+$.error: string
+## models | GET /models -> 200
+$: object
+$.count: number
+$.filter: string
+$.models: array
+$.models[]: object
+$.models[].experimentId: string
+$.models[].metrics: object
+$.models[].metrics.accuracy: number
+$.models[].metrics.auc: number
+$.models[].metrics.f1_score: number
+$.models[].metrics.negative_recall: number
+$.models[].modelName: string
+$.models[].promotedAt: string
+$.models[].task: string
+## promotions | GET /promotions -> 200
+$: object
+$.modelName: string
+$.promotions: array
+$.promotions[]: object
+$.promotions[].action: string
+$.promotions[].experimentId: string
+$.promotions[].gate: string
+$.promotions[].metric: string
+$.promotions[].metricValue: number
+$.promotions[].previousExperimentId: string
+$.promotions[].timestamp: string
+$.promotions[].via: string
+## experiments | GET /experiments -> 200
+$: object
+$.count: number
+$.experiments: array
+$.experiments[]: object
+$.experiments[].bestMetric: number
+$.experiments[].experimentId: string
+$.experiments[].isProduction: boolean
+$.experiments[].labelColumn: string
+$.experiments[].metricName: string
+$.experiments[].metrics: object
+$.experiments[].metrics.accuracy: number
+$.experiments[].metrics.auc: number
+$.experiments[].metrics.f1_score: number
+$.experiments[].metrics.negative_recall: number
+$.experiments[].modelName: string
+$.experiments[].status: string
+$.experiments[].timestamp: string
+$.filter: string
+$.production: object
+$.production.ranks: string
+$.production.shape: string
+## experiment-detail | GET /experiments/{id} -> 200
+$: object
+$.config: object
+$.config.dataFile: string
+$.config.hasSchema: boolean
+$.config.labelColumn: string
+$.config.metric: string
+$.config.testSplit: number
+$.config.timeLimitSeconds: number
+$.experimentId: string
+$.metrics: object
+$.metrics.accuracy: number
+$.metrics.auc: number
+$.metrics.f1_score: number
+$.metrics.negative_recall: number
+$.modelName: string
+$.status: string
+$.task: string
+$.timestamp: string
+## experiment-missing | GET /experiments/{id} -> 404
+$: object
+$.error: string
+## compare | GET /compare -> 200
+$: object
+$.baselineExpId: string
+$.baselineScore: number
+$.candidateExpId: string
+$.candidateIsBetter: boolean
+$.candidateScore: number
+$.improvement: number
+$.metric: string
+$.metricDetails: object
+$.metricDetails.accuracy: object
+$.metricDetails.accuracy.baselineValue: number
+$.metricDetails.accuracy.candidateValue: number
+$.metricDetails.accuracy.difference: number
+$.metricDetails.accuracy.isBetter: boolean
+$.metricDetails.auc: object
+$.metricDetails.auc.baselineValue: number
+$.metricDetails.auc.candidateValue: number
+$.metricDetails.auc.difference: number
+$.metricDetails.auc.isBetter: boolean
+$.metricDetails.f1_score: object
+$.metricDetails.f1_score.baselineValue: number
+$.metricDetails.f1_score.candidateValue: number
+$.metricDetails.f1_score.difference: number
+$.metricDetails.f1_score.isBetter: boolean
+$.metricDetails.negative_recall: object
+$.metricDetails.negative_recall.baselineValue: number
+$.metricDetails.negative_recall.candidateValue: number
+$.metricDetails.negative_recall.difference: number
+$.metricDetails.negative_recall.isBetter: boolean
+$.modelName: string
+$.recommendation: string
+## compare-missing | GET /compare -> 404
+$: object
+$.error: string
+## status | GET /status -> 200
+$: object
+$.config: array
+$.dataFiles: object
+$.dataFiles.predictCsv: boolean
+$.dataFiles.testCsv: boolean
+$.dataFiles.trainCsv: boolean
+$.models: array
+$.models[]: object
+$.models[].bestExperimentId: string
+$.models[].bestMetric: number
+$.models[].bestMetricName: string
+$.models[].completed: number
+$.models[].experimentsNotCompared: number
+$.models[].failed: number
+$.models[].hasProduction: boolean
+$.models[].latestExperiment: string
+$.models[].modelName: string
+$.models[].productionExperimentId: string
+$.models[].totalExperiments: number
+$.project: string
+$.projectRoot: string
+$.summary: object
+$.summary.completedExperiments: number
+$.summary.failedExperiments: number
+$.summary.productionModels: number
+$.summary.totalExperiments: number
+$.summary.totalModels: number
+## trigger | GET /trigger -> 200
+$: object
+$.conditions: array
+$.conditions[]: object
+$.conditions[].currentValue: number
+$.conditions[].details: string
+$.conditions[].isMet: boolean
+$.conditions[].name: string
+$.conditions[].threshold: number
+$.conditions[].type: string
+$.evaluatedAt: string
+$.modelName: string
+$.shouldRetrain: boolean
+## drift | GET /drift -> 200
+$: object
+$.experimentId: string
+$.message: string
+$.modelName: string
+$.status: string
+## drift-window | GET /drift -> 400
+$: object
+$.detail: string
+$.status: number
+$.title: string
+$.type: string
+## logs | GET /logs -> 200
+$: object
+$.count: number
+$.filter: string
+$.logs: array
+$.logs[]: object
+$.logs[].confidence: number
+$.logs[].experimentId: string
+$.logs[].id: string
+$.logs[].input: object
+$.logs[].input.kind: string
+$.logs[].input.x: number
+$.logs[].modelName: string
+$.logs[].output: boolean
+$.logs[].timestamp: string
+## logs-bad-date | GET /logs -> 400
+$: object
+$.error: string
+## feedback-add | POST /feedback -> 200
+$: object
+$.predictionId: string
+$.recorded: boolean
+$.timestamp: string
+## feedback-unknown | POST /feedback -> 404
+$: object
+$.detail: string
+$.status: number
+$.title: string
+$.type: string
+## feedback-list | GET /feedback -> 200
+$: object
+$.count: number
+$.feedback: array
+$.feedback[]: object
+$.feedback[].actualValue: number
+$.feedback[].modelName: string
+$.feedback[].predictedValue: boolean
+$.feedback[].predictionId: string
+$.feedback[].source: string
+$.feedback[].timestamp: string
+$.modelName: string
+## samples | POST /samples -> 200
+$: object
+$.labelColumn: string
+$.labeledCount: number
+$.modelName: string
+$.path: string
+$.sampledCount: number
+$.strategy: string
+$.totalAvailable: number
+## samples-bad-rows | POST /samples -> 400
+$: object
+$.error: string
+## jobs | GET /jobs -> 200
+$: object
+$.count: number
+$.jobs: array
+## job-missing | GET /jobs/{id} -> 404
+$: object
+$.error: string
+## rollback | POST /rollback -> 200
+$: object
+$.backupPath: string
+$.experimentId: string
+$.modelName: string
+$.previousExperimentId: string
+## rollback-none | POST /rollback -> 409
+$: object
+$.error: string
