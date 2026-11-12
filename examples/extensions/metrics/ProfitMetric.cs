@@ -1,102 +1,41 @@
-using MLoop.Extensibility;
-using Microsoft.ML;
-using Microsoft.ML.Data;
+// A business metric: the expected profit of the model's answers on the held-out rows.
+// Put it in .mloop/scripts/metrics/ — it is computed after training and recorded with the run's metrics.
+// It is a report, not an optimization target: the search still optimizes the project's `metric:`.
+using System;
+using System.Linq;
+using System.Threading.Tasks;
+using MLoop.Extensibility.Metrics;
 
-/// <summary>
-/// Custom metric that optimizes for expected profit instead of accuracy.
-/// Useful for business scenarios where different prediction outcomes
-/// have different financial impacts.
-/// </summary>
-/// <example>
-/// Marketing Campaign:
-/// - True Positive: Customer responds → $100 profit
-/// - False Positive: Wasted campaign cost → -$50
-/// - False Negative: Missed opportunity → -$30
-/// </example>
 public class ProfitMetric : IMLoopMetric
 {
     public string Name => "Expected Profit";
-    public bool HigherIsBetter => true;  // Maximize profit
+    public string Description => "Profit = TP × 100 − FP × 50 − FN × 30 (held-out rows)";
 
-    // 💰 Business Parameters - ADJUST FOR YOUR DOMAIN
-    private const double PROFIT_PER_TP = 100.0;   // Revenue per successful prediction
-    private const double LOSS_PER_FP = -50.0;     // Cost per false alarm
-    private const double LOSS_PER_FN = -30.0;     // Opportunity cost per missed prediction
+    // 💰 Business parameters — adjust for your domain
+    private const double ProfitPerTruePositive = 100.0;  // revenue per successful prediction
+    private const double LossPerFalsePositive = 50.0;    // cost per false alarm
+    private const double LossPerFalseNegative = 30.0;    // opportunity cost per missed one
 
-    public async Task<double> CalculateAsync(MetricContext ctx)
+    public Task<MetricResult> CalculateAsync(MetricContext ctx)
     {
-        try
+        // Binary classification gives bool[] for both answers and truth.
+        if (ctx.Predictions is not bool[] predicted || ctx.Labels is not bool[] actual)
+            throw new InvalidOperationException($"{Name} is for binary classification (task was {ctx.TaskType})");
+
+        int tp = 0, fp = 0, fn = 0;
+        for (int i = 0; i < predicted.Length; i++)
         {
-            // Evaluate model using ML.NET metrics
-            var metrics = ctx.MLContext.BinaryClassification.Evaluate(
-                ctx.Predictions,
-                labelColumnName: ctx.LabelColumn,
-                scoreColumnName: ctx.ScoreColumn
-            );
-
-            // Calculate expected profit per prediction
-            // Formula: (TP% * Profit) + (FP% * Loss) + (FN% * Loss)
-            var expectedProfit =
-                (metrics.PositiveRecall * PROFIT_PER_TP) +      // True Positives
-                (metrics.FalsePositiveRate * LOSS_PER_FP) +     // False Positives
-                ((1 - metrics.PositiveRecall) * LOSS_PER_FN);   // False Negatives
-
-            // Log detailed breakdown for transparency
-            ctx.Logger.Info($"📊 Profit Analysis:");
-            ctx.Logger.Info($"   Positive Recall (TPR): {metrics.PositiveRecall:F3}");
-            ctx.Logger.Info($"   False Positive Rate: {metrics.FalsePositiveRate:F3}");
-            ctx.Logger.Info($"   False Negative Rate: {1 - metrics.PositiveRecall:F3}");
-            ctx.Logger.Info($"");
-            ctx.Logger.Info($"💰 Expected Profit: ${expectedProfit:F2} per prediction");
-            ctx.Logger.Info($"   ✅ TP contribution: ${metrics.PositiveRecall * PROFIT_PER_TP:F2}");
-            ctx.Logger.Info($"   ❌ FP cost: ${metrics.FalsePositiveRate * LOSS_PER_FP:F2}");
-            ctx.Logger.Info($"   ⚠️  FN cost: ${(1 - metrics.PositiveRecall) * LOSS_PER_FN:F2}");
-
-            // For 1000 predictions, estimate total profit
-            var estimatedTotal = expectedProfit * 1000;
-            ctx.Logger.Info($"");
-            ctx.Logger.Info($"📈 Estimated for 1000 predictions: ${estimatedTotal:F2}");
-
-            return expectedProfit;
+            if (predicted[i] && actual[i]) tp++;
+            else if (predicted[i]) fp++;
+            else if (actual[i]) fn++;
         }
-        catch (Exception ex)
+
+        double profit = tp * ProfitPerTruePositive - fp * LossPerFalsePositive - fn * LossPerFalseNegative;
+        return Task.FromResult(new MetricResult
         {
-            ctx.Logger.Error($"❌ Profit metric calculation failed: {ex.Message}");
-            // Return 0 profit on error (worst case scenario)
-            return 0.0;
-        }
-    }
-}
-
-/// <summary>
-/// Alternative: Weighted Profit Metric with configurable parameters
-/// </summary>
-public class ConfigurableProfitMetric : IMLoopMetric
-{
-    public string Name => "Weighted Profit Metric";
-    public bool HigherIsBetter => true;
-
-    // Allow runtime configuration via constructor or properties
-    public double ProfitPerTP { get; set; } = 100.0;
-    public double LossPerFP { get; set; } = -50.0;
-    public double LossPerFN { get; set; } = -30.0;
-
-    public async Task<double> CalculateAsync(MetricContext ctx)
-    {
-        var metrics = ctx.MLContext.BinaryClassification.Evaluate(
-            ctx.Predictions,
-            labelColumnName: ctx.LabelColumn,
-            scoreColumnName: ctx.ScoreColumn
-        );
-
-        var expectedProfit =
-            (metrics.PositiveRecall * ProfitPerTP) +
-            (metrics.FalsePositiveRate * LossPerFP) +
-            ((1 - metrics.PositiveRecall) * LossPerFN);
-
-        ctx.Logger.Info($"💰 Expected Profit: ${expectedProfit:F2} per prediction");
-        ctx.Logger.Info($"   (TP: ${ProfitPerTP}, FP: ${LossPerFP}, FN: ${LossPerFN})");
-
-        return expectedProfit;
+            Name = Name,
+            Value = profit,
+            Description = $"{tp} true positives, {fp} false positives, {fn} false negatives → {profit:F0}"
+        });
     }
 }

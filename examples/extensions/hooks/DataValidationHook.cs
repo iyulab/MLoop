@@ -1,187 +1,67 @@
-using MLoop.Extensibility;
-using Microsoft.ML;
+// Pre-train hook: refuse to train on a file that is too small, too imbalanced or too empty.
+// Put it in .mloop/scripts/hooks/pre-train/ — the folder names the stage (pre-train, post-train, pre-predict, post-evaluate).
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using MLoop.Extensibility.Hooks;
 
-/// <summary>
-/// Pre-train hook that validates data quality before training.
-/// Checks for: minimum rows, class imbalance, missing values
-/// </summary>
 public class DataValidationHook : IMLoopHook
 {
-    public string Name => "Data Quality Check";
+    public string Name => "Data Validation";
 
-    public async Task<HookResult> ExecuteAsync(HookContext ctx)
+    // ⚙️ Adjust for your domain
+    private const int MinRows = 100;              // fewer rows than this: abort
+    private const double MaxMissingShare = 0.30;  // a column more than 30% empty: warn
+    private const double MaxMajorityShare = 0.95; // one class above 95% of the rows: warn
+
+    public Task<HookResult> ExecuteAsync(HookContext ctx)
     {
-        try
+        // The pre-train stage reads a file: its path is in the hook's metadata.
+        var dataFile = ctx.GetMetadata<string>("DataFile", "");
+        if (string.IsNullOrEmpty(dataFile) || !File.Exists(dataFile))
         {
-            var df = ctx.DataView;
-            var preview = df.Preview(maxRows: 1000);  // Sample for performance
-
-            // 1. Minimum row count validation
-            var rowCount = preview.RowView.Length;
-            ctx.Logger.Info($"📊 Validating {rowCount} rows...");
-
-            if (rowCount < 100)
-            {
-                ctx.Logger.Error($"❌ Insufficient data: {rowCount} rows");
-                return HookResult.Abort(
-                    $"Training requires at least 100 rows, found {rowCount}. " +
-                    "Please collect more data.");
-            }
-
-            // 2. Class imbalance check
-            var labelCol = ctx.Metadata["LabelColumn"] as string;
-            if (!string.IsNullOrEmpty(labelCol))
-            {
-                var distribution = AnalyzeClassBalance(df, labelCol, ctx.MLContext);
-
-                if (distribution.ImbalanceRatio > 20)
-                {
-                    ctx.Logger.Warning(
-                        $"⚠️  Severe class imbalance detected: " +
-                        $"{distribution.ImbalanceRatio:F1}:1 " +
-                        $"({distribution.MajorityClass}:{distribution.MinorityClass})");
-                    ctx.Logger.Warning(
-                        "   Consider: SMOTE, class weights, or collecting more minority samples");
-                }
-                else if (distribution.ImbalanceRatio > 5)
-                {
-                    ctx.Logger.Info(
-                        $"⚠️  Moderate class imbalance: {distribution.ImbalanceRatio:F1}:1");
-                }
-            }
-
-            // 3. Missing value analysis
-            var missingStats = AnalyzeMissingValues(preview);
-            if (missingStats.HasProblematicColumns)
-            {
-                ctx.Logger.Warning("⚠️  Columns with high missing value rates:");
-                foreach (var col in missingStats.ProblematicColumns)
-                {
-                    ctx.Logger.Warning(
-                        $"   - {col.Name}: {col.MissingPercent:F1}% missing");
-                }
-                ctx.Logger.Warning(
-                    "   ML.NET will handle missing values, but consider imputation");
-            }
-
-            // Success
-            ctx.Logger.Info($"✅ Data quality check passed: {rowCount} rows");
-            return HookResult.Continue();
-        }
-        catch (Exception ex)
-        {
-            ctx.Logger.Error($"❌ Data validation failed: {ex.Message}");
-            // Don't fail training on validation errors
-            return HookResult.Continue();
-        }
-    }
-
-    private ClassDistribution AnalyzeClassBalance(
-        IDataView dataView,
-        string labelColumn,
-        MLContext mlContext)
-    {
-        // Count label values
-        var labelData = mlContext.Data.CreateEnumerable<LabelData>(
-            dataView,
-            reuseRowObject: false
-        ).ToList();
-
-        var labelCounts = labelData
-            .GroupBy(x => x.Label)
-            .Select(g => new { Label = g.Key, Count = g.Count() })
-            .OrderByDescending(x => x.Count)
-            .ToList();
-
-        if (labelCounts.Count < 2)
-        {
-            return new ClassDistribution
-            {
-                ImbalanceRatio = 1.0,
-                MajorityClass = labelCounts[0].Count,
-                MinorityClass = labelCounts[0].Count
-            };
+            ctx.Logger.Warning("No data file to check");
+            return Task.FromResult(HookResult.Continue());
         }
 
-        var majority = labelCounts[0].Count;
-        var minority = labelCounts[labelCounts.Count - 1].Count;
+        // A small CSV reader is enough for a first check: split on commas (a quoted comma would shift columns —
+        // use a real parser for such files).
+        var lines = File.ReadLines(dataFile).Where(l => !string.IsNullOrWhiteSpace(l)).ToList();
+        if (lines.Count == 0)
+            return Task.FromResult(HookResult.Abort("The data file is empty"));
 
-        return new ClassDistribution
+        var header = lines[0].Split(',');
+        var rows = lines.Skip(1).Select(l => l.Split(',')).ToList();
+        ctx.Logger.Info($"Dataset size: {rows.Count:N0} rows, {header.Length} columns");
+
+        if (rows.Count < MinRows)
+            return Task.FromResult(HookResult.Abort($"Insufficient data: {rows.Count} rows (at least {MinRows})"));
+
+        // Missing values per column
+        for (int c = 0; c < header.Length; c++)
         {
-            ImbalanceRatio = (double)majority / minority,
-            MajorityClass = majority,
-            MinorityClass = minority
-        };
-    }
-
-    private MissingValueStats AnalyzeMissingValues(DataDebuggerPreview preview)
-    {
-        var problematicColumns = new List<ColumnMissingInfo>();
-        var schema = preview.Schema;
-
-        for (int i = 0; i < schema.Count; i++)
-        {
-            var column = schema[i];
-            int missingCount = 0;
-            int totalCount = preview.RowView.Length;
-
-            foreach (var row in preview.RowView)
-            {
-                var value = row.Values[i].Value;
-                if (value == null ||
-                    (value is float f && float.IsNaN(f)) ||
-                    (value is double d && double.IsNaN(d)))
-                {
-                    missingCount++;
-                }
-            }
-
-            double missingPercent = (double)missingCount / totalCount * 100;
-
-            // Flag columns with >30% missing values
-            if (missingPercent > 30)
-            {
-                problematicColumns.Add(new ColumnMissingInfo
-                {
-                    Name = column.Name,
-                    MissingPercent = missingPercent,
-                    MissingCount = missingCount,
-                    TotalCount = totalCount
-                });
-            }
+            var empty = rows.Count(r => c >= r.Length || string.IsNullOrWhiteSpace(r[c]));
+            if ((double)empty / rows.Count > MaxMissingShare)
+                ctx.Logger.Warning($"Column '{header[c].Trim()}' is {100.0 * empty / rows.Count:F0}% empty");
         }
 
-        return new MissingValueStats
+        // Class balance of the label, when the run names one
+        var label = ctx.GetMetadata<string>("LabelColumn", "");
+        var labelIndex = Array.FindIndex(header, h => h.Trim().Equals(label, StringComparison.OrdinalIgnoreCase));
+        if (labelIndex >= 0)
         {
-            ProblematicColumns = problematicColumns,
-            HasProblematicColumns = problematicColumns.Any()
-        };
-    }
+            var biggest = rows.Where(r => labelIndex < r.Length)
+                .GroupBy(r => r[labelIndex].Trim())
+                .Select(g => g.Count())
+                .DefaultIfEmpty(0)
+                .Max();
+            if ((double)biggest / rows.Count > MaxMajorityShare)
+                ctx.Logger.Warning($"One class is {100.0 * biggest / rows.Count:F0}% of the rows — a model may learn to answer it every time");
+        }
 
-    // Helper classes
-    private class LabelData
-    {
-        public bool Label { get; set; }
-    }
-
-    private class ClassDistribution
-    {
-        public double ImbalanceRatio { get; set; }
-        public int MajorityClass { get; set; }
-        public int MinorityClass { get; set; }
-    }
-
-    private class MissingValueStats
-    {
-        public List<ColumnMissingInfo> ProblematicColumns { get; set; } = new();
-        public bool HasProblematicColumns { get; set; }
-    }
-
-    private class ColumnMissingInfo
-    {
-        public string Name { get; set; } = string.Empty;
-        public double MissingPercent { get; set; }
-        public int MissingCount { get; set; }
-        public int TotalCount { get; set; }
+        ctx.Logger.Info("Validation passed");
+        return Task.FromResult(HookResult.Continue());
     }
 }

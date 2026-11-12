@@ -597,27 +597,29 @@ Hooks run at lifecycle points during training. Put each hook in the folder of it
 ## Example Hook
 
 ```csharp
+using System;
+using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
-using Microsoft.ML;
-using Microsoft.ML.Data;
-using MLoop.Extensibility;
+using MLoop.Extensibility.Hooks;
 
 public class DataValidationHook : IMLoopHook
 {
     public string Name => ""Data Validation"";
 
-    public async Task<HookResult> ExecuteAsync(HookContext ctx)
+    public Task<HookResult> ExecuteAsync(HookContext ctx)
     {
-        var preview = ctx.DataView.Preview(maxRows: 100);
-        var rowCount = preview.RowView.Length;
+        // The pre-train stage reads a file: its path is in the hook's metadata.
+        var dataFile = ctx.GetMetadata<string>(""DataFile"", """");
+        var rowCount = File.Exists(dataFile)
+            ? File.ReadLines(dataFile).Count(line => !string.IsNullOrWhiteSpace(line)) - 1   // minus the header
+            : 0;
 
         if (rowCount < 100)
-        {
-            return HookResult.Abort($""Insufficient data: {rowCount} rows, need at least 100"");
-        }
+            return Task.FromResult(HookResult.Abort($""Insufficient data: {rowCount} rows, need at least 100""));
 
         ctx.Logger.Info($""Data validation passed: {rowCount} rows"");
-        return HookResult.Continue();
+        return Task.FromResult(HookResult.Continue());
     }
 }
 ```

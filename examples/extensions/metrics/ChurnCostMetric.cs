@@ -1,157 +1,50 @@
-using MLoop.Extensibility;
-using Microsoft.ML;
-using Microsoft.ML.Data;
+// A business metric: what the model's answers would cost a retention programme, per 1,000 customers.
+// Put it in .mloop/scripts/metrics/ — it is computed after training and recorded with the run's metrics.
+// It is a report, not an optimization target: the search still optimizes the project's `metric:`.
+using System;
+using System.Linq;
+using System.Threading.Tasks;
+using MLoop.Extensibility.Metrics;
 
 /// <summary>
-/// Churn prevention cost optimization metric.
-/// Minimizes the total cost of customer retention campaigns
-/// by balancing campaign costs vs. lost customer value.
+/// Churn prevention cost: a retention campaign costs money, a campaign keeps a customer only part of the time, and a churner nobody
+/// called is lost. Lower is better.
 /// </summary>
 /// <remarks>
-/// Business Model:
-/// - Running retention campaign on predicted churners costs money
-/// - Successfully retained customers preserve their lifetime value
-/// - Missed churners result in lost revenue
-/// - False alarms waste campaign budget
-///
-/// Use Case: SaaS, Telecom, Subscription services
+/// Cost per customer = campaigns run (every predicted churner, right or wrong) × campaign cost
+///                   + churners lost (missed ones, plus the calls that failed to keep one) × the value of a customer.
 /// </remarks>
 public class ChurnCostMetric : IMLoopMetric
 {
     public string Name => "Churn Prevention Cost";
-    public bool HigherIsBetter => false;  // Minimize cost
+    public string Description => "Cost per 1,000 customers = campaigns × 20 + lost churners × 500 (lower is better)";
 
-    // 💰 Business Parameters - ADJUST FOR YOUR BUSINESS MODEL
-    private const double CAMPAIGN_COST = 20.0;       // Cost per retention campaign (email, call, discount)
-    private const double CHURN_LOSS = 500.0;         // Customer lifetime value (CLV)
-    private const double CAMPAIGN_SUCCESS_RATE = 0.4; // 40% of campaigns successfully retain customers
+    // 💰 Business parameters — adjust for your business model
+    private const double CampaignCost = 20.0;          // one retention campaign (email, call, discount)
+    private const double CustomerValue = 500.0;        // what a churned customer costs you
+    private const double CampaignSuccessRate = 0.4;    // share of campaigns that keep a customer who would have left
+    private const int CustomerBase = 1000;             // report per this many customers
 
-    // Simulation parameters
-    private const int CUSTOMER_BASE = 1000;  // Simulate on 1000 customers
-
-    public async Task<double> CalculateAsync(MetricContext ctx)
+    public Task<MetricResult> CalculateAsync(MetricContext ctx)
     {
-        try
+        if (ctx.Predictions is not bool[] predicted || ctx.Labels is not bool[] churned)
+            throw new InvalidOperationException($"{Name} is for binary classification (task was {ctx.TaskType})");
+        if (predicted.Length == 0)
+            throw new InvalidOperationException("No held-out rows to score");
+
+        double scale = (double)CustomerBase / predicted.Length;
+        double campaigns = predicted.Count(p => p) * scale;                                       // calls made: TP + FP
+        double truePositives = predicted.Zip(churned, (p, c) => p && c).Count(x => x) * scale;    // churners reached
+        double missed = predicted.Zip(churned, (p, c) => !p && c).Count(x => x) * scale;          // churners nobody called
+        double lost = missed + truePositives * (1 - CampaignSuccessRate);                          // reached, but the call did not keep them
+
+        double cost = campaigns * CampaignCost + lost * CustomerValue;
+        double doNothing = churned.Count(c => c) * scale * CustomerValue;                          // no programme at all
+        return Task.FromResult(new MetricResult
         {
-            // Get model performance metrics
-            var metrics = ctx.MLContext.BinaryClassification.Evaluate(
-                ctx.Predictions,
-                labelColumnName: ctx.LabelColumn,
-                scoreColumnName: ctx.ScoreColumn
-            );
-
-            // Calculate customer segments (per 1000 customers)
-            var truePositives = metrics.PositiveRecall * CUSTOMER_BASE;        // Correctly identified churners
-            var falsePositives = metrics.FalsePositiveRate * CUSTOMER_BASE;    // False alarms
-            var falseNegatives = (1 - metrics.PositiveRecall) * CUSTOMER_BASE; // Missed churners
-            var trueNegatives = (1 - metrics.FalsePositiveRate) * CUSTOMER_BASE; // Correctly identified non-churners
-
-            // Cost calculations
-            // 1. Campaign costs: Run campaigns on all predicted churners (TP + FP)
-            var totalCampaignTargets = truePositives + falsePositives;
-            var campaignCost = totalCampaignTargets * CAMPAIGN_COST;
-
-            // 2. Prevented churns: TP * success rate
-            var preventedChurns = truePositives * CAMPAIGN_SUCCESS_RATE;
-            var remainingTPChurns = truePositives * (1 - CAMPAIGN_SUCCESS_RATE);
-
-            // 3. Total churn losses: FN + remaining TP churns
-            var totalChurnedCustomers = falseNegatives + remainingTPChurns;
-            var churnLosses = totalChurnedCustomers * CHURN_LOSS;
-
-            // 4. Total cost
-            var totalCost = campaignCost + churnLosses;
-            var costPerCustomer = totalCost / CUSTOMER_BASE;
-
-            // Log detailed breakdown
-            ctx.Logger.Info($"📊 Churn Prevention Analysis (per {CUSTOMER_BASE} customers):");
-            ctx.Logger.Info($"");
-            ctx.Logger.Info($"🎯 Prediction Breakdown:");
-            ctx.Logger.Info($"   True Positives:  {truePositives:F0} (correctly identified churners)");
-            ctx.Logger.Info($"   False Positives: {falsePositives:F0} (false alarms)");
-            ctx.Logger.Info($"   False Negatives: {falseNegatives:F0} (missed churners)");
-            ctx.Logger.Info($"   True Negatives:  {trueNegatives:F0} (correctly identified non-churners)");
-            ctx.Logger.Info($"");
-            ctx.Logger.Info($"💰 Cost Breakdown:");
-            ctx.Logger.Info($"   Campaign targets: {totalCampaignTargets:F0} customers");
-            ctx.Logger.Info($"   Campaign cost: ${campaignCost:F2}");
-            ctx.Logger.Info($"");
-            ctx.Logger.Info($"✅ Retention Success:");
-            ctx.Logger.Info($"   Prevented churns: {preventedChurns:F0} customers");
-            ctx.Logger.Info($"   Saved value: ${preventedChurns * CHURN_LOSS:F2}");
-            ctx.Logger.Info($"");
-            ctx.Logger.Info($"❌ Churn Losses:");
-            ctx.Logger.Info($"   Total churned: {totalChurnedCustomers:F0} customers");
-            ctx.Logger.Info($"   Lost value: ${churnLosses:F2}");
-            ctx.Logger.Info($"");
-            ctx.Logger.Info($"💵 Total Cost: ${totalCost:F2}");
-            ctx.Logger.Info($"📊 Cost per Customer: ${costPerCustomer:F2}");
-            ctx.Logger.Info($"");
-
-            // ROI calculation
-            var savedValue = preventedChurns * CHURN_LOSS;
-            var roi = ((savedValue - campaignCost) / campaignCost) * 100;
-            ctx.Logger.Info($"📈 Campaign ROI: {roi:F1}%");
-
-            return costPerCustomer;
-        }
-        catch (Exception ex)
-        {
-            ctx.Logger.Error($"❌ Churn cost calculation failed: {ex.Message}");
-            // Return high cost on error (worst case)
-            return 1000.0;
-        }
-    }
-}
-
-/// <summary>
-/// Alternative: Multi-tier customer value churn cost metric
-/// Different customer segments have different lifetime values
-/// </summary>
-public class TieredChurnCostMetric : IMLoopMetric
-{
-    public string Name => "Tiered Churn Cost";
-    public bool HigherIsBetter => false;
-
-    // Customer tiers with different CLV
-    private const double PREMIUM_CLV = 1000.0;    // 20% of base
-    private const double STANDARD_CLV = 500.0;    // 60% of base
-    private const double BASIC_CLV = 200.0;       // 20% of base
-
-    private const double CAMPAIGN_COST = 20.0;
-    private const double CAMPAIGN_SUCCESS = 0.4;
-
-    public async Task<double> CalculateAsync(MetricContext ctx)
-    {
-        var metrics = ctx.MLContext.BinaryClassification.Evaluate(
-            ctx.Predictions,
-            labelColumnName: ctx.LabelColumn,
-            scoreColumnName: ctx.ScoreColumn
-        );
-
-        // Simulate tier distribution
-        var premiumCustomers = 200;
-        var standardCustomers = 600;
-        var basicCustomers = 200;
-
-        // Calculate weighted churn loss
-        var avgCLV = (premiumCustomers * PREMIUM_CLV +
-                     standardCustomers * STANDARD_CLV +
-                     basicCustomers * BASIC_CLV) / 1000.0;
-
-        var truePositives = metrics.PositiveRecall * 1000;
-        var falsePositives = metrics.FalsePositiveRate * 1000;
-        var falseNegatives = (1 - metrics.PositiveRecall) * 1000;
-
-        var campaignCost = (truePositives + falsePositives) * CAMPAIGN_COST;
-        var preventedChurns = truePositives * CAMPAIGN_SUCCESS;
-        var churnLosses = (falseNegatives + (truePositives * (1 - CAMPAIGN_SUCCESS))) * avgCLV;
-
-        var totalCost = campaignCost + churnLosses;
-
-        ctx.Logger.Info($"💰 Tiered Churn Cost: ${totalCost / 1000:F2} per customer");
-        ctx.Logger.Info($"   (Weighted CLV: ${avgCLV:F2})");
-
-        return totalCost / 1000;
+            Name = Name,
+            Value = cost,
+            Description = $"{campaigns:F0} campaigns, {lost:F0} lost customers → {cost:F0} per {CustomerBase:N0} (doing nothing: {doNothing:F0})"
+        });
     }
 }

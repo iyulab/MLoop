@@ -1490,10 +1490,10 @@ mloop train data.csv --label target --metric accuracy
 # Uses: Accuracy, F1, AUC, Precision, Recall
 ```
 
-**Custom Business Metrics**:
+**Custom Business Metrics** (computed after training over the held-out rows and recorded with the run's metrics — a report, not an optimization target):
 ```bash
-mloop train data.csv --label target --metric profit-metric.cs
-# AutoML optimizes for: Expected Profit, Churn Cost, ROI, etc.
+mloop train data.csv --label target
+# .mloop/scripts/metrics/profit-metric.cs is compiled; its value (Expected Profit, Churn Cost, ROI, …) is listed beside Accuracy, F1, AUC
 ```
 
 ### 14.3 Architecture Integration
@@ -1702,37 +1702,30 @@ $ mloop train data.csv         $ mloop train data.csv
 ### 14.8 Example: Data Validation Hook
 
 ```csharp
-// .mloop/scripts/hooks/pre-train.cs
-using MLoop.Extensibility;
+// .mloop/scripts/hooks/pre-train/DataValidationHook.cs
+using System;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using MLoop.Extensibility.Hooks;
 
 public class DataValidationHook : IMLoopHook
 {
-    public string Name => "Data Quality Check";
+    public string Name => "Data Validation";
 
-    public async Task<HookResult> ExecuteAsync(HookContext ctx)
+    public Task<HookResult> ExecuteAsync(HookContext ctx)
     {
-        var preview = ctx.DataView.Preview(maxRows: 1000);
-        var rowCount = preview.RowView.Length;
+        // The pre-train stage reads a file: its path is in the hook's metadata.
+        var dataFile = ctx.GetMetadata<string>("DataFile", "");
+        var rowCount = File.Exists(dataFile)
+            ? File.ReadLines(dataFile).Count(line => !string.IsNullOrWhiteSpace(line)) - 1   // minus the header
+            : 0;
 
-        // Minimum row check
         if (rowCount < 100)
-        {
-            return HookResult.Abort(
-                $"Insufficient data: {rowCount} < 100 rows");
-        }
+            return Task.FromResult(HookResult.Abort($"Insufficient data: {rowCount} rows, need at least 100"));
 
-        // Class imbalance check
-        var labelCol = ctx.Metadata["LabelColumn"] as string;
-        var distribution = AnalyzeClassBalance(ctx.DataView, labelCol);
-
-        if (distribution.ImbalanceRatio > 20)
-        {
-            ctx.Logger.Warning(
-                $"⚠️  Severe class imbalance: {distribution.ImbalanceRatio:F1}:1");
-        }
-
-        ctx.Logger.Info($"✅ Validation passed: {rowCount} rows");
-        return HookResult.Continue();
+        ctx.Logger.Info($"Data validation passed: {rowCount} rows");
+        return Task.FromResult(HookResult.Continue());
     }
 }
 ```
@@ -1741,50 +1734,46 @@ public class DataValidationHook : IMLoopHook
 ```bash
 $ mloop train data.csv --label target
 
-📊 Executing hook: Data Quality Check
-   ✅ Validation passed: 1,234 rows
+🔗 Executing 1 PreTrain hook(s)...
+  🪝 [1/1] DataValidationHook.cs
+Data validation passed: 1234 rows
 
-🚀 AutoML training...
+🚀 Training...
 ```
 
 ### 14.9 Example: Custom Business Metric
 
 ```csharp
 // .mloop/scripts/metrics/profit-metric.cs
-using MLoop.Extensibility;
+using System;
+using System.Threading.Tasks;
+using MLoop.Extensibility.Metrics;
 
 public class ProfitMetric : IMLoopMetric
 {
     public string Name => "Expected Profit";
-    public bool HigherIsBetter => true;
+    public string Description => "100 per true positive, -50 per false positive";
 
-    private const double PROFIT_PER_TP = 100.0;
-    private const double LOSS_PER_FP = -50.0;
-
-    public async Task<double> CalculateAsync(MetricContext ctx)
+    public Task<MetricResult> CalculateAsync(MetricContext ctx)
     {
-        var metrics = ctx.MLContext.BinaryClassification
-            .Evaluate(ctx.Predictions);
-
-        return (metrics.PositiveRecall * PROFIT_PER_TP) +
-               (metrics.FalsePositiveRate * LOSS_PER_FP);
+        var predicted = (bool[])ctx.Predictions;   // binary-classification: bool[]
+        var actual = (bool[])ctx.Labels;
+        double profit = 0;
+        for (var i = 0; i < predicted.Length; i++)
+            if (predicted[i]) profit += actual[i] ? 100 : -50;
+        return Task.FromResult(new MetricResult { Name = Name, Value = profit });
     }
 }
 ```
 
 **Usage:**
 ```bash
-$ mloop train data.csv --label target --metric profit-metric.cs
+$ mloop train data.csv --label target
 
-🎯 Optimization metric: Expected Profit (higher is better)
-
-⏱️  AutoML searching...
-   Trial 1: LightGbm → $45.32
-   Trial 2: FastTree → $48.91 ⭐
-   Trial 3: SdcaLogistic → $43.17
-
-✅ Best model: FastTree ($48.91 expected profit)
+📊 Calculating metric: Expected Profit
+   Expected Profit: 930.00
 ```
+The value is recorded with the run's metrics (`metrics.json`, the results table, `mloop list --json`). The search still optimizes the project's `metric:` — a custom metric is not an optimization target.
 
 ### 14.10 CLI Commands
 

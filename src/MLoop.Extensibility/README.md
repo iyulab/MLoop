@@ -25,45 +25,58 @@ dotnet add package MLoop.Extensibility
 
 ### Create a Hook
 
+A hook lives in `.mloop/scripts/hooks/<stage>/` (`pre-train`, `post-train`, `pre-predict`, `post-evaluate`).
+
 ```csharp
-using MLoop.Extensibility;
+using System;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using MLoop.Extensibility.Hooks;
 
 public class DataValidationHook : IMLoopHook
 {
     public string Name => "Data Validation";
 
-    public async Task<HookResult> ExecuteAsync(HookContext ctx)
+    public Task<HookResult> ExecuteAsync(HookContext ctx)
     {
-        var rowCount = ctx.DataView.Preview().RowView.Length;
+        // The pre-train stage reads a file: its path is in the hook's metadata.
+        var dataFile = ctx.GetMetadata<string>("DataFile", "");
+        var rowCount = File.Exists(dataFile)
+            ? File.ReadLines(dataFile).Count(line => !string.IsNullOrWhiteSpace(line)) - 1   // minus the header
+            : 0;
 
         if (rowCount < 100)
-        {
-            return HookResult.Abort("Need at least 100 rows");
-        }
+            return Task.FromResult(HookResult.Abort($"Insufficient data: {rowCount} rows, need at least 100"));
 
-        ctx.Logger.Info($"✅ Validation passed: {rowCount} rows");
-        return HookResult.Continue();
+        ctx.Logger.Info($"Data validation passed: {rowCount} rows");
+        return Task.FromResult(HookResult.Continue());
     }
 }
 ```
 
 ### Create a Custom Metric
 
+A metric lives in `.mloop/scripts/metrics/`. It is computed over the held-out rows after training and recorded with the run's metrics — a report, not an optimization target.
+
 ```csharp
-using MLoop.Extensibility;
+using System;
+using System.Threading.Tasks;
+using MLoop.Extensibility.Metrics;
 
 public class ProfitMetric : IMLoopMetric
 {
     public string Name => "Expected Profit";
-    public bool HigherIsBetter => true;
+    public string Description => "100 per true positive, -50 per false positive";
 
-    public async Task<double> CalculateAsync(MetricContext ctx)
+    public Task<MetricResult> CalculateAsync(MetricContext ctx)
     {
-        var metrics = ctx.MLContext.BinaryClassification.Evaluate(ctx.Predictions);
-
-        // Optimize for profit instead of accuracy
-        return (metrics.PositiveRecall * 100.0) +  // $100 per True Positive
-               (metrics.FalsePositiveRate * -50.0); // -$50 per False Positive
+        var predicted = (bool[])ctx.Predictions;   // binary-classification: bool[]
+        var actual = (bool[])ctx.Labels;
+        double profit = 0;
+        for (var i = 0; i < predicted.Length; i++)
+            if (predicted[i]) profit += actual[i] ? 100 : -50;
+        return Task.FromResult(new MetricResult { Name = Name, Value = profit });
     }
 }
 ```
@@ -88,8 +101,8 @@ public class ProfitMetric : IMLoopMetric
 ## Documentation
 
 For complete documentation, see:
-- [EXTENSIBILITY.md](https://github.com/iyulab/MLoop/blob/main/docs/EXTENSIBILITY.md)
-- [API Reference](https://github.com/iyulab/MLoop/blob/main/docs/API_REFERENCE.md)
+- [User guide — hooks, metrics and preprocessing scripts](https://github.com/iyulab/MLoop/blob/main/docs/GUIDE.md)
+- [Examples](https://github.com/iyulab/MLoop/tree/main/examples/extensions)
 
 ## License
 
