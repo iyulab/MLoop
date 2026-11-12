@@ -325,8 +325,10 @@ public static class MonitoringEndpoints
 }
 
 /// <summary>A <c>POST /samples</c> body — the options of <c>mloop sample create --name</c>.</summary>
+[System.Text.Json.Serialization.JsonUnmappedMemberHandling(System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow)]
 public record SampleRequest(string? Name = null, int? Rows = null, string? Strategy = null);
 
+[System.Text.Json.Serialization.JsonUnmappedMemberHandling(System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow)]
 public record FeedbackRequest(
     string PredictionId,
     object ActualValue,

@@ -24,18 +24,18 @@ public class TrainingJobModelNameTests : IDisposable
     {
         Environment.SetEnvironmentVariable(ModelName.EnvironmentVariable, "churn");
 
-        Request(null).ModelName.Should().Be("churn");
-        Request("  ").ModelName.Should().Be("churn");
+        Request(null).ResolveModelName().Should().Be("churn");
+        Request("  ").ResolveModelName().Should().Be("churn");
     }
 
     [Fact]
     public void ARequestThatNamesAModel_TrainsThat_AndWithoutTheVariableTheDefault()
     {
         Environment.SetEnvironmentVariable(ModelName.EnvironmentVariable, "churn");
-        Request(" Fraud ").ModelName.Should().Be("fraud");
+        Request(" Fraud ").ResolveModelName().Should().Be("fraud");
 
         Environment.SetEnvironmentVariable(ModelName.EnvironmentVariable, null);
-        Request(null).ModelName.Should().Be("default");
+        Request(null).ResolveModelName().Should().Be("default");
     }
 
     [Fact]
@@ -43,7 +43,7 @@ public class TrainingJobModelNameTests : IDisposable
     {
         Environment.SetEnvironmentVariable(ModelName.EnvironmentVariable, null);
 
-        var act = () => Request("../../escape").ModelName;
+        var act = () => Request("../../escape").ResolveModelName();
 
         act.Should().Throw<InvalidModelNameException>();
     }

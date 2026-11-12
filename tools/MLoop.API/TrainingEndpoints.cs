@@ -46,7 +46,7 @@ public static class TrainingEndpoints
             // prep steps the API does not run), and what no task could train (an unknown task, a missing label).
             var (trainDefinition, definitionError) = await TrainingDefinition.ResolveAsync(configLoader,
                 new TrainingDefinition.Request(
-                    ModelName: request.ModelName, Task: request.Task, Label: request.LabelColumn, TimeLimitSeconds: request.TimeLimitSeconds, Metric: request.Metric,
+                    ModelName: request.ResolveModelName(), Task: request.Task, Label: request.LabelColumn, TimeLimitSeconds: request.TimeLimitSeconds, Metric: request.Metric,
                     TestSplit: request.TestSplit, Weight: request.Weight, MaxTrials: request.MaxTrials, Epochs: request.Epochs, Ensemble: request.Ensemble));
             if (definitionError != null)
                 return Results.BadRequest(new { error = definitionError });
@@ -116,12 +116,12 @@ public static class TrainingEndpoints
             jobRunner.EnqueueJob(jobId);
 
             logger.LogInformation("Training job '{JobId}' enqueued for model '{ModelName}' with task '{Task}'",
-                jobId, request.ModelName, request.Task);
+                jobId, request.ResolveModelName(), request.Task);
 
             return Results.Accepted($"/jobs/{jobId}", new
             {
                 jobId,
-                modelName = request.ModelName,
+                modelName = request.ResolveModelName(),
                 status = "Queued",
                 message = "Training job created. Poll /jobs/{jobId} for status."
             });
@@ -135,6 +135,7 @@ public static class TrainingEndpoints
         // List all jobs
         app.MapGet("/jobs", (
             TrainingJobStore jobStore,
+            ProjectRootPath projectRootPath,
             ILogger<Program> logger) =>
         {
             var jobs = jobStore.GetAllJobs();
@@ -148,7 +149,7 @@ public static class TrainingEndpoints
                     modelName = j.ModelName,
                     task = j.Task,
                     status = j.Status.ToString(),
-                    statusMessage = j.StatusMessage,
+                    statusMessage = ProjectRelativeText.In(j.StatusMessage, projectRootPath.Value),
                     createdAt = j.CreatedAt,
                     completedAt = j.CompletedAt,
                     experimentId = j.ExperimentId,
@@ -166,6 +167,7 @@ public static class TrainingEndpoints
         app.MapGet("/jobs/{id}", (
             string id,
             TrainingJobStore jobStore,
+            ProjectRootPath projectRootPath,
             ILogger<Program> logger) =>
         {
             var job = jobStore.GetJob(id);
@@ -176,8 +178,9 @@ public static class TrainingEndpoints
             {
                 jobId = job.JobId,
                 modelName = job.ModelName,
-                dataFile = job.DataFile,
-                additionalDataFiles = job.AdditionalDataFiles,
+                // The project's paths, as the request wrote them — not the host's directory layout.
+                dataFile = ProjectRelativeText.In(job.DataFile, projectRootPath.Value),
+                additionalDataFiles = ProjectRelativeText.In(job.AdditionalDataFiles, projectRootPath.Value),
                 labelColumn = job.LabelColumn,
                 task = job.Task,
                 timeLimitSeconds = job.TimeLimitSeconds,
@@ -191,15 +194,15 @@ public static class TrainingEndpoints
                 balance = job.Balance,
                 promote = job.Promote,
                 status = job.Status.ToString(),
-                statusMessage = job.StatusMessage,
+                statusMessage = ProjectRelativeText.In(job.StatusMessage, projectRootPath.Value),
                 createdAt = job.CreatedAt,
                 completedAt = job.CompletedAt,
                 experimentId = job.ExperimentId,
                 metrics = job.Metrics,
                 bestTrainer = job.BestTrainer,
                 promoted = job.Promoted,
-                keptInStagingReason = job.KeptInStagingReason,
-                warnings = job.Warnings
+                keptInStagingReason = ProjectRelativeText.In(job.KeptInStagingReason, projectRootPath.Value),
+                warnings = ProjectRelativeText.In(job.Warnings, projectRootPath.Value)
             });
         })
         .WithName("GetJobStatus")

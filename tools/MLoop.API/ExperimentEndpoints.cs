@@ -460,6 +460,7 @@ public static class ExperimentEndpoints
 }
 
 /// <summary>A <c>POST /evaluate</c> body — the options of <c>mloop evaluate</c>; <c>SliceBy</c> is <c>--slice-by</c>.</summary>
+[System.Text.Json.Serialization.JsonUnmappedMemberHandling(System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow)]
 public record EvaluateRequest(
     string TestDataPath,
     string? ExperimentId = null,

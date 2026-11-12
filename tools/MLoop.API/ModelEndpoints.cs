@@ -335,12 +335,14 @@ public static class ModelEndpoints
     }
 }
 
+[System.Text.Json.Serialization.JsonUnmappedMemberHandling(System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow)]
 public record PromoteRequest(
     string? ExperimentId,
     string? Name = null,
     bool? CreateBackup = true,
     bool Force = false);
 
+[System.Text.Json.Serialization.JsonUnmappedMemberHandling(System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow)]
 public record RollbackRequest(
     string? Name = null,
     string? To = null);

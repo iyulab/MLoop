@@ -327,6 +327,7 @@ try
 
     // A model name that is not a valid directory name is the caller's mistake (400); ModelName.Resolve throws, this answers.
     app.UseInvalidModelNameGuard();
+    app.UseRequestBodyGuard();
 
     // Health check endpoint. HEAD is mapped alongside GET because probes send it: wget --spider,
     // and most load balancers, issue HEAD, and a GET-only route answers those 405 while the service
