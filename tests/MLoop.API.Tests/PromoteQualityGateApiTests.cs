@@ -114,7 +114,11 @@ public class PromoteQualityGateApiTests : IClassFixture<TestWebApplicationFactor
                 Task = "binary-classification",
                 Config = new MLoop.CLI.Infrastructure.FileSystem.ExperimentConfig
                 {
-                    DataFile = "train.csv", LabelColumn = "y", Metric = "f1_score", TimeLimitSeconds = 60, TestSplit = 0.2,
+                    DataFile = "train.csv",
+                    LabelColumn = "y",
+                    Metric = "f1_score",
+                    TimeLimitSeconds = 60,
+                    TestSplit = 0.2,
                 },
                 Metrics = metrics,
             }, CancellationToken.None);
