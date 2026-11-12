@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.DataStore.Interfaces;
+using MLoop.Tests.Common;
 
 namespace MLoop.API.Tests;
 
@@ -252,92 +253,4 @@ public class WireShapeContractTests : IClassFixture<TestWebApplicationFactory>
         await _factory.Services.GetRequiredService<IPredictionLogger>().LogPredictionAsync(
             "shape", "exp-001", new Dictionary<string, object> { ["x"] = 1.0, ["kind"] = "a" }, true, 0.9);
     }
-}
-
-/// <summary>The shape of a JSON answer — path → kinds — and its baseline text form.</summary>
-internal static class WireShape
-{
-    public static SortedDictionary<string, string> Describe(string json)
-    {
-        using var document = JsonDocument.Parse(json);
-        var kinds = new SortedDictionary<string, SortedSet<string>>(StringComparer.Ordinal);
-        Walk(document.RootElement, "$", kinds);
-        return new SortedDictionary<string, string>(
-            kinds.ToDictionary(pair => pair.Key, pair => string.Join('|', pair.Value)), StringComparer.Ordinal);
-    }
-
-    private static void Walk(JsonElement element, string path, SortedDictionary<string, SortedSet<string>> kinds)
-    {
-        void Add(string kind)
-        {
-            if (!kinds.TryGetValue(path, out var set)) kinds[path] = set = new SortedSet<string>(StringComparer.Ordinal);
-            set.Add(kind);
-        }
-
-        switch (element.ValueKind)
-        {
-            case JsonValueKind.Object:
-                Add("object");
-                foreach (var property in element.EnumerateObject()) Walk(property.Value, path + "." + property.Name, kinds);
-                break;
-            case JsonValueKind.Array:
-                Add("array");
-                foreach (var item in element.EnumerateArray()) Walk(item, path + "[]", kinds);
-                break;
-            case JsonValueKind.String: Add("string"); break;
-            case JsonValueKind.Number: Add("number"); break;
-            case JsonValueKind.True:
-            case JsonValueKind.False: Add("boolean"); break;
-            default: Add("null"); break;
-        }
-    }
-
-    /// <summary>One block per scenario: <c>## id | header</c>, then <c>path: kinds</c> lines.</summary>
-    public static string Render(IEnumerable<(string Id, string Header, IReadOnlyDictionary<string, string> Shape)> blocks)
-    {
-        var text = new StringBuilder();
-        foreach (var (id, header, shape) in blocks)
-        {
-            text.Append("## ").Append(id).Append(" | ").Append(header).Append('\n');
-            foreach (var (path, kinds) in shape.OrderBy(pair => pair.Key, StringComparer.Ordinal))
-                text.Append(path).Append(": ").Append(kinds).Append('\n');
-        }
-        return text.ToString();
-    }
-
-    public static Dictionary<string, HashSet<string>> Parse(string text)
-    {
-        var blocks = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
-        HashSet<string>? current = null;
-        foreach (var raw in text.Split('\n'))
-        {
-            var line = raw.TrimEnd('\r');
-            if (line.Length == 0) continue;
-            if (line.StartsWith("## ", StringComparison.Ordinal))
-            {
-                var id = line[3..].Split(" | ")[0];
-                current = blocks[id] = [line];
-            }
-            else current?.Add(line);
-        }
-        return blocks;
-    }
-
-    public static List<string> Differences(Dictionary<string, HashSet<string>> baseline, Dictionary<string, HashSet<string>> observed)
-    {
-        var differences = new List<string>();
-        foreach (var id in baseline.Keys.Union(observed.Keys).OrderBy(k => k, StringComparer.Ordinal))
-        {
-            if (!baseline.TryGetValue(id, out var was)) { differences.Add($"{id}: scenario is not in the baseline"); continue; }
-            if (!observed.TryGetValue(id, out var now)) { differences.Add($"{id}: scenario was not observed"); continue; }
-            differences.AddRange(was.Except(now).OrderBy(l => l, StringComparer.Ordinal)
-                .Select(line => line.StartsWith("## ", StringComparison.Ordinal) ? $"{id}: status changed (was {line})" : $"{id}: removed {line}"));
-            differences.AddRange(now.Except(was).OrderBy(l => l, StringComparer.Ordinal)
-                .Where(line => !line.StartsWith("## ", StringComparison.Ordinal)).Select(line => $"{id}: added {line}"));
-        }
-        return differences;
-    }
-
-    public static List<string> Unclaimed(IEnumerable<string> mapped, ISet<string> claimed) =>
-        mapped.Where(route => !claimed.Contains(route)).Distinct().OrderBy(r => r, StringComparer.Ordinal).ToList();
 }
