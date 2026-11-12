@@ -20,18 +20,18 @@ public static class EmbedEndpoint
             if (texts is not null)
                 return EmbedTexts(pool, encoder, texts, patches == true);
             if (images is null)
-                return Results.BadRequest(new { error = unreadable });
+                return Results.BadRequest(new ErrorResponse(unreadable));
             if (ImageInputs.Refusal(images) is { } refused)
                 return refused;
             var withPatches = patches == true;
             if (EmbedderPool.TooMany(images.Count, withPatches) is { } tooMany)
-                return Results.Json(new { error = tooMany }, statusCode: StatusCodes.Status413PayloadTooLarge);
+                return Results.Json(new ErrorResponse(tooMany), statusCode: StatusCodes.Status413PayloadTooLarge);
 
             var (embedder, refusal) = pool.Get(encoder);
             if (embedder is null)
-                return Results.Conflict(new { error = refusal });
+                return Results.Conflict(new ErrorResponse(refusal));
             if (withPatches && ImageEmbedder.NoPatches(embedder.Encoder) is { } noPatches)
-                return Results.Conflict(new { error = noPatches });
+                return Results.Conflict(new ErrorResponse(noPatches));
 
             try
             {
@@ -39,15 +39,15 @@ public static class EmbedEndpoint
             }
             catch (UnreadableImageException ex)
             {
-                return Results.BadRequest(new { error = ex.Message, index = ex.Index });
+                return Results.BadRequest(new ImageErrorResponse(ex.Message, ex.Index));
             }
         })
         .WithName("Embed")
         .WithTags("Embedding")
         .Produces<EmbeddingResult>(StatusCodes.Status200OK)
-        .Produces<object>(StatusCodes.Status400BadRequest)
-        .Produces<object>(StatusCodes.Status409Conflict)
-        .Produces<object>(StatusCodes.Status413PayloadTooLarge)
+        .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
+        .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
+        .Produces<ErrorResponse>(StatusCodes.Status413PayloadTooLarge)
         .RequireAuthorization();
     }
 
@@ -57,13 +57,13 @@ public static class EmbedEndpoint
     private static IResult EmbedTexts(EmbedderPool pool, string? encoder, List<string> texts, bool patches)
     {
         if (patches)
-            return Results.BadRequest(new { error = "patches are of images; a text has none" });
+            return Results.BadRequest(new ErrorResponse("patches are of images; a text has none"));
         if (texts.Count == 0)
-            return Results.BadRequest(new { error = "send {\"texts\": [\"…\", …]} with at least one text" });
+            return Results.BadRequest(new ErrorResponse("send {\"texts\": [\"…\", …]} with at least one text"));
         if (EmbedderPool.TooManyTexts(texts.Count) is { } tooMany)
-            return Results.Json(new { error = tooMany }, statusCode: StatusCodes.Status413PayloadTooLarge);
+            return Results.Json(new ErrorResponse(tooMany), statusCode: StatusCodes.Status413PayloadTooLarge);
         var (embedder, refusal) = pool.GetText(encoder);
-        return embedder is null ? Results.Conflict(new { error = refusal }) : Results.Ok(embedder.Embed(texts));
+        return embedder is null ? Results.Conflict(new ErrorResponse(refusal)) : Results.Ok(embedder.Embed(texts));
     }
 
     /// <summary>

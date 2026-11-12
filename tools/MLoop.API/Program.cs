@@ -154,14 +154,12 @@ try
                     context.HandleResponse(); // suppress the default challenge (empty body)
                     context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                     context.Response.ContentType = "application/json";
-                    await context.Response.WriteAsJsonAsync(new
-                    {
-                        error = "Unauthorized",
-                        hint = "This endpoint requires a JWT bearer token. Issue one with the CLI — " +
-                               "`mloop token` for read endpoints (/predict, /info, /logs …), or " +
-                               "`mloop token --role admin` for write endpoints (/promote, /train, /evaluate) — " +
-                               "then send it as the `Authorization: Bearer <token>` header. See `mloop token --help`."
-                    });
+                    await context.Response.WriteAsJsonAsync(new ErrorHintResponse(
+                        "Unauthorized",
+                        "This endpoint requires a JWT bearer token. Issue one with the CLI — " +
+                        "`mloop token` for read endpoints (/predict, /info, /logs …), or " +
+                        "`mloop token --role admin` for write endpoints (/promote, /train, /evaluate) — " +
+                        "then send it as the `Authorization: Bearer <token>` header. See `mloop token --help`."));
                 },
                 // A valid token that lacks the role (a read token on a write endpoint): say what the endpoint needs,
                 // where the default answer is a 403 with nothing in it.
@@ -169,12 +167,10 @@ try
                 {
                     context.Response.StatusCode = StatusCodes.Status403Forbidden;
                     context.Response.ContentType = "application/json";
-                    await context.Response.WriteAsJsonAsync(new
-                    {
-                        error = "Forbidden",
-                        hint = "This endpoint needs the admin role (/promote, /rollback, /train, /evaluate, /samples, /cache/*). " +
-                               "Issue a token with `mloop token --role admin` and send it as the `Authorization: Bearer <token>` header."
-                    });
+                    await context.Response.WriteAsJsonAsync(new ErrorHintResponse(
+                        "Forbidden",
+                        "This endpoint needs the admin role (/promote, /rollback, /train, /evaluate, /samples, /cache/*). " +
+                        "Issue a token with `mloop token --role admin` and send it as the `Authorization: Bearer <token>` header."));
                 }
             };
         });
@@ -335,18 +331,16 @@ try
     // the same result here is exactly right — it drops the body itself.
     app.MapMethods(RequestLogLevel.HealthPath, ["GET", "HEAD"], () =>
     {
-        return Results.Ok(new
-        {
-            status = "healthy",
-            timestamp = DateTime.UtcNow,
-            version = typeof(Program).Assembly
+        return TypedResults.Ok(new HealthResponse(
+            "healthy",
+            DateTime.UtcNow,
+            typeof(Program).Assembly
                 .GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>()
-                ?.InformationalVersion ?? typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown"
-        });
+                ?.InformationalVersion ?? typeof(Program).Assembly.GetName().Version?.ToString() ?? "unknown"));
     })
     .WithName("HealthCheck")
     .WithTags("Health")
-    .Produces<object>(StatusCodes.Status200OK);
+    .Produces<HealthResponse>(StatusCodes.Status200OK);
 
     // Endpoints, one file per group — each map call carries its route metadata.
     app.MapModelEndpoints();

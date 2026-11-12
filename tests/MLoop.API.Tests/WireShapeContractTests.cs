@@ -85,6 +85,7 @@ public class WireShapeContractTests : IClassFixture<TestWebApplicationFactory>
         new("samples", "POST", "/samples", "/samples", new { name = "shape", rows = 5 }),
         new("samples-bad-rows", "POST", "/samples", "/samples", new { name = "shape", rows = 0 }),
         new("jobs", "GET", "/jobs", "/jobs"),
+        new("job", "GET", "/jobs/{id}", "/jobs/{job}"),
         new("job-missing", "GET", "/jobs/{id}", "/jobs/no-such-job"),
         new("rollback", "POST", "/rollback", "/rollback", new { name = "shape" }),
         new("rollback-none", "POST", "/rollback", "/rollback", new { name = "nomodel" }),
@@ -96,10 +97,26 @@ public class WireShapeContractTests : IClassFixture<TestWebApplicationFactory>
         await SeedAsync();
         var predictionId = (await _factory.Services.GetRequiredService<IPredictionLogger>().GetLogsAsync("shape")).First().Id!;
 
+        // A finished job with every field a job can carry, so the answer for one has its whole shape here — and, with the
+        // list, its rows.
+        var jobs = _factory.Services.GetRequiredService<TrainingJobStore>();
+        var jobId = jobs.CreateJob(new TrainingJobRequest("datasets/train.csv", "y", "binary-classification", Name: "shape",
+            AdditionalDataFiles: ["datasets/more.csv"], Weight: "w", Balance: "undersample", MaxTrials: 5));
+        var job = jobs.GetJob(jobId)!;
+        job.Status = JobStatus.Completed;
+        job.StatusMessage = "Completed";
+        job.CompletedAt = new DateTime(2026, 11, 12, 9, 5, 0, DateTimeKind.Utc);
+        job.ExperimentId = "exp-001";
+        job.Metrics = new() { ["accuracy"] = 0.91 };
+        job.BestTrainer = "FastTree";
+        job.Promoted = false;
+        job.KeptInStagingReason = "kept";
+        job.Warnings = ["a warning"];
+
         var observed = new List<(string Id, string Header, SortedDictionary<string, string> Shape)>();
         foreach (var scenario in Scenarios())
         {
-            using var request = new HttpRequestMessage(new HttpMethod(scenario.Method), scenario.Url);
+            using var request = new HttpRequestMessage(new HttpMethod(scenario.Method), scenario.Url.Replace("{job}", jobId));
             if (scenario.Body is not null)
             {
                 var json = JsonSerializer.Serialize(scenario.Body).Replace("{prediction}", predictionId);

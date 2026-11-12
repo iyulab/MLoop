@@ -67,10 +67,9 @@ public static class CallerRateLimit
                 if (rejected.Lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
                     rejected.HttpContext.Response.Headers.RetryAfter =
                         ((int)Math.Ceiling(retryAfter.TotalSeconds)).ToString(CultureInfo.InvariantCulture);
-                await rejected.HttpContext.Response.WriteAsJsonAsync(new
-                {
-                    error = $"Too many requests: this caller may make {permits} a minute ({PermitsKey}).",
-                }, cancellationToken).ConfigureAwait(false);
+                await rejected.HttpContext.Response.WriteAsJsonAsync(
+                    new ErrorResponse($"Too many requests: this caller may make {permits} a minute ({PermitsKey})."),
+                    cancellationToken).ConfigureAwait(false);
             };
         });
     }
