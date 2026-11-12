@@ -358,7 +358,8 @@ public class ExperimentStore : IExperimentStore
             BestTrainer = bestTrainer,
             Trainer = trainer,
             TrainingTimeSeconds = trainingTime,
-            Ensemble = ensemble
+            Ensemble = ensemble,
+            TestRows = resultElement.TryGetProperty("testRows", out var tr) && tr.ValueKind == JsonValueKind.Number && tr.TryGetInt64(out var rows) ? rows : null
         };
     }
 

@@ -818,27 +818,30 @@ public static partial class TrainCommand
         string? gateRefusal = null;
         string? incomparable = null;
         string? policyRefusal = null;
-        if (!promoted)
+        // The label's shape (class count, majority share) is read for every run: the floor the gate applied is made of it, and
+        // a promoted model's score is judged against that floor too (a few points above it on a few hundred rows is noise).
+        try
         {
-            try
+            var expData = await experimentStore.LoadAsync(resolvedModelName, result.ExperimentId, CancellationToken.None);
+            var labelSchema = expData.Config?.InputSchema?.Columns?
+                .FirstOrDefault(s => s.Name.Equals(trainingConfig.LabelColumn, StringComparison.OrdinalIgnoreCase));
+            if (labelSchema?.UniqueValueCount > 0)
+                classCount = labelSchema.UniqueValueCount;
+            // Read alongside the class count so the threshold shown is the one the gate
+            // applied — a display that omits it would understate why the model was held.
+            majorityClassRatio = labelSchema?.MajorityClassRatio;
+
+            if (!promoted)
             {
-                var expData = await experimentStore.LoadAsync(resolvedModelName, result.ExperimentId, CancellationToken.None);
                 gateRefusal = ModelRegistry.QualityGateRefusal(expData, primaryMetric);
                 incomparable = await modelRegistry.IncomparableWithProductionAsync(resolvedModelName, expData, production);
                 // When the metrics alone would have promoted it, the gate policy is what held it back —
                 // asked again so the staging line names the rule (an evaluation, only when one is configured).
                 if (await modelRegistry.ShouldPromoteOnMetricsAsync(resolvedModelName, result.ExperimentId, primaryMetric))
                     policyRefusal = await modelRegistry.GatePolicyRefusalAsync(resolvedModelName, result.ExperimentId);
-                var labelSchema = expData.Config?.InputSchema?.Columns?
-                    .FirstOrDefault(s => s.Name.Equals(trainingConfig.LabelColumn, StringComparison.OrdinalIgnoreCase));
-                if (labelSchema?.UniqueValueCount > 0)
-                    classCount = labelSchema.UniqueValueCount;
-                // Read alongside the class count so the threshold shown is the one the gate
-                // applied — a display that omits it would understate why the model was held.
-                majorityClassRatio = labelSchema?.MajorityClassRatio;
             }
-            catch (Exception) { /* schema unavailable, use default threshold */ }
         }
+        catch (Exception) { /* schema unavailable, use default threshold */ }
 
         // Display the threshold the gate actually applied: resolve "auto"/aliases to the
         // canonical key first (matches ShouldPromoteAsync), so image tasks show their 1/N
@@ -865,5 +868,10 @@ public static partial class TrainCommand
         // Promoted or not, a model that ranks but answers one class at its threshold is told so.
         if (result.Metrics != null && MetricPolicy.SingleClassAtThreshold(result.Metrics) is { } gateWarning)
             WarningConsole.Warn($"Quality: {gateWarning}.");
+
+        // A score above the gate's floor by less than the noise of measuring it on this many held-out rows is told so too.
+        if (result.Metrics != null && displayMetricKey != null && result.Metrics.TryGetValue(displayMetricKey, out var heldOutScore)
+            && MetricPolicy.IndistinguishableFromTheFloor(displayMetricKey, heldOutScore, minThreshold, result.TestRows) is { } chanceWarning)
+            WarningConsole.Warn($"Quality: {chanceWarning}.");
     }
 }

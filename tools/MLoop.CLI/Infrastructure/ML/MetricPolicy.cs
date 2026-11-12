@@ -222,6 +222,28 @@ public static class MetricPolicy
     }
 
     /// <summary>
+    /// Why an accuracy that passed the gate still cannot be told from the floor, or <c>null</c>: the score sits above the rate a model
+    /// that learned nothing scores by less than two standard errors of a proportion measured on <paramref name="testRows"/> rows. The
+    /// gate's floor is a point estimate; on a few hundred rows a model a few points above it is within what chance gives. Said, not
+    /// refused — the promotion is unchanged, and the row count that decides it is the experiment's own
+    /// (<see cref="MLoop.CLI.Infrastructure.FileSystem.ExperimentResult.TestRows"/>).
+    /// </summary>
+    public static string? IndistinguishableFromTheFloor(string? metricKey, double score, double? floor, long? testRows)
+    {
+        // Only the two accuracy metrics have a floor that is a rate a constant answer scores (the majority share, or 1/N).
+        if (metricKey is not ("accuracy" or "micro_accuracy") || floor is not { } rate || rate is <= 0 or >= 1
+            || testRows is not > 0 || !(score > rate))
+            return null;
+        // The gate has already refused a score at or below the floor; here the score is above it, by less than the noise of
+        // measuring a rate on this many rows (two standard errors of a proportion at the floor's own rate).
+        var noise = 2 * Math.Sqrt(rate * (1 - rate) / testRows.Value);
+        if (score - rate >= noise)
+            return null;
+        return string.Create(CultureInfo.InvariantCulture,
+            $"on {testRows.Value} held-out rows its {metricKey} {score:F4} is within the noise of the {rate:F4} a model that learned nothing scores (±{noise:F4}), so it cannot be told from chance");
+    }
+
+    /// <summary>
     /// Why a binary model that ranks above chance is still not usable for its predicted labels —
     /// it answers one class at its default decision threshold — or <c>null</c> when that is not
     /// its shape. The other half of <see cref="IsClassificationDegenerateModel"/>: the gate lets

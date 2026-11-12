@@ -454,4 +454,39 @@ public class MetricPolicyTests
     }
 
     #endregion
+
+    #region IndistinguishableFromTheFloor
+
+    /// <summary>
+    /// A text classifier at accuracy 0.52 on 240 held-out rows (the most common class is 0.51) was promoted without a word: the gate's
+    /// floor is a point estimate, and ±0.063 is what measuring a rate on 240 rows gives.
+    /// </summary>
+    [Fact]
+    public void IndistinguishableFromTheFloor_SaysSo_WhenTheScoreIsWithinTheNoiseOfTheFloor()
+    {
+        var said = MetricPolicy.IndistinguishableFromTheFloor("micro_accuracy", 0.52, 0.51, 240);
+
+        Assert.NotNull(said);
+        Assert.Contains("240 held-out rows", said, StringComparison.Ordinal);
+        Assert.Contains("0.5200", said, StringComparison.Ordinal);
+        Assert.Contains("cannot be told from chance", said, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("accuracy", 0.80, 0.51, 240L)]        // far above the floor on 240 rows: a real model
+    [InlineData("accuracy", 0.55, 0.51, 6000L)]       // the same few points on 6,000 rows is outside the noise (±0.013)
+    [InlineData("accuracy", 0.51, 0.51, 240L)]        // at the floor: the gate refuses it, this says nothing
+    [InlineData("accuracy", 0.40, 0.51, 240L)]        // below it: same
+    [InlineData("auc", 0.52, 0.5, 240L)]              // not a rate a constant answer scores
+    [InlineData("macro_accuracy", 0.52, 0.5, 240L)]
+    public void IndistinguishableFromTheFloor_IsSilent_WhereTheScoreIsPlainlyAboveOrNotJudgedHere(string metric, double score, double floor, long rows)
+        => Assert.Null(MetricPolicy.IndistinguishableFromTheFloor(metric, score, floor, rows));
+
+    [Theory]
+    [InlineData(null)]   // an experiment recorded before the row count, or a path that keeps no held-out partition
+    [InlineData(0L)]
+    public void IndistinguishableFromTheFloor_IsSilent_WithoutARowCount(long? rows)
+        => Assert.Null(MetricPolicy.IndistinguishableFromTheFloor("accuracy", 0.52, 0.51, rows));
+
+    #endregion
 }

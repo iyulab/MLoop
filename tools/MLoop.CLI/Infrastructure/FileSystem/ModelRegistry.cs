@@ -474,20 +474,7 @@ public class ModelRegistry : IModelRegistry
 
         // Extract the label's shape from the schema for the dynamic thresholds: how many classes
         // there are, and how strong a model that always answers with the most common one would be.
-        int? classCount = null;
-        double? majorityClassRatio = null;
-        if (experiment.Config?.InputSchema?.Columns != null && experiment.Config.LabelColumn != null)
-        {
-            var labelSchema = experiment.Config.InputSchema.Columns
-                .FirstOrDefault(s => s.Name.Equals(experiment.Config.LabelColumn, StringComparison.OrdinalIgnoreCase));
-            if (labelSchema?.UniqueValueCount > 0)
-            {
-                classCount = labelSchema.UniqueValueCount;
-            }
-            // Absent on experiments trained before the ratio was recorded, and on numeric labels —
-            // left null so the gate falls back to 1/N rather than to a fabricated 0.
-            majorityClassRatio = labelSchema?.MajorityClassRatio;
-        }
+        var (classCount, majorityClassRatio) = LabelShape(experiment);
 
         // An undefined-metric sentinel (MetricSanitizer's direction-aware worst-case for a NaN/∞
         // measurement — e.g. an all-NaN-scoring degenerate model whose evaluator saw zero usable
@@ -582,7 +569,33 @@ public class ModelRegistry : IModelRegistry
     /// shows <see cref="QualityGateRefusal"/> shows this beside it.
     /// </summary>
     public static string? QualityGateWarning(ExperimentData experiment)
-        => experiment.Metrics is { Count: > 0 } metrics ? MetricPolicy.SingleClassAtThreshold(metrics) : null;
+    {
+        if (experiment.Metrics is not { Count: > 0 } metrics)
+            return null;
+        var metricKey = MetricPolicy.ResolveCanonicalMetricKey(experiment.Config?.Metric ?? MetricNames.Auto, experiment.Task, metrics.Keys);
+        var (classCount, majorityClassRatio) = LabelShape(experiment);
+        var chance = metricKey != null && metrics.TryGetValue(metricKey, out var score)
+            ? MetricPolicy.IndistinguishableFromTheFloor(
+                metricKey, score, MetricPolicy.GetMinimumMetricThreshold(metricKey, classCount, majorityClassRatio), experiment.Result?.TestRows)
+            : null;
+        var warnings = new[] { MetricPolicy.SingleClassAtThreshold(metrics), chance }.Where(w => w != null).ToList();
+        return warnings.Count == 0 ? null : string.Join("; ", warnings);
+    }
+
+    /// <summary>
+    /// The label's shape as the schema recorded it: how many classes there are, and how strong a model that always answers with the
+    /// most common one would be. The class count is null for a label with no recorded count; the majority share is null on
+    /// experiments trained before it was recorded and on numeric labels — left null so a floor falls back to 1/N rather than to a
+    /// fabricated 0.
+    /// </summary>
+    private static (int? ClassCount, double? MajorityClassRatio) LabelShape(ExperimentData experiment)
+    {
+        if (experiment.Config?.InputSchema?.Columns == null || experiment.Config.LabelColumn == null)
+            return (null, null);
+        var labelSchema = experiment.Config.InputSchema.Columns
+            .FirstOrDefault(s => s.Name.Equals(experiment.Config.LabelColumn, StringComparison.OrdinalIgnoreCase));
+        return (labelSchema?.UniqueValueCount > 0 ? labelSchema.UniqueValueCount : null, labelSchema?.MajorityClassRatio);
+    }
 
     /// <inheritdoc />
     public async Task<bool> AutoPromoteAsync(

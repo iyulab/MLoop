@@ -26,6 +26,9 @@ public class TrainingResult
 
     public long RowCount { get; init; }
 
+    /// <summary>The rows of the held-out partition <see cref="Metrics"/> were measured on; null where the task path keeps none.</summary>
+    public long? TestRows { get; init; }
+
     /// <summary>
     /// Which post-train hook refused this model, and why — <c>null</c> when none did. The model is
     /// saved, but a refused model is not promoted automatically (<c>mloop train</c>, <c>POST /train</c>).

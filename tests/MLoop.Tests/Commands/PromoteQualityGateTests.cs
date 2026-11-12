@@ -65,7 +65,7 @@ public sealed class PromoteQualityGateTests : IDisposable
         try { Directory.Delete(_root, recursive: true); } catch { }
     }
 
-    private static async Task SaveExperimentAsync(string id, Dictionary<string, double> metrics, string metric = "f1_score")
+    private static async Task SaveExperimentAsync(string id, Dictionary<string, double> metrics, string metric = "f1_score", long? testRows = null, double? majority = null)
     {
         var fileSystem = new FileSystemManager();
         var store = new ExperimentStore(fileSystem, new ProjectDiscovery(fileSystem));
@@ -79,8 +79,21 @@ public sealed class PromoteQualityGateTests : IDisposable
             Timestamp = DateTime.UtcNow,
             Status = "Completed",
             Task = "binary-classification",
-            Config = new ExperimentConfig { DataFile = "train.csv", LabelColumn = "y", Metric = metric, TimeLimitSeconds = 60, TestSplit = 0.2 },
+            Config = new ExperimentConfig
+            {
+                DataFile = "train.csv",
+                LabelColumn = "y",
+                Metric = metric,
+                TimeLimitSeconds = 60,
+                TestSplit = 0.2,
+                InputSchema = majority is null ? null : new MLoop.Core.Models.InputSchemaInfo
+                {
+                    Columns = [new MLoop.Core.Models.ColumnSchema { Name = "y", DataType = "Categorical", Purpose = "Label", UniqueValueCount = 2, MajorityClassRatio = majority }],
+                    CapturedAt = DateTime.UtcNow,
+                },
+            },
             Metrics = metrics,
+            Result = testRows is null ? null : new ExperimentResult { BestTrainer = "FastTree", TrainingTimeSeconds = 1, TestRows = testRows },
         }, CancellationToken.None);
     }
 
@@ -209,6 +222,53 @@ public sealed class PromoteQualityGateTests : IDisposable
         // exp-003 equals exp-001 on every metric and production is exp-002 (0.61): it beats production, no reason.
         var (_, stronger, _) = await CliRunner.RunAsync(["promote", "exp-003", "--json"]);
         Assert.Equal(JsonValueKind.Null, JsonDocument.Parse(stronger).RootElement.GetProperty("notBetterThanProduction").ValueKind);
+    }
+
+    /// <summary>
+    /// The held-out row count is recorded with the experiment, so a promote that runs long after the training can still say a score
+    /// cannot be told from chance — in the human output, as <c>qualityWarning</c> in <c>--json</c>, and in the promotion history.
+    /// </summary>
+    [Fact]
+    public async Task ExplicitPromote_SaysAScoreWithinTheNoiseOfTheFloorCannotBeToldFromChance_AndStillPromotes()
+    {
+        await SaveExperimentAsync("exp-001", new() { ["accuracy"] = 0.52, ["f1_score"] = 0.5, ["auc"] = 0.55 }, metric: "accuracy", testRows: 240, majority: 0.51);
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync(["promote", "exp-001", "--json"]);
+
+        Assert.Equal(0, exitCode);
+        var warning = JsonDocument.Parse(stdout).RootElement.GetProperty("qualityWarning").GetString()!;
+        Assert.Contains("on 240 held-out rows", warning, StringComparison.Ordinal);
+        Assert.Contains("cannot be told from chance", warning, StringComparison.Ordinal);
+        Assert.Equal("exp-001", ProductionExperiment());   // said, not refused
+    }
+
+    [Fact]
+    public async Task ExplicitPromote_SaysNothingOfChance_ForAnExperimentWithoutARowCount_OrAClearlyBetterScore()
+    {
+        // recorded before the field: no n to judge by
+        await SaveExperimentAsync("exp-001", new() { ["accuracy"] = 0.52, ["f1_score"] = 0.5, ["auc"] = 0.55 }, metric: "accuracy", majority: 0.51);
+        var (_, old, _) = await CliRunner.RunAsync(["promote", "exp-001", "--json"]);
+        Assert.False(JsonDocument.Parse(old).RootElement.TryGetProperty("qualityWarning", out var w) && w.ValueKind == JsonValueKind.String);
+
+        // a real margin on the same row count
+        await SaveExperimentAsync("exp-002", new() { ["accuracy"] = 0.85, ["f1_score"] = 0.8, ["auc"] = 0.9 }, metric: "accuracy", testRows: 240, majority: 0.51);
+        var (_, clear, _) = await CliRunner.RunAsync(["promote", "exp-002", "--json"]);
+        Assert.False(JsonDocument.Parse(clear).RootElement.TryGetProperty("qualityWarning", out var w2) && w2.ValueKind == JsonValueKind.String);
+    }
+
+    [Fact]
+    public async Task TheHeldOutRowCount_SurvivesTheRecord_AndIsAbsentWhenNotKept()
+    {
+        await SaveExperimentAsync("exp-001", LearnedModel, testRows: 240);
+        await SaveExperimentAsync("exp-002", LearnedModel);
+
+        var fileSystem = new FileSystemManager();
+        var store = new ExperimentStore(fileSystem, new ProjectDiscovery(fileSystem));
+        Assert.Equal(240L, (await store.LoadAsync("default", "exp-001", CancellationToken.None)).Result?.TestRows);
+        Assert.Null((await store.LoadAsync("default", "exp-002", CancellationToken.None)).Result?.TestRows);
+
+        var written = await File.ReadAllTextAsync(Path.Combine(store.GetExperimentPath("default", "exp-002"), "metadata.json"));
+        Assert.DoesNotContain("testRows", written, StringComparison.Ordinal);   // a field never kept is not written
     }
 
     [Fact]

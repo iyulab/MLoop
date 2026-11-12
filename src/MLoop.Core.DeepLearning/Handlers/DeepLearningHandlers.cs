@@ -101,6 +101,7 @@ internal static class DeepLearningHandlers
                 Model = model,
                 Metrics = metricsDict,
                 RowCount = trainSet.GetRowCount() ?? 0,
+                TestRows = TrainingRunner.RowsIn(testSet),
                 Trials = trialChannel.Records,
                 RankingMetric = trialChannel.RankingMetric
             };
@@ -151,6 +152,7 @@ internal static class DeepLearningHandlers
                 Model = model,
                 Metrics = metricsDict,
                 RowCount = trainSet.GetRowCount() ?? 0,
+                TestRows = TrainingRunner.RowsIn(testSet),
                 Trials = trialChannel.Records,
                 RankingMetric = trialChannel.RankingMetric
             };

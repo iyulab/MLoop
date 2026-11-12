@@ -302,7 +302,8 @@ public class TrainingEngine : ITrainingEngine
                     BestTrainer = trained.BestTrainer,
                     Trainer = trained.Trainer,
                     TrainingTimeSeconds = stopwatch.Elapsed.TotalSeconds,
-                    Ensemble = trained.Ensemble
+                    Ensemble = trained.Ensemble,
+                    TestRows = trained.TestRows
                 },
                 Metrics = trained.Metrics,
                 Trials = trained.Trials,
@@ -332,6 +333,7 @@ public class TrainingEngine : ITrainingEngine
                 ReportPath = _fileSystem.FileExists(reportPath) ? reportPath : null,
                 Schema = inputSchema ?? trained.Schema,
                 RowCount = trained.RowCount,
+                TestRows = trained.TestRows,
                 HookRefusal = hookRefusal
             };
         }

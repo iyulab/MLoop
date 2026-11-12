@@ -677,6 +677,8 @@ This applies when the project's metric is a ranking one (`auc`, `auprc`): a mode
 class sits on the floor of `accuracy` (the share of the most common class) and of `f1_score` (0), and
 is refused on that metric as before.
 
+The gate's floor for `accuracy` is a point estimate (the share of the most common class), so a model a few points above it on a few hundred held-out rows passes the gate yet cannot be told from chance. `train` warns and `qualityWarning` carries the same sentence when the margin is under two standard errors of a proportion measured on the experiment's held-out rows (recorded as `result.testRows` in `metadata.json`); the model is still promoted — the warning is information, not a refusal.
+
 `mloop list --json` carries each experiment's `metrics`, the gate's verdict as `qualityGate` (`null`
 when it passes) and `qualityWarning` (`null` unless the gate passed it with the warning above).
 `POST /promote` applies the same gate and answers 422; send `"force": true` to override.

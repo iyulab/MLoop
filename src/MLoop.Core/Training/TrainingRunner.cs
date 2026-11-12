@@ -114,7 +114,7 @@ public partial class TrainingRunner
     /// The rows a view holds. A view read from a file does not know its length
     /// (<see cref="IDataView.GetRowCount"/> is null), so it is counted with a cursor that reads no column.
     /// </summary>
-    internal static long RowsIn(IDataView data)
+    public static long RowsIn(IDataView data)
     {
         if (data.GetRowCount() is { } known)
             return known;
@@ -808,6 +808,7 @@ public partial class TrainingRunner
             Calibration = calibration,
             Ensemble = ensemble?.Outcome,
             RowCount = RowsIn(trainSet),
+            TestRows = RowsIn(testSet),
             Trials = records,
             RankingMetric = metric,
             ValidationScore = search.BestValidation.Mean.TryGetValue(metric, out var validation) ? validation : null,
@@ -2761,6 +2762,13 @@ public record TrainedModel
     /// Number of rows in the training dataset (for memory collection)
     /// </summary>
     public long RowCount { get; init; }
+
+    /// <summary>
+    /// The rows of the held-out partition <see cref="Metrics"/> were measured on, or <c>null</c> where the task path does not
+    /// keep one (it is what tells a score from noise: an accuracy two points above the majority-class rate means one thing on
+    /// 6,000 rows and another on 240).
+    /// </summary>
+    public long? TestRows { get; init; }
 
     /// <summary>
     /// Input schema captured during training — required for prediction.

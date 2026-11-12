@@ -214,6 +214,13 @@ public class ExperimentResult
     public required double TrainingTimeSeconds { get; init; }
 
     /// <summary>
+    /// The rows of the held-out partition the metrics were measured on. Null on experiments recorded before the field and on the
+    /// task paths that keep no such partition — absent from <c>metadata.json</c> then.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public long? TestRows { get; init; }
+
+    /// <summary>
     /// What a run asked for a blend (<c>ensemble</c>) came to: the blend's members and weights and its out-of-fold score against the
     /// best single trial's, or why the single best model stands. Absent where a blend was not asked for.
     /// </summary>
