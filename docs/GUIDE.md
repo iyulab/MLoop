@@ -1536,7 +1536,7 @@ curl -X POST http://localhost:5000/predict \
   disk. The request body is the file itself — `curl -X POST --data-binary @train.csv -H "Authorization: Bearer $MLOOP_TOKEN"
   "http://localhost:5000/datasets?fileName=train.csv"` for a table (csv, tsv, xlsx, parquet, jsonl …), a `.zip` for a
   directory dataset (class subfolders of images, or a COCO annotations file with its images). It is kept under the
-  project's `datasets/uploads/<id>/` and the answer's `dataFile` is the path `POST /train` takes (`201`, and `Location`). The
+  project's `datasets/uploads/<id>/` and the answer's `dataFile` is the path `POST /train` takes as `dataFile` and `POST /evaluate` as `testDataPath` (`201`, and `Location`). The
   upload and the training request are two calls on purpose: the same data trains several experiments, and a retry repeats
   only the call that failed. Add `&task=image-classification` (any task) and the layout is checked on arrival, with the
   reason `POST /train` would give. What the server will not put on its disk is refused with nothing left behind (`400`): an
