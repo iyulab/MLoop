@@ -284,9 +284,22 @@ public static class PromoteCommand
                 return 0;
             }
 
+            // Training would have kept this model in staging when it does not beat production. The gate and the gate policy were
+            // answered above (and printed under --force); what is left is the comparison with production, which an explicit
+            // promote otherwise makes without a word about which model scores better. The reason is the one training reports.
+            string? notBetterThanProduction = null;
+            if (currentProduction != null && refusal == null && policyRefusal == null
+                && !currentProduction.ExperimentId.Equals(experimentId, StringComparison.OrdinalIgnoreCase))
+            {
+                notBetterThanProduction = await modelRegistry.NotBeatingProductionReasonAsync(
+                    resolvedModelName, experimentId, experiment.Config?.Metric ?? string.Empty, CancellationToken.None);
+            }
+
             if (currentProduction != null && !jsonOutput)
             {
                 AnsiConsole.MarkupLine($"[yellow]Warning:[/] This will replace the current production model: [cyan]{currentProduction.ExperimentId}[/]");
+                if (notBetterThanProduction != null)
+                    AnsiConsole.MarkupLineInterpolated($"[yellow]Note:[/] automatic promotion would have left it in staging — {notBetterThanProduction}.");
                 AnsiConsole.WriteLine();
 
                 // --json is a non-interactive automation surface: never prompt there.
@@ -330,7 +343,7 @@ public static class PromoteCommand
             if (jsonOutput)
             {
                 OutputAsJson(resolvedModelName, experimentId, autoSelectionReason,
-                    currentProduction?.ExperimentId, backupPath, gateWarning);
+                    currentProduction?.ExperimentId, backupPath, gateWarning, notBetterThanProduction);
             }
             else
             {
@@ -484,7 +497,7 @@ public static class PromoteCommand
 
     private static void OutputAsJson(
         string modelName, string experimentId, string? autoSelectionReason,
-        string? previousProduction, string? backupPath, string? qualityWarning)
+        string? previousProduction, string? backupPath, string? qualityWarning, string? notBetterThanProduction)
     {
         var options = new JsonSerializerOptions
         {
@@ -501,6 +514,7 @@ public static class PromoteCommand
             PreviousProduction = previousProduction,
             BackupPath = backupPath,
             QualityWarning = qualityWarning,
+            NotBetterThanProduction = notBetterThanProduction,
         }, options));
     }
 

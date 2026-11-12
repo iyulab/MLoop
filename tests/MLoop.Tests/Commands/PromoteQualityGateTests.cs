@@ -159,6 +159,72 @@ public sealed class PromoteQualityGateTests : IDisposable
         Assert.Equal("promoted", JsonDocument.Parse(forcedOut).RootElement.GetProperty("status").GetString());
     }
 
+    // Passes the gate (F1 > 0, AUC > 0.5) yet scores far below LearnedModel on every metric.
+    private static readonly Dictionary<string, double> WeakButPassing = new()
+    {
+        ["accuracy"] = 0.575,
+        ["f1_score"] = 0.61,
+        ["precision"] = 0.59,
+        ["recall"] = 0.64,
+        ["negative_recall"] = 0.5,
+        ["auc"] = 0.57,
+    };
+
+    /// <summary>
+    /// An explicit promote replaced a production model scoring accuracy 0.80 with one at 0.575 (AUC 0.57), the gate
+    /// "passed", and the output said only "This will replace the current production model" — training would have left the
+    /// weaker model in staging and said why; the explicit path made the same comparison silently.
+    /// </summary>
+    [Fact]
+    public async Task ExplicitPromote_OfAModelThatDoesNotBeatProduction_SaysSo_AndStillPromotes()
+    {
+        await SaveExperimentAsync("exp-001", LearnedModel, metric: "f1_score");
+        await SaveExperimentAsync("exp-002", WeakButPassing, metric: "f1_score");
+        Assert.Equal(0, (await CliRunner.RunAsync(["promote", "exp-001", "--json"])).ExitCode);
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync(["promote", "exp-002", "--force"]);
+
+        Assert.Equal(0, exitCode);
+        var said = string.Join(' ', stdout.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));   // the console wraps lines
+        Assert.Contains("would have left it in staging", said, StringComparison.Ordinal);
+        Assert.Contains("does not beat production (exp-001) on f1_score: 0.61 vs 0.88", said, StringComparison.Ordinal);
+        Assert.Equal("exp-002", ProductionExperiment());   // the explicit act is still the owner's
+    }
+
+    [Fact]
+    public async Task ExplicitPromote_Json_CarriesTheSameReason_AndNullWhenThereIsNone()
+    {
+        await SaveExperimentAsync("exp-001", LearnedModel, metric: "f1_score");
+        await SaveExperimentAsync("exp-002", WeakButPassing, metric: "f1_score");
+        await SaveExperimentAsync("exp-003", LearnedModel, metric: "f1_score");
+
+        var (_, first, _) = await CliRunner.RunAsync(["promote", "exp-001", "--json"]);
+        Assert.Equal(JsonValueKind.Null, JsonDocument.Parse(first).RootElement.GetProperty("notBetterThanProduction").ValueKind);
+
+        var (weakerExit, weaker, _) = await CliRunner.RunAsync(["promote", "exp-002", "--json"]);
+        Assert.Equal(0, weakerExit);
+        Assert.StartsWith("it does not beat production (exp-001) on f1_score: 0.61 vs 0.88",
+            JsonDocument.Parse(weaker).RootElement.GetProperty("notBetterThanProduction").GetString(), StringComparison.Ordinal);
+
+        // exp-003 equals exp-001 on every metric and production is exp-002 (0.61): it beats production, no reason.
+        var (_, stronger, _) = await CliRunner.RunAsync(["promote", "exp-003", "--json"]);
+        Assert.Equal(JsonValueKind.Null, JsonDocument.Parse(stronger).RootElement.GetProperty("notBetterThanProduction").ValueKind);
+    }
+
+    [Fact]
+    public async Task ExplicitPromote_OfAModelThatBeatsProduction_AddsNoNote()
+    {
+        await SaveExperimentAsync("exp-001", WeakButPassing, metric: "f1_score");
+        await SaveExperimentAsync("exp-002", LearnedModel, metric: "f1_score");
+        Assert.Equal(0, (await CliRunner.RunAsync(["promote", "exp-001", "--json"])).ExitCode);
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync(["promote", "exp-002", "--force"]);
+
+        Assert.Equal(0, exitCode);
+        Assert.DoesNotContain("would have left it in staging", stdout, StringComparison.Ordinal);
+        Assert.Equal("exp-002", ProductionExperiment());
+    }
+
     [Fact]
     public async Task ExplicitPromote_AModelThatRanksButSitsOnOneClass_PassesWithAThresholdWarning()
     {

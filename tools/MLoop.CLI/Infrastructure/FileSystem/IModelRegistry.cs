@@ -102,6 +102,18 @@ public interface IModelRegistry
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Why the comparison with production alone — recorded scores, or a comparison they cannot make — would keep
+    /// <paramref name="experimentId"/> out of production, or <c>null</c> when it would not (or there is no
+    /// production to compare with). Neither the fixed quality gate nor the gate policy is judged here, so asking
+    /// costs no evaluation; <see cref="KeptInStagingReasonAsync"/> adds both.
+    /// </summary>
+    Task<string?> NotBeatingProductionReasonAsync(
+        string modelName,
+        string experimentId,
+        string primaryMetric,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Automatically promotes experiment to production if it performs better
     /// than the current production model for the same model name.
     /// </summary>

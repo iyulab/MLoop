@@ -319,16 +319,35 @@ public class ModelRegistry : IModelRegistry
         if (QualityGateRefusal(experiment, primaryMetric) is { } gateRefusal)
             return $"the quality gate refuses it: {gateRefusal}";
 
+        if (await NotBeatingProductionReasonAsync(resolvedName, experimentId, primaryMetric, cancellationToken) is { } comparison)
+            return comparison;
+
+        return await GatePolicyRefusalAsync(resolvedName, experimentId, cancellationToken) is { } policyRefusal
+            ? $"the gate policy refuses it: {policyRefusal}"
+            : null;
+    }
+
+    /// <inheritdoc />
+    public async Task<string?> NotBeatingProductionReasonAsync(
+        string modelName,
+        string experimentId,
+        string primaryMetric,
+        CancellationToken cancellationToken = default)
+    {
+        var resolvedName = ResolveModelName(modelName);
+        var experiment = await _experimentStore.LoadAsync(resolvedName, experimentId, cancellationToken);
+        // The fixed gate has its own refusal (QualityGateRefusal); this answers only the comparison with production.
+        if (experiment.Metrics is null || QualityGateRefusal(experiment, primaryMetric) is not null)
+            return null;
+
         var production = await this.GetProductionOrNoneAsync(resolvedName, cancellationToken);
         if (await ShouldPromoteOnMetricsAsync(resolvedName, experimentId, primaryMetric, cancellationToken))
-            return await GatePolicyRefusalAsync(resolvedName, experimentId, cancellationToken) is { } policyRefusal
-                ? $"the gate policy refuses it: {policyRefusal}"
-                : null;
+            return null;
 
         if (await IncomparableWithProductionAsync(resolvedName, experiment, production, cancellationToken) is { } incomparable)
             return $"its metrics cannot be compared with production's: {incomparable}";
 
-        var metricKey = MetricPolicy.ResolveCanonicalMetricKey(primaryMetric, experiment.Task, experiment.Metrics!.Keys);
+        var metricKey = MetricPolicy.ResolveCanonicalMetricKey(primaryMetric, experiment.Task, experiment.Metrics.Keys);
         if (metricKey == null || production?.Metrics is null)
             return "there is no metric to judge it against production by — promote it explicitly";
         return experiment.Metrics.TryGetValue(metricKey, out var candidate) && production.Metrics.TryGetValue(metricKey, out var current)

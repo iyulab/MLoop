@@ -263,6 +263,13 @@ public static class ModelEndpoints
                 var currentProduction = await registry.GetProductionAsync(modelName, ct);
                 var previousExpId = currentProduction?.ExperimentId;
 
+                // What training would have said about keeping this model out of production: the comparison with the model it
+                // replaces (judged before the pointer moves). The gate and the gate policy were answered above.
+                string? notBetterThanProduction = currentProduction != null && refusal == null && policyRefusal == null
+                    && !currentProduction.ExperimentId.Equals(experimentId, StringComparison.OrdinalIgnoreCase)
+                    ? await registry.NotBeatingProductionReasonAsync(modelName, experimentId, experiment.Config?.Metric ?? string.Empty, ct)
+                    : null;
+
                 // Backup current production if exists
                 if (currentProduction != null && request.CreateBackup != false)
                 {
@@ -288,7 +295,8 @@ public static class ModelEndpoints
                     task = experiment.Task,
                     metrics = experiment.Metrics,
                     bestTrainer = experiment.Result?.BestTrainer,
-                    qualityWarning
+                    qualityWarning,
+                    notBetterThanProduction
                 });
             }
             catch (Exception ex)

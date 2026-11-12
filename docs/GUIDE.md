@@ -683,6 +683,8 @@ when it passes) and `qualityWarning` (`null` unless the gate passed it with the 
 
 Promoting the experiment that is already in production changes nothing — `mloop promote` says so (`--json` reports `status: "unchanged"`), `POST /promote` answers 200 with `"unchanged": true`, and neither writes a backup or a history record; `--force` / `"force": true` promotes it again.
 
+An explicit promote of a model that does not beat the one it replaces — on the project's metric, compared as training compares them — still happens, because an explicit promote is the operator's act; but it says so. `mloop promote` prints `Note: automatic promotion would have left it in staging — it does not beat production (exp-001) on accuracy: 0.575 vs 0.8 …`, `promote --json` returns the reason as `notBetterThanProduction` (`null` when there is none), and `POST /promote` includes `notBetterThanProduction` in its answer (omitted when there is none).
+
 #### A project's own gate policy
 
 The fixed gate asks whether a model learned anything. A project can add its own rules under the

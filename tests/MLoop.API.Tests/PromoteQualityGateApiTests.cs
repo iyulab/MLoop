@@ -95,6 +95,50 @@ public class PromoteQualityGateApiTests : IClassFixture<TestWebApplicationFactor
     }
 
     [Fact]
+    public async Task PromoteEndpoint_SaysWhenTheModelDoesNotBeatTheOneItReplaces_AndStillPromotes()
+    {
+        // Training keeps a model that does not beat production in staging and names the metric; an explicit promote used to
+        // make the same comparison silently. The response carries the reason (the field is omitted when the candidate is better, as `qualityWarning` is).
+        var store = _factory.Services.GetRequiredService<MLoop.CLI.Infrastructure.FileSystem.IExperimentStore>();
+        async Task SaveAsync(string id, Dictionary<string, double> metrics)
+        {
+            var path = store.GetExperimentPath("beat", id);
+            Directory.CreateDirectory(path);
+            await File.WriteAllTextAsync(Path.Combine(path, "model.zip"), "model");
+            await store.SaveAsync("beat", new MLoop.CLI.Infrastructure.FileSystem.ExperimentData
+            {
+                ModelName = "beat",
+                ExperimentId = id,
+                Timestamp = DateTime.UtcNow,
+                Status = "Completed",
+                Task = "binary-classification",
+                Config = new MLoop.CLI.Infrastructure.FileSystem.ExperimentConfig
+                {
+                    DataFile = "train.csv", LabelColumn = "y", Metric = "f1_score", TimeLimitSeconds = 60, TestSplit = 0.2,
+                },
+                Metrics = metrics,
+            }, CancellationToken.None);
+        }
+
+        await SaveAsync("exp-001", new() { ["accuracy"] = 0.91, ["f1_score"] = 0.88, ["negative_recall"] = 0.94, ["auc"] = 0.95 });
+        await SaveAsync("exp-002", new() { ["accuracy"] = 0.575, ["f1_score"] = 0.61, ["negative_recall"] = 0.5, ["auc"] = 0.57 });
+        await SaveAsync("exp-003", new() { ["accuracy"] = 0.95, ["f1_score"] = 0.92, ["negative_recall"] = 0.96, ["auc"] = 0.97 });
+
+        var first = await _client.PostAsJsonAsync("/promote", new { experimentId = "exp-001", name = "beat" });
+        first.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await first.Content.ReadAsStringAsync()).Should().NotContain("notBetterThanProduction");   // nothing to compare with; a null field is omitted
+
+        var weaker = await _client.PostAsJsonAsync("/promote", new { experimentId = "exp-002", name = "beat" });
+        weaker.StatusCode.Should().Be(HttpStatusCode.OK);   // the explicit act stands
+        (await weaker.Content.ReadAsStringAsync()).Should()
+            .Contain("\"notBetterThanProduction\":\"it does not beat production (exp-001) on f1_score: 0.61 vs 0.88");
+
+        var stronger = await _client.PostAsJsonAsync("/promote", new { experimentId = "exp-003", name = "beat" });
+        stronger.StatusCode.Should().Be(HttpStatusCode.OK);
+        (await stronger.Content.ReadAsStringAsync()).Should().NotContain("notBetterThanProduction");
+    }
+
+    [Fact]
     public async Task CompareEndpoint_DoesNotRecommendPromotingAModelPromoteWouldRefuse()
     {
         // On accuracy the model answering one class for every row outranks the one that learned; `mloop compare` holds it
