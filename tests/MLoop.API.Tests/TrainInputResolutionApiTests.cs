@@ -54,7 +54,8 @@ public class TrainInputResolutionApiTests : IClassFixture<TestWebApplicationFact
         response.StatusCode.Should().Be(HttpStatusCode.Accepted, await BodyOf(response));
         var jobId = JsonDocument.Parse(await BodyOf(response)).RootElement.GetProperty("jobId").GetString();
         var job = JsonDocument.Parse(await _client.GetStringAsync($"/jobs/{jobId}")).RootElement;
-        Path.GetFullPath(job.GetProperty("dataFile").GetString()!).Should().Be(Path.GetFullPath(images));
+        // The job answers in the project's paths (relative), and it resolved them against the project, not the server's working directory.
+        job.GetProperty("dataFile").GetString()!.Replace('\\', '/').Should().Be("datasets/images");
     }
 
     [Fact]
@@ -69,7 +70,7 @@ public class TrainInputResolutionApiTests : IClassFixture<TestWebApplicationFact
         directory.StatusCode.Should().Be(HttpStatusCode.Accepted, await BodyOf(directory));
         var jobId = JsonDocument.Parse(await BodyOf(directory)).RootElement.GetProperty("jobId").GetString();
         var job = JsonDocument.Parse(await _client.GetStringAsync($"/jobs/{jobId}")).RootElement;
-        Path.GetFullPath(job.GetProperty("dataFile").GetString()!).Should().Be(Path.GetFullPath(folder));
+        job.GetProperty("dataFile").GetString()!.Replace('\\', '/').Should().Be("datasets/named-images");
 
         var file = await _client.PostAsJsonAsync("/train", new { dataFile = "datasets/coco-named/annotations.json", labelColumn = "label", task = "object-detection", name = "od-file" });
         file.StatusCode.Should().Be(HttpStatusCode.BadRequest);

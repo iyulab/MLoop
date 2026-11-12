@@ -229,7 +229,7 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
         status.Should().Be("Completed", job.GetRawText());
         job.TryGetProperty("timeLimitSeconds", out var limit).Should().Be(false, "an absent budget is left to mloop.yaml");
         job.GetProperty("additionalDataFiles").EnumerateArray().Select(f => f.GetString())
-            .Should().Equal(Path.GetFullPath(extra));
+            .Select(f => f!.Replace('\\', '/')).Should().Equal(["datasets/feedback.csv"]);   // the job answers in the project's paths; the file was found there, not under the server's working directory
 
         var merged = File.ReadAllLines(Path.Combine(_factory.TestProjectRoot, ".mloop", "merged", $"{jobId}.csv"));
         merged.Should().HaveCount(1 + 200 + 3);
