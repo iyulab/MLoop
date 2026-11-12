@@ -151,6 +151,21 @@ public class WireShapeContractTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task TheOpenApiDocumentDescribesATypedAnswerByItsFields()
+    {
+        // The experiment endpoints return TypedResults of named records, so the document says what they answer with - it said `object`
+        // for every endpoint before. This reads one, so a change back to an untyped answer shows here.
+        var document = JsonDocument.Parse(await _client.GetStringAsync("/swagger/v1/swagger.json")).RootElement;
+        var answer = document.GetProperty("paths").GetProperty("/compare").GetProperty("get").GetProperty("responses").GetProperty("200")
+            .GetProperty("content").GetProperty("application/json").GetProperty("schema");
+        answer.TryGetProperty("$ref", out var reference).Should().BeTrue("the answer is a named schema, not an inline object");
+
+        var schema = document.GetProperty("components").GetProperty("schemas").GetProperty(reference.GetString()!.Split('/').Last());
+        schema.GetProperty("properties").EnumerateObject().Select(p => p.Name)
+            .Should().Contain(name => name.Equals("candidateExpId", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public void EveryExemptionNamesAClassThatExistsAndARouteThatIsMapped()
     {
         foreach (var (route, (why, coveredBy)) in Exempt)

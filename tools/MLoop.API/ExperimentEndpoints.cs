@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.ML;
@@ -31,7 +32,7 @@ public static class ExperimentEndpoints
     public static void MapExperimentEndpoints(this WebApplication app)
     {
         // List experiments endpoint (secured)
-        app.MapGet("/experiments", async (
+        app.MapGet("/experiments", async Task<Results<Ok<ExperimentListResponse>, ProblemHttpResult>> (
             [FromQuery] string? name,
             IExperimentStore experimentStore,
             IModelRegistry registry,
@@ -50,18 +51,12 @@ public static class ExperimentEndpoints
                 logger.LogInformation("Retrieved {Count} experiment(s) in {ElapsedMs}ms",
                     rows.Count, stopwatch.ElapsedMilliseconds);
 
-                return Results.Ok(new
-                {
-                    count = rows.Count,
-                    filter = modelName,
-                    experiments = rows,
-                    production,
-                });
+                return TypedResults.Ok(new ExperimentListResponse(rows.Count, modelName, rows, production));
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Failed to list experiments after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
-                return Results.Problem(
+                return TypedResults.Problem(
                     title: "Failed to list experiments",
                     detail: ex.Message,
                     statusCode: StatusCodes.Status500InternalServerError
@@ -70,12 +65,10 @@ public static class ExperimentEndpoints
         })
         .WithName("ListExperiments")
         .WithTags("Experiments")
-        .Produces<object>(StatusCodes.Status200OK)
-        .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
         .RequireAuthorization();
 
         // Get experiment detail endpoint (secured)
-        app.MapGet("/experiments/{id}", async (
+        app.MapGet("/experiments/{id}", async Task<Results<Ok<ExperimentDetailResponse>, NotFound<ErrorResponse>, ProblemHttpResult>> (
             string id,
             [FromQuery] string? name,
             IExperimentStore experimentStore,
@@ -92,7 +85,7 @@ public static class ExperimentEndpoints
                 if (!experimentStore.ExperimentExists(modelName, id))
                 {
                     logger.LogWarning("Experiment '{ExperimentId}' not found for model '{ModelName}'", id, modelName);
-                    return Results.NotFound(new { error = $"Experiment '{id}' not found for model '{modelName}'." });
+                    return TypedResults.NotFound(new ErrorResponse($"Experiment '{id}' not found for model '{modelName}'."));
                 }
 
                 var experiment = await experimentStore.LoadAsync(modelName, id, ct);
@@ -100,38 +93,32 @@ public static class ExperimentEndpoints
                 logger.LogInformation("Loaded experiment '{ExperimentId}' in {ElapsedMs}ms",
                     id, stopwatch.ElapsedMilliseconds);
 
-                return Results.Ok(new
-                {
-                    modelName = experiment.ModelName,
-                    experimentId = experiment.ExperimentId,
-                    timestamp = experiment.Timestamp,
-                    status = experiment.Status,
-                    task = experiment.Task,
-                    config = new
-                    {
-                        dataFile = experiment.Config.DataFile,
-                        dataFileHash = experiment.Config.DataFileHash,
-                        labelColumn = experiment.Config.LabelColumn,
-                        timeLimitSeconds = experiment.Config.TimeLimitSeconds,
-                        autoTime = experiment.Config.AutoTime,
-                        metric = experiment.Config.Metric,
-                        testSplit = experiment.Config.TestSplit,
-                        groupColumn = experiment.Config.GroupColumn,
-                        hasSchema = experiment.Config.InputSchema != null
-                    },
-                    result = experiment.Result != null ? new
-                    {
-                        bestTrainer = experiment.Result.BestTrainer,
-                        trainingTimeSeconds = experiment.Result.TrainingTimeSeconds
-                    } : null,
-                    metrics = experiment.Metrics
-                });
+                return TypedResults.Ok(new ExperimentDetailResponse(
+                    experiment.ModelName,
+                    experiment.ExperimentId,
+                    experiment.Timestamp,
+                    experiment.Status,
+                    experiment.Task,
+                    new ExperimentConfigView(
+                        experiment.Config.DataFile,
+                        experiment.Config.DataFileHash,
+                        experiment.Config.LabelColumn,
+                        experiment.Config.TimeLimitSeconds,
+                        experiment.Config.AutoTime,
+                        experiment.Config.Metric,
+                        experiment.Config.TestSplit,
+                        experiment.Config.GroupColumn,
+                        HasSchema: experiment.Config.InputSchema != null),
+                    experiment.Result != null
+                        ? new ExperimentResultView(experiment.Result.BestTrainer, experiment.Result.TrainingTimeSeconds)
+                        : null,
+                    experiment.Metrics));
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Failed to load experiment '{ExperimentId}' after {ElapsedMs}ms",
                     id, stopwatch.ElapsedMilliseconds);
-                return Results.Problem(
+                return TypedResults.Problem(
                     title: "Failed to load experiment",
                     detail: ex.Message,
                     statusCode: StatusCodes.Status500InternalServerError
@@ -140,13 +127,10 @@ public static class ExperimentEndpoints
         })
         .WithName("GetExperiment")
         .WithTags("Experiments")
-        .Produces<object>(StatusCodes.Status200OK)
-        .Produces<object>(StatusCodes.Status404NotFound)
-        .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
         .RequireAuthorization();
 
         // Project status endpoint (secured)
-        app.MapGet("/status", async (
+        app.MapGet("/status", async Task<Results<Ok<StatusResponse>, ProblemHttpResult>> (
             IModelRegistry registry,
             IExperimentStore experimentStore,
             ProjectRootPath projectRootPath,
@@ -192,77 +176,67 @@ public static class ExperimentEndpoints
                     // Ranked by metric direction, among experiments measured alike (one metric, one weighting).
                     var bestPick = MLoop.CLI.Infrastructure.FileSystem.ExperimentRanking.SelectBest(modelExps);
 
-                    return new
-                    {
+                    return new ModelStatus(
                         modelName,
-                        totalExperiments = modelExps.Count,
+                        modelExps.Count,
                         completed,
                         failed,
-                        hasProduction = prodModel != null,
-                        productionExperimentId = prodModel?.ExperimentId,
-                        bestMetric = bestPick?.Best.BestMetric,
-                        bestMetricName = bestPick?.Measurement.Metric,
-                        bestMetricWeightColumn = bestPick?.Measurement.Weighting.Column,
-                        bestExperimentId = bestPick?.Best.ExperimentId,
-                        experimentsNotCompared = bestPick?.NotCompared ?? 0,
-                        latestExperiment = modelExps
+                        HasProduction: prodModel != null,
+                        prodModel?.ExperimentId,
+                        bestPick?.Best.BestMetric,
+                        bestPick?.Measurement.Metric,
+                        bestPick?.Measurement.Weighting.Column,
+                        bestPick?.Best.ExperimentId,
+                        bestPick?.NotCompared ?? 0,
+                        modelExps
                             .OrderByDescending(e => e.Timestamp)
-                            .FirstOrDefault()?.ExperimentId
-                    };
+                            .FirstOrDefault()?.ExperimentId);
                 }).ToList();
 
                 // Check data files
                 var datasetsDir = Path.Combine(projectRoot, ProjectLayout.DatasetsDirectory);
-                var dataFiles = new
-                {
-                    trainCsv = File.Exists(Path.Combine(datasetsDir, ProjectLayout.TrainFileName)),
-                    testCsv = File.Exists(Path.Combine(datasetsDir, ProjectLayout.TestFileName)),
-                    predictCsv = File.Exists(Path.Combine(datasetsDir, ProjectLayout.PredictFileName))
-                };
+                var dataFiles = new DataFilesStatus(
+                    File.Exists(Path.Combine(datasetsDir, ProjectLayout.TrainFileName)),
+                    File.Exists(Path.Combine(datasetsDir, ProjectLayout.TestFileName)),
+                    File.Exists(Path.Combine(datasetsDir, ProjectLayout.PredictFileName)));
 
                 // Load config if available
-                object? configSummary = null;
+                IReadOnlyList<ConfiguredModel>? configSummary = null;
                 try
                 {
                     var config = await configLoader.LoadUserConfigAsync();
-                    configSummary = config.Models.Select(kvp => new
-                    {
-                        name = kvp.Key,
-                        task = kvp.Value.Task,
-                        label = kvp.Value.Label,
+                    configSummary = config.Models.Select(kvp => new ConfiguredModel(
+                        kvp.Key,
+                        kvp.Value.Task,
+                        kvp.Value.Label,
                         // An unset budget is auto-estimated from the data when training runs (as `mloop status` says), so it has no number here.
-                        timeLimitSeconds = kvp.Value.Training?.TimeLimitSeconds,
-                        metric = kvp.Value.Training?.Metric ?? ConfigDefaults.DefaultMetric
-                    }).ToList();
+                        kvp.Value.Training?.TimeLimitSeconds,
+                        kvp.Value.Training?.Metric ?? ConfigDefaults.DefaultMetric)).ToList();
                 }
                 catch { /* Config not available */ }
 
                 logger.LogInformation("Project status retrieved in {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
 
-                return Results.Ok(new
-                {
-                    project = projectName,
+                return TypedResults.Ok(new StatusResponse(
+                    projectName,
                     projectRoot,
-                    summary = new
-                    {
-                        totalModels = modelNames.Count,
-                        totalExperiments = allExperiments.Count,
-                        completedExperiments = allExperiments.Count(e =>
+                    new StatusSummary(
+                        modelNames.Count,
+                        allExperiments.Count,
+                        allExperiments.Count(e =>
                             e.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase)),
-                        failedExperiments = allExperiments.Count(e =>
+                        allExperiments.Count(e =>
                             e.Status.Equals("Failed", StringComparison.OrdinalIgnoreCase)),
-                        productionModels = productionModels.Count
-                    },
-                    models = modelStatuses,
+                        productionModels.Count),
+                    modelStatuses,
                     dataFiles,
-                    config = configSummary
-                });
+                    configSummary));
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Failed to retrieve project status after {ElapsedMs}ms",
                     stopwatch.ElapsedMilliseconds);
-                return Results.Problem(
+                return TypedResults.Problem(
                     title: "Failed to retrieve project status",
                     detail: ex.Message,
                     statusCode: StatusCodes.Status500InternalServerError
@@ -271,12 +245,10 @@ public static class ExperimentEndpoints
         })
         .WithName("GetStatus")
         .WithTags("Status")
-        .Produces<object>(StatusCodes.Status200OK)
-        .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
         .RequireAuthorization();
 
         // Compare experiments endpoint (secured)
-        app.MapGet("/compare", async (
+        app.MapGet("/compare", async Task<Results<Ok<CompareResponse>, NotFound<ErrorResponse>, ProblemHttpResult>> (
             [FromQuery] string candidate,
             [FromQuery] string baseline,
             [FromQuery] string? name,
@@ -309,41 +281,33 @@ public static class ExperimentEndpoints
                 logger.LogInformation("Comparison completed in {ElapsedMs}ms: candidate is {Better}",
                     stopwatch.ElapsedMilliseconds, result.CandidateIsBetter ? "better" : "worse");
 
-                return Results.Ok(new
-                {
+                return TypedResults.Ok(new CompareResponse(
                     modelName,
-                    candidateExpId = result.CandidateExpId,
-                    baselineExpId = result.BaselineExpId,
-                    candidateIsBetter = result.CandidateIsBetter,
+                    result.CandidateExpId,
+                    result.BaselineExpId,
+                    result.CandidateIsBetter,
                     // The one metric the verdict and the scores are on — the run's optimized metric, as promotion judges.
-                    metric = result.Metric,
-                    candidateScore = result.CandidateScore,
-                    baselineScore = result.BaselineScore,
-                    improvement = result.Improvement,
-                    recommendation = promotionRefusal is null
+                    result.Metric,
+                    result.CandidateScore,
+                    result.BaselineScore,
+                    result.Improvement,
+                    promotionRefusal is null
                         ? result.Recommendation
                         : $"Do not promote {result.CandidateExpId} - it is better on {result.Metric} but would not be promoted: {promotionRefusal}",
                     promotionRefusal,
-                    metricDetails = result.MetricDetails.ToDictionary(
+                    result.MetricDetails.ToDictionary(
                         kvp => kvp.Key,
-                        kvp => new
-                        {
-                            candidateValue = kvp.Value.CandidateValue,
-                            baselineValue = kvp.Value.BaselineValue,
-                            difference = kvp.Value.Difference,
-                            isBetter = kvp.Value.IsBetter
-                        })
-                });
+                        kvp => new MetricDetail(kvp.Value.CandidateValue, kvp.Value.BaselineValue, kvp.Value.Difference, kvp.Value.IsBetter))));
             }
             catch (FileNotFoundException ex)
             {
                 logger.LogWarning(ex, "Experiment not found for comparison");
-                return Results.NotFound(new { error = ex.Message });
+                return TypedResults.NotFound(new ErrorResponse(ex.Message));
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Comparison failed after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
-                return Results.Problem(
+                return TypedResults.Problem(
                     title: "Comparison failed",
                     detail: ex.Message,
                     statusCode: StatusCodes.Status500InternalServerError
@@ -352,13 +316,10 @@ public static class ExperimentEndpoints
         })
         .WithName("CompareExperiments")
         .WithTags("Experiments")
-        .Produces<object>(StatusCodes.Status200OK)
-        .Produces<object>(StatusCodes.Status404NotFound)
-        .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
         .RequireAuthorization();
 
         // Evaluate model endpoint (secured)
-        app.MapPost("/evaluate", async (
+        app.MapPost("/evaluate", async Task<Results<Ok<EvaluateResponse>, Ok<EvaluateSkippedResponse>, NotFound<ErrorResponse>, BadRequest<ErrorResponse>, BadRequest<SchemaRefusalResponse>, ProblemHttpResult>> (
             [FromBody] EvaluateRequest request,
             IExperimentStore experimentStore,
             IModelRegistry registry,
@@ -383,7 +344,7 @@ public static class ExperimentEndpoints
                 {
                     var prod = await registry.GetProductionAsync(modelName, ct);
                     if (prod == null)
-                        return Results.Ok(new { status = "skipped", reason = "no_production_model", model = modelName });
+                        return TypedResults.Ok(new EvaluateSkippedResponse("skipped", "no_production_model", modelName));
                     experimentId = prod.ExperimentId;
                 }
 
@@ -391,22 +352,22 @@ public static class ExperimentEndpoints
                 // experiment's id must be that experiment's measurement.
                 var (modelPath, refusal) = ExperimentModels.Find(experimentStore, modelName, experimentId);
                 if (modelPath is null)
-                    return Results.NotFound(new { error = refusal });
+                    return TypedResults.NotFound(new ErrorResponse(refusal));
 
                 var experiment = await experimentStore.LoadAsync(modelName, experimentId, ct);
 
                 // Determine test data path (with path traversal protection)
                 var testDataPath = request.TestDataPath;
                 if (string.IsNullOrWhiteSpace(testDataPath))
-                    return Results.BadRequest(new { error = "testDataPath is required." });
+                    return TypedResults.BadRequest(new ErrorResponse("testDataPath is required."));
 
                 // A relative path is the project's, as for POST /train.
                 var resolvedTestPath = ProjectPaths.Resolve(testDataPath, projectRootPath.Value);
                 if (!ProjectPaths.IsWithinReal(resolvedTestPath, projectRootPath.Value))
-                    return Results.BadRequest(new { error = "Test data file must be within the project directory." });
+                    return TypedResults.BadRequest(new ErrorResponse("Test data file must be within the project directory."));
 
                 if (!TabularDataFile.Exists(resolvedTestPath))
-                    return Results.BadRequest(new { error = $"Test data file not found: {testDataPath}" });
+                    return TypedResults.BadRequest(new ErrorResponse($"Test data file not found: {testDataPath}"));
 
                 // What `mloop evaluate` does before it measures: the file read as a table (Parquet, Excel, JSON, TSV),
                 // then checked against the experiment's schema — a refused file is the caller's to fix, not a 500.
@@ -414,13 +375,11 @@ public static class ExperimentEndpoints
                 resolvedTestPath = await TabularDataFile.AsCsvAsync(resolvedTestPath);
                 var validation = await new SchemaValidator(fileSystem, projectDiscovery).ValidateAsync(resolvedTestPath, modelName, experimentId);
                 if (!validation.IsValid)
-                    return Results.BadRequest(new
-                    {
-                        error = "Schema validation failed. " + (validation.ErrorMessage
+                    return TypedResults.BadRequest(new SchemaRefusalResponse(
+                        "Schema validation failed. " + (validation.ErrorMessage
                             ?? "Missing columns: " + string.Join(", ", validation.MissingColumns)),
-                        missingColumns = validation.MissingColumns,
-                        suggestions = validation.Suggestions,
-                    });
+                        validation.MissingColumns,
+                        validation.Suggestions));
                 var warnings = new List<string>(validation.Warnings);
                 if (trainingDataWarning is not null)
                     warnings.Insert(0, trainingDataWarning);
@@ -440,7 +399,10 @@ public static class ExperimentEndpoints
                     baseline = await ModelComparison.ResolveBaselineAsync(request.Against.Trim(), modelName, experimentId, experiment,
                         experimentStore, registry, ct);
                     if (baseline.Error is { } error)
-                        return baseline.NotFound ? Results.NotFound(new { error }) : Results.BadRequest(new { error });
+                    {
+                        if (baseline.NotFound) return TypedResults.NotFound(new ErrorResponse(error));
+                        return TypedResults.BadRequest(new ErrorResponse(error));
+                    }
                 }
 
                 var (metrics, confusion) = await evaluationEngine.EvaluateAsync(
@@ -461,11 +423,10 @@ public static class ExperimentEndpoints
                 logger.LogInformation("Evaluation completed in {ElapsedMs}ms with {MetricCount} metrics",
                     stopwatch.ElapsedMilliseconds, metrics.Count);
 
-                return Results.Ok(new
-                {
+                return TypedResults.Ok(new EvaluateResponse(
                     modelName,
                     experimentId,
-                    task = taskType,
+                    taskType,
                     testDataPath,
                     weightColumn,
                     metrics,
@@ -473,20 +434,19 @@ public static class ExperimentEndpoints
                     comparison,
                     sliceBy,
                     slices,
-                    warnings = warnings.Count == 0 ? null : warnings,
-                });
+                    warnings.Count == 0 ? null : warnings));
             }
             catch (Exception ex) when (ex is MLoop.Core.Training.UnreadableLabelException or MLoop.Core.Data.ColumnLayoutException or MLoop.Core.Data.EmptyTableFileException or MLoop.Core.Data.UnterminatedQuoteException)
             {
                 // The file's own fault, as the schema check above: a label written as numbers for people, a file that does not split into
                 // columns. `mloop evaluate` says the same and exits 1; a 500 told the caller the server was broken.
                 logger.LogInformation("Evaluation refused the test file after {ElapsedMs}ms: {Reason}", stopwatch.ElapsedMilliseconds, ex.Message);
-                return Results.BadRequest(new { error = ex.Message });
+                return TypedResults.BadRequest(new ErrorResponse(ex.Message));
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Evaluation failed after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
-                return Results.Problem(
+                return TypedResults.Problem(
                     title: "Evaluation failed",
                     detail: ex.Message,
                     statusCode: StatusCodes.Status500InternalServerError
@@ -495,10 +455,6 @@ public static class ExperimentEndpoints
         })
         .WithName("EvaluateModel")
         .WithTags("Experiments")
-        .Produces<object>(StatusCodes.Status200OK)
-        .Produces<object>(StatusCodes.Status400BadRequest)
-        .Produces<object>(StatusCodes.Status404NotFound)
-        .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
         .RequireAuthorization("Admin");
     }
 }
