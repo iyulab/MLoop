@@ -228,6 +228,18 @@ public sealed class ImageDirectoryLoader : DataProviderBase
     }
 
     /// <summary>
+    /// Why <paramref name="directory"/> is not a class-folder layout — it has no subfolders — or <c>null</c> when it is. The one
+    /// statement of that rule: the loader refuses on it when it reads, and <c>mloop train</c> and <c>POST /train</c> ask it
+    /// before they queue the run.
+    /// </summary>
+    public static string? NoClassFoldersMessage(string directory)
+        => Directory.Exists(directory) && Directory.GetDirectories(directory).Length == 0
+            ? $"No class subfolders found in '{directory}'. " +
+              "Image classification requires one subfolder per class label " +
+              "(folder name = label), each containing image files."
+            : null;
+
+    /// <summary>
     /// Enumerates class subfolders and their images, validating the layout and
     /// emitting warnings for degenerate cases (single class, sparse classes,
     /// class imbalance).
@@ -238,11 +250,8 @@ public sealed class ImageDirectoryLoader : DataProviderBase
             .OrderBy(d => d, StringComparer.Ordinal)
             .ToList();
 
-        if (classDirs.Count == 0)
-            throw new InvalidOperationException(
-                $"No class subfolders found in '{directory}'. " +
-                "Image classification requires one subfolder per class label " +
-                "(folder name = label), each containing image files.");
+        if (NoClassFoldersMessage(directory) is { } noClasses)
+            throw new InvalidOperationException(noClasses);
 
         var samples = new List<ImageSample>();
         var classCounts = new Dictionary<string, int>(StringComparer.Ordinal);

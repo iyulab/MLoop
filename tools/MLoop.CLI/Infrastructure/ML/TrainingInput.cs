@@ -377,6 +377,22 @@ public static class TrainingInput
         return null;
     }
 
+    /// <summary>
+    /// Why the directory found for a directory-based task is not the layout the task reads — class subfolders for image
+    /// classification, a COCO annotations file for object detection — or <c>null</c> when it is. Asked before the run is queued, by
+    /// <c>mloop train</c> and <c>POST /train</c> alike: a wrong folder is a refusal at the door, not a job that fails seconds later
+    /// after taking its place in the queue. The loaders state the rules; this asks them.
+    /// </summary>
+    public static Refusal? DirectoryDatasetRefusal(string task, string directory)
+    {
+        var why = task.Equals("object-detection", StringComparison.OrdinalIgnoreCase)
+            ? MLoop.Core.Data.CocoDataLoader.AnnotationFileRefusal(directory)
+            : task.Equals("image-classification", StringComparison.OrdinalIgnoreCase)
+                ? MLoop.Core.Data.ImageDirectoryLoader.NoClassFoldersMessage(directory)
+                : null;
+        return why is null ? null : new Refusal(why, DirectoryDatasetNotFound(task).Hint);
+    }
+
     /// <summary>Why no dataset directory was found for a directory-based task, and where to put one.</summary>
     public static Refusal DirectoryDatasetNotFound(string task) =>
         task.Equals("object-detection", StringComparison.OrdinalIgnoreCase)

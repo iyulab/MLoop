@@ -63,6 +63,26 @@ public class TrainIntakeApiTests : IClassFixture<TestWebApplicationFactory>
             "the job records the label it trains with, and an image task's loader makes one");
     }
 
+    [Theory]
+    [InlineData("image-classification", "No class subfolders found")]
+    [InlineData("object-detection", "No COCO annotations file found")]
+    public async Task ADirectoryOfTheWrongShape_IsRefusedAtTheDoor_NotAfterTakingAPlaceInTheQueue(string task, string expected)
+    {
+        // Images and nothing else: no class subfolders, no annotations file.
+        var folder = Path.Combine(_factory.TestProjectRoot, "datasets", $"flat-{task}");
+        Directory.CreateDirectory(folder);
+        File.WriteAllBytes(Path.Combine(folder, "a.png"), [0x89, 0x50, 0x4E, 0x47]);
+        var before = await JobCountAsync();
+
+        var response = await _client.PostAsJsonAsync("/train", new { dataFile = folder, task, promote = false });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var error = await response.Content.ReadAsStringAsync();
+        error.Should().Contain(expected);
+        error.Should().NotContain(_factory.TestProjectRoot, "the answer names the project's paths");
+        (await JobCountAsync()).Should().Be(before);
+    }
+
     [Fact]
     public async Task AJobAnswers_InThePathsOfTheProject_NotOfTheHost()
     {

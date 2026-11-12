@@ -84,6 +84,8 @@ public static class TrainingEndpoints
                 }
                 if (!ProjectPaths.IsWithinReal(directory, projectRootPath.Value))
                     return Results.BadRequest(new { error = $"Data directory must be within the project directory: {request.DataFile}" });
+                if (TrainingInput.DirectoryDatasetRefusal(trainDefinition.Task, directory) is { } wrongLayout)
+                    return Results.BadRequest(new { error = $"{ProjectRelativeText.In(wrongLayout.Message, projectRootPath.Value)} {wrongLayout.Hint}" });
                 dataFile = directory;
             }
             else

@@ -229,6 +229,11 @@ public static partial class TrainCommand
                 ShowRefusal(missing);
                 return null;
             }
+            if (TrainingInput.DirectoryDatasetRefusal(effectiveDefinition.Task, resolvedDataFile) is { } wrongLayout)
+            {
+                ShowRefusal(wrongLayout);
+                return null;
+            }
         }
         // T4.3: Handle --data option for external data paths
         else if (dataPaths is { Length: > 0 })

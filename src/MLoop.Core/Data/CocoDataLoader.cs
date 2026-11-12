@@ -88,6 +88,24 @@ public sealed class CocoDataLoader : DataProviderBase
     }
 
     /// <summary>
+    /// Why <paramref name="path"/> holds no COCO annotations file to read — missing, none, or more than one to choose from — or
+    /// <c>null</c> when it does. The loader's own resolution, asked before a run is queued; what is inside the file is read when the
+    /// run starts.
+    /// </summary>
+    public static string? AnnotationFileRefusal(string path)
+    {
+        try
+        {
+            ResolveAnnotationFile(path);
+            return null;
+        }
+        catch (Exception ex) when (ex is DirectoryNotFoundException or FileNotFoundException or InvalidOperationException)
+        {
+            return ex.Message;
+        }
+    }
+
+    /// <summary>
     /// Resolves the annotations JSON file and the directory image paths are relative to.
     /// Accepts either a directory (searched by convention) or a direct path to the JSON file.
     /// </summary>
