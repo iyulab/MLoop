@@ -1706,16 +1706,45 @@ metrics` and `mloop trigger check` measure the model with, and what a retraining
 
 ```bash
 mloop feedback add --prediction-id 2869808376524814 --actual-value no --source reviewer-llm -w 4   # the actual value, where it came from, its weight
+mloop feedback add --from-file labels.csv                                                           # many predictions at once, from a table
 mloop feedback list [--name <model>] [--json]
 mloop feedback metrics [--name <model>] [--json]
 ```
 
 | Option (`add`) | Short | Description |
 |--------|-------|-------------|
-| `--prediction-id` | `-p` | The prediction's id (the ID column of `mloop logs`) |
-| `--actual-value` | `-v` | The actual value |
-| `--source` | `-s` | Where the value came from — free text (`human`, `reviewer-llm`, …) |
+| `--prediction-id` | | The prediction's id (the ID column of `mloop logs`) |
+| `--actual-value` | | The actual value |
+| `--source` | | Where the value came from — free text (`human`, `reviewer-llm`, …) |
 | `--weight` | `-w` | How much the row counts in training and evaluation built from feedback: for a row reviewed with probability *p*, 1/*p*. Default 1; finite and not negative |
+| `--from-file` | | A table (CSV, TSV, a workbook, …) with one row per prediction instead of `--prediction-id` / `--actual-value` (the two are not mixed) |
+| `--id-column` · `--actual-column` | | With `--from-file`: the columns holding the prediction id and the actual value. Default `prediction_id` and `actual` |
+| `--source-column` · `--weight-column` | | With `--from-file`: the columns holding each row's source and weight. Default `source` and `weight`, read when the file has them |
+
+#### Feedback from a file
+
+A reviewer rarely hands back one id at a time. Write a table with the prediction's id and the actual value in named
+columns — the ids are what `predict --log --json` and `POST /predict` return as `predictionId` (and the ID column of `mloop logs`):
+
+```csv
+prediction_id,actual,source,weight
+5b2bb66e9016461a,yes,human,
+f530d218bd8447c7,no,reviewer-llm,4
+```
+
+```bash
+mloop predict datasets/new.csv --log --json > answers.json       # the answers, each with its predictionId
+jq -r '.predictions[].predictionId' answers.json                    # the ids, in the order of the rows of datasets/new.csv
+mloop feedback add --from-file labels.csv                           # once the actual values are known
+```
+
+The columns are named, never guessed: a file whose columns are called something else says which it found, and
+`--id-column` / `--actual-column` name them. `--source` and `--weight` on the command line fill the rows whose cells are
+empty. A row that cannot be recorded — an id no log carries, an empty value, a weight that is not a number or is negative — is listed
+by its row number (counted from 1 under the header) and the others are recorded; the command then exits 1, so a script
+notices. `--json` lists every rejected row. A prediction named by more than one row stands as its last row (and the command says
+so). Keep the id column as text in a spreadsheet: an id made only of digits, or one like `1e5…`, is turned into a number by a
+spreadsheet and no longer matches.
 
 Recording feedback again for the same prediction corrects it — the latest entry stands. When any entry
 carries a weight, `feedback metrics` counts each prediction by its weight (`Accuracy (weighted)`, `weighted`

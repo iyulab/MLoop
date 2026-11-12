@@ -259,6 +259,7 @@ mloop drift [--rows N] [--slice-by <col>] [--json]  # Recent logged inputs vs th
 mloop trigger check                    # Evaluate the retraining triggers
 mloop logs [--limit N] [--json]        # View prediction logs (`logs prune` drops those past the retention period)
 mloop feedback add --prediction-id <id> --actual-value <value> [--source <source>]  # Record feedback on a prediction (`feedback list` and `feedback metrics` read it back)
+mloop feedback add --from-file <table>                                          # ... or many at once: a table with a prediction id and an actual value per row
 mloop sample create --from <file> [--rows N] [--strategy <strategy>]  # Sample a data file (CSV, TSV, JSON, Excel, Parquet), or the prediction logs with --name, into a dataset (`sample stats` summarizes)
 mloop preprocess <input-file>          # Run the scripts in .mloop/scripts/preprocess/
 mloop new hook <name> <type>           # Generate a hook script

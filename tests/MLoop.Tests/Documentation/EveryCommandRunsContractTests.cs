@@ -108,7 +108,7 @@ public sealed class EveryCommandRunsContractTests : IClassFixture<EveryCommandRu
         ["update"] = ("asks the network for a newer release", null),
         ["compare"] = ("needs two experiments of one project", typeof(CompareCommandTests)),
         ["rollback"] = ("needs two promotions of one project", typeof(PromoteCommandTests)),
-        ["feedback add"] = ("needs the id of a logged prediction", typeof(LogsCommandTests)),
+        ["feedback add"] = ("needs the ids of logged predictions, which only the fixture's own log knows — it runs from a CSV, a workbook and a semicolon file in the class that builds them", typeof(FeedbackFromFileTests)),
         ["analyze series"] = ("needs a time-series file", typeof(AnalyzeCommandTests)),
         ["prep run"] = ("runs what 'prep plan' declared on its own file", typeof(PrepRunCommandTests)),
         ["embed"] = ("needs an installed image encoder", typeof(EmbedCommandTests)),

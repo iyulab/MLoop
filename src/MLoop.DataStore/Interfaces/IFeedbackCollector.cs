@@ -26,6 +26,21 @@ public interface IFeedbackCollector
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Records feedback for many predictions in one pass over the prediction logs. A row that cannot be recorded
+    /// (an empty id or value, a weight that cannot weight a row, an id no log line carries) is reported and the others
+    /// are recorded; nothing is thrown for a row. Recording one by one reads the logs once per row — a file of
+    /// thousands of rows would read them thousands of times.
+    /// </summary>
+    /// <remarks>
+    /// Feedback is append-only and the latest entry for a prediction stands, so a prediction named by more than one
+    /// row is recorded in row order and the last of its rows stands (the entries carry increasing timestamps; they are
+    /// listed in <see cref="FeedbackBatchResult.Repeats"/>).
+    /// </remarks>
+    Task<FeedbackBatchResult> RecordFeedbackBatchAsync(
+        IReadOnlyList<FeedbackRow> rows,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Gets feedback entries for a model within a time range.
     /// </summary>
     Task<IReadOnlyList<FeedbackEntry>> GetFeedbackAsync(
@@ -45,6 +60,26 @@ public interface IFeedbackCollector
         CancellationToken cancellationToken = default,
         string? experimentId = null);
 }
+
+/// <summary>One row of a feedback batch: the prediction it answers and the ground truth, with where it sits in its source.</summary>
+/// <param name="Row">The row's number in the source, counted from 1 under the header — what a rejection points back at.</param>
+/// <param name="PredictionId">ID of the original prediction (surrounding white space is ignored).</param>
+/// <param name="ActualValue">The ground truth value (surrounding white space is ignored in text).</param>
+/// <param name="Source">Where the value came from; null for none.</param>
+/// <param name="Weight">How much the row counts (see <see cref="IFeedbackCollector.RecordFeedbackAsync"/>); null counts as 1.</param>
+public sealed record FeedbackRow(int Row, string PredictionId, object ActualValue, string? Source = null, double? Weight = null);
+
+/// <summary>A row of a feedback batch that was not recorded, and why.</summary>
+public sealed record FeedbackRejection(int Row, string PredictionId, string Reason);
+
+/// <summary>A prediction named by more than one row of a feedback batch; the last of <see cref="Rows"/> stands.</summary>
+public sealed record FeedbackRepeat(string PredictionId, IReadOnlyList<int> Rows);
+
+/// <summary>What a feedback batch did: how many rows were recorded, which were not, and which predictions several rows named.</summary>
+public sealed record FeedbackBatchResult(
+    int Recorded,
+    IReadOnlyList<FeedbackRejection> Rejected,
+    IReadOnlyList<FeedbackRepeat> Repeats);
 
 /// <summary>
 /// Represents a feedback entry linking prediction to ground truth.

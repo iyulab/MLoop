@@ -42,14 +42,7 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
         ArgumentNullException.ThrowIfNull(actualValue);
         FeedbackEntry.ValidateWeight(weight);
 
-        // A label read from a file or a line comes with what ends that line: "yes\r" from a CRLF file is the label "yes", and
-        // stored as it came it matched no prediction and was a class of its own in the retraining set.
-        actualValue = actualValue switch
-        {
-            string text => text.Trim(),
-            System.Text.Json.JsonElement { ValueKind: System.Text.Json.JsonValueKind.String } element => (element.GetString() ?? "").Trim(),
-            _ => actualValue,
-        };
+        actualValue = WithoutLineEnd(actualValue);
 
         // Find the original prediction to get modelName and predictedValue
         var prediction = await FindPredictionByIdAsync(predictionId, cancellationToken).ConfigureAwait(false);
@@ -70,6 +63,98 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
         };
 
         await WriteEntryAsync(entry, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <inheritdoc />
+    public async Task<FeedbackBatchResult> RecordFeedbackBatchAsync(
+        IReadOnlyList<FeedbackRow> rows,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+
+        var rejected = new List<FeedbackRejection>();
+        var usable = new List<(FeedbackRow Row, string Id, object Actual)>();
+        foreach (var row in rows)
+        {
+            var id = row.PredictionId?.Trim() ?? "";
+            if (id.Length == 0)
+            {
+                rejected.Add(new FeedbackRejection(row.Row, "", "the prediction id is empty"));
+                continue;
+            }
+
+            var actual = row.ActualValue is null ? "" : WithoutLineEnd(row.ActualValue);
+            if (actual is string { Length: 0 })
+            {
+                rejected.Add(new FeedbackRejection(row.Row, id, "the actual value is empty"));
+                continue;
+            }
+
+            try
+            {
+                FeedbackEntry.ValidateWeight(row.Weight);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                rejected.Add(new FeedbackRejection(row.Row, id,
+                    $"the weight {row.Weight?.ToString(System.Globalization.CultureInfo.InvariantCulture)} cannot weight a row (a finite number that is not negative)"));
+                continue;
+            }
+
+            usable.Add((row, id, actual));
+        }
+
+        // One pass over the logs for every id the batch names.
+        var predictions = await FindPredictionsAsync(usable.Select(u => u.Id).ToHashSet(StringComparer.Ordinal), cancellationToken)
+            .ConfigureAwait(false);
+
+        // Rows are stamped one tick apart in row order, so the latest-entry-stands rule makes the last row for a
+        // prediction the one that stands (the same instant for all of them would leave the order to the sort).
+        var start = DateTimeOffset.UtcNow;
+        var byFile = new Dictionary<string, StringBuilder>(StringComparer.Ordinal);
+        var recordedRows = new List<(string Id, int Row)>();
+        foreach (var (row, id, actual) in usable)
+        {
+            if (!predictions.TryGetValue(id, out var prediction))
+            {
+                rejected.Add(new FeedbackRejection(row.Row, id, "no logged prediction has this id"));
+                continue;
+            }
+
+            var entry = new SerializableFeedbackEntry
+            {
+                PredictionId = id,
+                ModelName = prediction.ModelName,
+                ExperimentId = prediction.ExperimentId,
+                PredictedValue = prediction.Output,
+                ActualValue = actual,
+                Source = row.Source,
+                Weight = row.Weight,
+                Timestamp = start.AddTicks(recordedRows.Count),
+            };
+            var path = GetFeedbackFilePath(entry.ModelName!, entry.Timestamp);
+            if (!byFile.TryGetValue(path, out var lines))
+                byFile[path] = lines = new StringBuilder();
+            lines.Append(JsonSerializer.Serialize(entry, _jsonOptions)).Append(Environment.NewLine);
+            recordedRows.Add((id, row.Row));
+        }
+
+        lock (_writeLock)
+        {
+            foreach (var (path, lines) in byFile)
+            {
+                EnsureDirectoryExists(Path.GetDirectoryName(path)!);
+                File.AppendAllText(path, lines.ToString());
+            }
+        }
+
+        var repeats = recordedRows
+            .GroupBy(r => r.Id, StringComparer.Ordinal)
+            .Where(g => g.Count() > 1)
+            .Select(g => new FeedbackRepeat(g.Key, [.. g.Select(r => r.Row)]))
+            .ToList();
+
+        return new FeedbackBatchResult(recordedRows.Count, [.. rejected.OrderBy(r => r.Row)], repeats);
     }
 
     /// <inheritdoc />
@@ -218,6 +303,95 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
             : [.. feedback.Select(e => e.ExperimentId is null && found.TryGetValue(e.PredictionId, out var answered) ? e with { ExperimentId = answered } : e)];
     }
 
+    // A label read from a file or a line comes with what ends that line: "yes\r" from a CRLF file is the label "yes", and
+    // stored as it came it matched no prediction and was a class of its own in the retraining set.
+    private static object WithoutLineEnd(object actualValue) => actualValue switch
+    {
+        string text => text.Trim(),
+        JsonElement { ValueKind: JsonValueKind.String } element => (element.GetString() ?? "").Trim(),
+        _ => actualValue,
+    };
+
+    private IOrderedEnumerable<(string ModelName, string File)> LogFilesNewestFirst() =>
+        Directory.GetDirectories(_logsDirectory)
+            .SelectMany(modelDir => Directory.GetFiles(modelDir, "*.jsonl").Select(file => (ModelName: Path.GetFileName(modelDir), File: file)))
+            .OrderByDescending(f => Path.GetFileName(f.File), StringComparer.Ordinal);
+
+    private static (string? ExperimentId, object Output) PredictionOf(JsonElement root)
+    {
+        var output = root.TryGetProperty("output", out var outputElement)
+            ? GetObjectFromJsonElement(outputElement)
+            : new object();
+
+        var experimentId = root.TryGetProperty("experimentId", out var experimentElement)
+                           && experimentElement.ValueKind == JsonValueKind.String
+                           && experimentElement.GetString() is { Length: > 0 } answered
+            ? answered
+            : null;
+
+        return (experimentId, output);
+    }
+
+    /// <summary>
+    /// The id a log line starts with, read without parsing the line: the store writes <c>{"id":"…"</c> first. Null when the
+    /// line has another shape (or an id that needs escaping), and the caller parses it.
+    /// </summary>
+    private static string? LeadingId(string line)
+    {
+        const string prefix = "{\"id\":\"";
+        if (!line.StartsWith(prefix, StringComparison.Ordinal))
+            return null;
+        var end = line.IndexOf('"', prefix.Length);
+        if (end < 0)
+            return null;
+        var id = line[prefix.Length..end];
+        return id.Contains('\\') ? null : id;
+    }
+
+    /// <summary>
+    /// The logged answers to <paramref name="wanted"/>, in one pass over the logs, newest day first as the one-id search is — the
+    /// first line that carries an id is the one that counts. Stops as soon as every id is found.
+    /// </summary>
+    private async Task<Dictionary<string, (string ModelName, string? ExperimentId, object Output)>> FindPredictionsAsync(
+        HashSet<string> wanted, CancellationToken cancellationToken)
+    {
+        var found = new Dictionary<string, (string ModelName, string? ExperimentId, object Output)>(StringComparer.Ordinal);
+        if (wanted.Count == 0 || !Directory.Exists(_logsDirectory))
+            return found;
+
+        foreach (var (modelName, file) in LogFilesNewestFirst())
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            await foreach (var line in JsonLines.ReadAsync(file, cancellationToken).ConfigureAwait(false))
+            {
+                if (LeadingId(line) is { } leading && (!wanted.Contains(leading) || found.ContainsKey(leading)))
+                    continue;
+
+                try
+                {
+                    using var doc = JsonDocument.Parse(line);
+                    var root = doc.RootElement;
+                    if (root.TryGetProperty("id", out var idElement) && idElement.ValueKind == JsonValueKind.String
+                        && idElement.GetString() is { } id && wanted.Contains(id) && !found.ContainsKey(id))
+                    {
+                        var (experimentId, output) = PredictionOf(root);
+                        found[id] = (modelName, experimentId, output);
+                    }
+                }
+                catch (JsonException)
+                {
+                    // Skip malformed entries
+                }
+            }
+
+            if (found.Count == wanted.Count)
+                break;
+        }
+
+        return found;
+    }
+
     private async Task<(string ModelName, string? ExperimentId, object Output)?> FindPredictionByIdAsync(
         string predictionId,
         CancellationToken cancellationToken)
@@ -229,9 +403,7 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
         // the search ends early, and one older than any fixed window is still found. A window of 7 days used to
         // stand here — feedback that arrived later was refused as "prediction not found" for a prediction that
         // was on disk. How far back logs reach is the project's retention period (mloop logs prune).
-        var logFiles = Directory.GetDirectories(_logsDirectory)
-            .SelectMany(modelDir => Directory.GetFiles(modelDir, "*.jsonl").Select(file => (ModelName: Path.GetFileName(modelDir), File: file)))
-            .OrderByDescending(f => Path.GetFileName(f.File), StringComparer.Ordinal);
+        var logFiles = LogFilesNewestFirst();
 
         // An id the serializer writes as it is (the store's own ids are hex) appears in its line verbatim, so a line
         // without it is passed over unparsed — a day of a busy model is tens of thousands of lines. An id with a
@@ -257,16 +429,7 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
                     if (root.TryGetProperty("id", out var idElement) &&
                         idElement.GetString() == predictionId)
                     {
-                        var output = root.TryGetProperty("output", out var outputElement)
-                            ? GetObjectFromJsonElement(outputElement)
-                            : new object();
-
-                        var experimentId = root.TryGetProperty("experimentId", out var experimentElement)
-                                           && experimentElement.ValueKind == JsonValueKind.String
-                                           && experimentElement.GetString() is { Length: > 0 } answered
-                            ? answered
-                            : null;
-
+                        var (experimentId, output) = PredictionOf(root);
                         return (modelName, experimentId, output);
                     }
                 }
