@@ -78,6 +78,8 @@ public class WireShapeContractTests : IClassFixture<TestWebApplicationFactory>
         new("trigger", "GET", "/trigger", "/trigger?name=shape"),
         new("drift", "GET", "/drift", "/drift?name=shape"),
         new("drift-window", "GET", "/drift", "/drift?name=shape&rows=1"),
+        new("drift-measured", "GET", "/drift", "/drift?name=drifted"),
+        new("drift-sliced", "GET", "/drift", "/drift?name=drifted&sliceBy=site"),
         new("logs", "GET", "/logs", "/logs?name=shape"),
         new("logs-bad-date", "GET", "/logs", "/logs?name=shape&from=not-a-date"),
         new("feedback-add", "POST", "/feedback", "/feedback", new { predictionId = "{prediction}", actualValue = 3.5, source = "contract" }),
@@ -287,5 +289,32 @@ public class WireShapeContractTests : IClassFixture<TestWebApplicationFactory>
 
         await _factory.Services.GetRequiredService<IPredictionLogger>().LogPredictionAsync(
             "shape", "exp-001", new Dictionary<string, object> { ["x"] = 1.0, ["kind"] = "a" }, true, 0.9);
+
+        await SeedDriftAsync();
+    }
+
+    /// <summary>
+    /// A production model with a training profile and a logged window that moved away from it, in two slices, so the answers of
+    /// <c>GET /drift</c> that carry values (the signal, its columns and the per-slice signals) have their shape here. The window
+    /// is the smallest that is measured (<c>DriftEvaluator.MinimumRows</c> per slice value).
+    /// </summary>
+    private async Task SeedDriftAsync()
+    {
+        const string model = "drifted";
+        var production = Path.Combine(_factory.TestProjectRoot, MLoop.Core.Storage.ExperimentLayout.ModelsDirectory, model, MLoop.Core.Storage.ExperimentLayout.ProductionDirectory);
+        Directory.CreateDirectory(production);
+        var camel = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+        await File.WriteAllTextAsync(Path.Combine(production, MLoop.Core.Storage.ExperimentLayout.MetadataFileName),
+            JsonSerializer.Serialize(new { experimentId = "exp-001", task = "regression" }, camel));
+        var profile = MLoop.Core.Monitoring.DriftProfile.Build(
+            Enumerable.Range(0, 1000).Select(i => new[] { (i % 100).ToString(System.Globalization.CultureInfo.InvariantCulture) }).ToArray(),
+            [("x", true)]);
+        await File.WriteAllTextAsync(Path.Combine(production, MLoop.Core.Storage.ExperimentLayout.DriftProfileFileName),
+            JsonSerializer.Serialize(profile, camel));
+
+        var logger = _factory.Services.GetRequiredService<IPredictionLogger>();
+        for (var i = 0; i < 2 * MLoop.Ops.Services.DriftEvaluator.MinimumRows; i++)
+            await logger.LogPredictionAsync(model, "exp-001",
+                new Dictionary<string, object> { ["x"] = 60 + i % 40, ["site"] = i % 2 == 0 ? "a" : "b" }, "1");
     }
 }
