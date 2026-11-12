@@ -348,6 +348,7 @@ try
     app.MapExperimentEndpoints();
     app.MapMonitoringEndpoints();
     app.MapTrainingEndpoints();
+    app.MapDatasetEndpoints();
 
     Log.Information("MLoop.API started successfully");
     await app.RunAsync();

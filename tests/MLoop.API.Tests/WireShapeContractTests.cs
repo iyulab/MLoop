@@ -49,6 +49,7 @@ public class WireShapeContractTests : IClassFixture<TestWebApplicationFactory>
         ["POST /evaluate"] = ("needs a trained model and a labeled file", typeof(EvaluateApiTests)),
         ["POST /train"] = ("starts a training job", typeof(TrainDefinitionApiTests)),
         ["POST /embed"] = ("needs an installed image encoder", typeof(EmbedApiTests)),
+        ["POST /datasets"] = ("takes the file as its body (a table or a zip)", typeof(DatasetUploadApiTests)),
         ["HEAD /health"] = ("the probe's HEAD form: the same endpoint without a body", typeof(ApiIntegrationTests)),
     };
 
@@ -87,6 +88,8 @@ public class WireShapeContractTests : IClassFixture<TestWebApplicationFactory>
         new("jobs", "GET", "/jobs", "/jobs"),
         new("job", "GET", "/jobs/{id}", "/jobs/{job}"),
         new("job-missing", "GET", "/jobs/{id}", "/jobs/no-such-job"),
+        new("datasets", "GET", "/datasets", "/datasets"),
+        new("dataset-delete-missing", "DELETE", "/datasets/{id}", "/datasets/ds-20260101-000000-00000000"),
         new("rollback", "POST", "/rollback", "/rollback", new { name = "shape" }),
         new("rollback-none", "POST", "/rollback", "/rollback", new { name = "nomodel" }),
     ];

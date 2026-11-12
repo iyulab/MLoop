@@ -355,6 +355,13 @@ $.weight: string
 ## job-missing | GET /jobs/{id} -> 404
 $: object
 $.error: string
+## datasets | GET /datasets -> 200
+$: object
+$.count: number
+$.datasets: array
+## dataset-delete-missing | DELETE /datasets/{id} -> 404
+$: object
+$.error: string
 ## rollback | POST /rollback -> 200
 $: object
 $.backupPath: string
