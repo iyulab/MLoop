@@ -613,7 +613,8 @@ public static class PromoteCommand
             {
                 modelName = name,
                 promotions = PromotionHistoryView.Rows(history),
-            }, new JsonSerializerOptions { WriteIndented = true }));
+                // The rows are a named record: its properties are written as the options name them (camelCase, as the other answers of this command).
+            }, new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase }));
             return 0;
         }
 

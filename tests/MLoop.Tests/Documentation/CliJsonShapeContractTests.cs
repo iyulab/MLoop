@@ -92,6 +92,7 @@ public sealed class CliJsonShapeContractTests : IClassFixture<EveryCommandRunsCo
         new("promote-better", "promote", "promote", "exp-004", "--json"),
         new("promote-missing", "promote", "promote", "exp-099", "--json"),
         new("rollback", "rollback", "rollback", "--json"),
+        new("promote-history", "promote", "promote", "--history", "--json"),
         // the commands that change policy come last, so the ones above ran on the project as trained
         new("prep-plan", "prep plan", "prep", "plan", "--set", "fill-missing:mean", "--columns", "x", "--json"),
         new("features-select", "features select", "features", "select", "--drop", "z", "--json"),

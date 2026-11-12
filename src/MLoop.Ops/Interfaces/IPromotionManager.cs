@@ -135,21 +135,32 @@ public static class PromotionVia
 public static class PromotionHistoryView
 {
     /// <summary>The rows of <paramref name="history"/>, oldest first as given.</summary>
-    public static IReadOnlyList<object> Rows(IEnumerable<PromotionRecord> history)
-        => [.. history.Select(r => (object)new
-        {
-            experimentId = r.ExperimentId,
-            previousExperimentId = r.PreviousExperimentId,
-            action = r.Action,
-            timestamp = r.Timestamp.ToUniversalTime(),
-            gate = r.Gate,
-            gateDetail = r.GateDetail,
-            metric = r.Metric,
-            metricValue = r.MetricValue,
-            by = r.By,
-            via = r.Via,
-        })];
+    public static IReadOnlyList<PromotionRow> Rows(IEnumerable<PromotionRecord> history)
+        => [.. history.Select(r => new PromotionRow(
+            r.ExperimentId,
+            r.PreviousExperimentId,
+            r.Action,
+            r.Timestamp.ToUniversalTime(),
+            r.Gate,
+            r.GateDetail,
+            r.Metric,
+            r.MetricValue,
+            r.By,
+            r.Via))];
 }
+
+/// <summary>One change of the production slot as a client reads it (see <see cref="PromotionHistoryView"/>); a null field is not written.</summary>
+public sealed record PromotionRow(
+    string ExperimentId,
+    string? PreviousExperimentId,
+    string Action,
+    DateTimeOffset Timestamp,
+    string? Gate,
+    string? GateDetail,
+    string? Metric,
+    double? MetricValue,
+    string? By,
+    string? Via);
 
 /// <summary>The values of <see cref="PromotionRecord.Gate"/>.</summary>
 public static class PromotionGate

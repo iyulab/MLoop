@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.ML;
@@ -38,7 +39,7 @@ public static class ModelEndpoints
     public static void MapModelEndpoints(this WebApplication app)
     {
         // Model info endpoint (secured)
-        app.MapGet("/info", async (
+        app.MapGet("/info", async Task<Results<Ok<ModelInfoResponse>, NotFound<ErrorResponse>, ProblemHttpResult>> (
             [FromQuery] string? name,
             IModelRegistry registry,
             ILogger<Program> logger,
@@ -55,14 +56,14 @@ public static class ModelEndpoints
                 if (productionModel == null)
                 {
                     logger.LogWarning("No production model found for '{ModelName}'", modelName);
-                    return Results.NotFound(new { error = $"No production model found for '{modelName}'. Train and promote a model first." });
+                    return TypedResults.NotFound(new ErrorResponse($"No production model found for '{modelName}'. Train and promote a model first."));
                 }
 
                 var modelPath = registry.GetProductionPath(modelName);
                 var modelFile = Path.Combine(modelPath, ExperimentLayout.ModelFileName);
                 var metadataFile = Path.Combine(modelPath, ExperimentLayout.MetadataFileName);
 
-                object? metadata = null;
+                Dictionary<string, object>? metadata = null;
                 if (File.Exists(metadataFile))
                 {
                     var json = await File.ReadAllTextAsync(metadataFile, ct);
@@ -72,22 +73,20 @@ public static class ModelEndpoints
                 logger.LogInformation("Model information retrieved for '{ModelName}' experiment {ExperimentId} in {ElapsedMs}ms",
                     modelName, productionModel.ExperimentId, stopwatch.ElapsedMilliseconds);
 
-                return Results.Ok(new
-                {
-                    modelName = modelName,
-                    experimentId = productionModel.ExperimentId,
-                    promotedAt = productionModel.PromotedAt,
-                    metrics = productionModel.Metrics,
-                    task = productionModel.Task,
-                    bestTrainer = productionModel.BestTrainer,
-                    metadata
-                });
+                return TypedResults.Ok(new ModelInfoResponse(
+                    modelName,
+                    productionModel.ExperimentId,
+                    productionModel.PromotedAt,
+                    productionModel.Metrics,
+                    productionModel.Task,
+                    productionModel.BestTrainer,
+                    metadata));
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Failed to retrieve model information for '{ModelName}' after {ElapsedMs}ms",
                     modelName, stopwatch.ElapsedMilliseconds);
-                return Results.Problem(
+                return TypedResults.Problem(
                     title: "Failed to retrieve model information",
                     detail: ex.Message,
                     statusCode: StatusCodes.Status500InternalServerError
@@ -96,20 +95,16 @@ public static class ModelEndpoints
         })
         .WithName("GetModelInfo")
         .WithTags("Model")
-        .Produces<object>(StatusCodes.Status200OK)
-        .Produces<object>(StatusCodes.Status404NotFound)
-        .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
         .RequireAuthorization();
 
         // Model cache stats (admin)
         app.MapGet("/cache/stats", (IModelCache modelCache) =>
         {
             var stats = modelCache.GetStats();
-            return Results.Ok(stats);
+            return TypedResults.Ok(stats);
         })
         .WithName("GetModelCacheStats")
         .WithTags("Cache")
-        .Produces<ModelCacheStats>(StatusCodes.Status200OK)
         .RequireAuthorization("Admin");
 
         // Clear all cached models (admin)
@@ -125,7 +120,7 @@ public static class ModelEndpoints
         .RequireAuthorization("Admin");
 
         // List all models endpoint (secured)
-        app.MapGet("/models", async (
+        app.MapGet("/models", async Task<Results<Ok<ModelListResponse>, ProblemHttpResult>> (
             [FromQuery] string? name,
             IModelRegistry registry,
             ILogger<Program> logger,
@@ -142,25 +137,15 @@ public static class ModelEndpoints
 
                 logger.LogInformation("Retrieved {Count} model(s) in {ElapsedMs}ms", modelList.Count, stopwatch.ElapsedMilliseconds);
 
-                return Results.Ok(new
-                {
-                    count = modelList.Count,
-                    filter = modelName,
-                    models = modelList.Select(m => new
-                    {
-                        modelName = m.ModelName,
-                        experimentId = m.ExperimentId,
-                        promotedAt = m.PromotedAt,
-                        task = m.Task,
-                        bestTrainer = m.BestTrainer,
-                        metrics = m.Metrics
-                    })
-                });
+                return TypedResults.Ok(new ModelListResponse(
+                    modelList.Count,
+                    modelName,
+                    [.. modelList.Select(m => new ModelListItem(m.ModelName, m.ExperimentId, m.PromotedAt, m.Task, m.BestTrainer, m.Metrics))]));
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Failed to list models after {ElapsedMs}ms", stopwatch.ElapsedMilliseconds);
-                return Results.Problem(
+                return TypedResults.Problem(
                     title: "Failed to list models",
                     detail: ex.Message,
                     statusCode: StatusCodes.Status500InternalServerError
@@ -169,12 +154,10 @@ public static class ModelEndpoints
         })
         .WithName("ListModels")
         .WithTags("Model")
-        .Produces<object>(StatusCodes.Status200OK)
-        .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
         .RequireAuthorization();
 
         // Promote experiment to production (secured)
-        app.MapPost("/promote", async (
+        app.MapPost("/promote", async Task<Results<Ok<PromoteResponse>, Ok<PromoteUnchangedResponse>, BadRequest<ErrorResponse>, NotFound<ErrorResponse>, UnprocessableEntity<ErrorResponse>, ProblemHttpResult>> (
             [FromBody] PromoteRequest request,
             HttpContext http,
             IModelRegistry registry,
@@ -187,7 +170,7 @@ public static class ModelEndpoints
             var origin = CallerOrigin(http);
             var modelName = MLoop.Core.Storage.ModelName.Resolve(request.Name);
             if (string.IsNullOrWhiteSpace(request.ExperimentId))
-                return Results.BadRequest(new { error = "experimentId is required: the experiment to promote (see GET /experiments)." });
+                return TypedResults.BadRequest(new ErrorResponse("experimentId is required: the experiment to promote (see GET /experiments)."));
             var experimentId = request.ExperimentId.Trim();
 
             try
@@ -198,7 +181,7 @@ public static class ModelEndpoints
                 // Verify experiment exists
                 if (!experimentStore.ExperimentExists(modelName, experimentId))
                 {
-                    return Results.NotFound(new { error = $"Experiment '{experimentId}' not found for model '{modelName}'." });
+                    return TypedResults.NotFound(new ErrorResponse($"Experiment '{experimentId}' not found for model '{modelName}'."));
                 }
 
                 // Load and validate experiment
@@ -206,10 +189,8 @@ public static class ModelEndpoints
 
                 if (!experiment.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase))
                 {
-                    return Results.BadRequest(new
-                    {
-                        error = $"Cannot promote experiment with status '{experiment.Status}'. Only completed experiments can be promoted."
-                    });
+                    return TypedResults.BadRequest(new ErrorResponse(
+                        $"Cannot promote experiment with status '{experiment.Status}'. Only completed experiments can be promoted."));
                 }
 
                 // Promoting what is already in production changes nothing — as `mloop promote` says: no backup of the model onto itself,
@@ -218,26 +199,22 @@ public static class ModelEndpoints
                     && (await registry.GetProductionAsync(modelName, ct))?.ExperimentId is { } inProduction
                     && inProduction.Equals(experimentId, StringComparison.OrdinalIgnoreCase))
                 {
-                    return Results.Ok(new
-                    {
+                    return TypedResults.Ok(new PromoteUnchangedResponse(
                         modelName,
                         experimentId,
-                        previousExperimentId = inProduction,
-                        unchanged = true,
-                        task = experiment.Task,
-                        metrics = experiment.Metrics,
-                        bestTrainer = experiment.Result?.BestTrainer,
-                    });
+                        inProduction,
+                        Unchanged: true,
+                        experiment.Task,
+                        experiment.Metrics,
+                        experiment.Result?.BestTrainer));
                 }
 
                 // The same gate `mloop promote` and training apply; `force` is the deliberate override.
                 var refusal = MLoop.CLI.Infrastructure.FileSystem.ModelRegistry.QualityGateRefusal(experiment, experiment.Config?.Metric);
                 if (refusal != null && !request.Force)
                 {
-                    return Results.Json(new
-                    {
-                        error = $"'{experimentId}' does not pass the quality gate: {refusal}. Send \"force\": true to promote it anyway."
-                    }, statusCode: StatusCodes.Status422UnprocessableEntity);
+                    return TypedResults.UnprocessableEntity(new ErrorResponse(
+                        $"'{experimentId}' does not pass the quality gate: {refusal}. Send \"force\": true to promote it anyway."));
                 }
                 if (refusal != null)
                 {
@@ -248,10 +225,8 @@ public static class ModelEndpoints
                 var policyRefusal = await registry.GatePolicyRefusalAsync(modelName, experimentId, ct);
                 if (policyRefusal != null && !request.Force)
                 {
-                    return Results.Json(new
-                    {
-                        error = $"'{experimentId}' does not pass the gate policy: {policyRefusal}. Send \"force\": true to promote it anyway."
-                    }, statusCode: StatusCodes.Status422UnprocessableEntity);
+                    return TypedResults.UnprocessableEntity(new ErrorResponse(
+                        $"'{experimentId}' does not pass the gate policy: {policyRefusal}. Send \"force\": true to promote it anyway."));
                 }
                 if (policyRefusal != null)
                 {
@@ -286,24 +261,22 @@ public static class ModelEndpoints
                 logger.LogInformation("Promoted experiment '{ExperimentId}' to production for model '{ModelName}' in {ElapsedMs}ms",
                     experimentId, modelName, stopwatch.ElapsedMilliseconds);
 
-                return Results.Ok(new
-                {
+                return TypedResults.Ok(new PromoteResponse(
                     modelName,
                     experimentId,
-                    previousExperimentId = previousExpId,
-                    promotedAt = DateTime.UtcNow,
-                    task = experiment.Task,
-                    metrics = experiment.Metrics,
-                    bestTrainer = experiment.Result?.BestTrainer,
+                    previousExpId,
+                    DateTime.UtcNow,
+                    experiment.Task,
+                    experiment.Metrics,
+                    experiment.Result?.BestTrainer,
                     qualityWarning,
-                    notBetterThanProduction
-                });
+                    notBetterThanProduction));
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Promotion failed for '{ModelName}/{ExperimentId}' after {ElapsedMs}ms",
                     modelName, experimentId, stopwatch.ElapsedMilliseconds);
-                return Results.Problem(
+                return TypedResults.Problem(
                     title: "Promotion failed",
                     detail: ex.Message,
                     statusCode: StatusCodes.Status500InternalServerError
@@ -312,33 +285,24 @@ public static class ModelEndpoints
         })
         .WithName("PromoteExperiment")
         .WithTags("Model")
-        .Produces<object>(StatusCodes.Status200OK)
-        .Produces<object>(StatusCodes.Status400BadRequest)
-        .Produces<object>(StatusCodes.Status404NotFound)
-        .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
         .RequireAuthorization("Admin");
 
         // Rollback (admin): production back to the experiment it held before — same target rule as `mloop rollback`
         // Promotion history: every change of the production slot, oldest first, with the gate's outcome.
-        app.MapGet("/promotions", async (
+        app.MapGet("/promotions", async Task<Ok<PromotionHistoryResponse>> (
             [FromQuery] string? name,
             IPromotionManager promotionManager,
             CancellationToken ct) =>
         {
             var modelName = MLoop.Core.Storage.ModelName.Resolve(name);
             var history = await promotionManager.GetHistoryAsync(modelName, ct);
-            return Results.Ok(new
-            {
-                modelName,
-                promotions = PromotionHistoryView.Rows(history),
-            });
+            return TypedResults.Ok(new PromotionHistoryResponse(modelName, PromotionHistoryView.Rows(history)));
         })
         .WithName("PromotionHistory")
         .WithTags("Model")
-        .Produces<object>(StatusCodes.Status200OK)
         .RequireAuthorization();
 
-        app.MapPost("/rollback", async (
+        app.MapPost("/rollback", async Task<Results<Ok<RollbackResponse>, Conflict<ErrorResponse>>> (
             // Both fields are optional (the CLI's `mloop rollback` takes neither), so a call with no body at all means «the previous one».
             [FromBody(EmptyBodyBehavior = Microsoft.AspNetCore.Mvc.ModelBinding.EmptyBodyBehavior.Allow)] RollbackRequest? request,
             HttpContext http,
@@ -353,23 +317,20 @@ public static class ModelEndpoints
             var history = await promotionManager.GetHistoryAsync(modelName, ct);
             var (target, error) = MLoop.Ops.Interfaces.RollbackTarget.Resolve(history, current, request?.To?.Trim());
             if (target is null)
-                return Results.Json(new { error }, statusCode: StatusCodes.Status409Conflict);
+                return TypedResults.Conflict(new ErrorResponse(error));
 
             if (!experimentStore.ExperimentExists(modelName, target))
-                return Results.Json(new { error = $"'{target}' is no longer in staging, so it cannot be restored from there." },
-                    statusCode: StatusCodes.Status409Conflict);
+                return TypedResults.Conflict(new ErrorResponse($"'{target}' is no longer in staging, so it cannot be restored from there."));
 
             var backupPath = await promotionManager.BackupProductionAsync(modelName, ct);
             var origin = CallerOrigin(http);
             await registry.PromoteAsync(modelName, target, PromotionActions.Rollback, origin: origin, cancellationToken: ct);
             logger.LogInformation("Rolled back '{ModelName}' from {Previous} to {Target} (by {By})", modelName, current, target, origin.By ?? "unnamed");
 
-            return Results.Ok(new { modelName, experimentId = target, previousExperimentId = current, backupPath });
+            return TypedResults.Ok(new RollbackResponse(modelName, target, current, backupPath));
         })
         .WithName("RollbackProduction")
         .WithTags("Model")
-        .Produces<object>(StatusCodes.Status200OK)
-        .Produces<object>(StatusCodes.Status409Conflict)
         .RequireAuthorization("Admin");
     }
 }

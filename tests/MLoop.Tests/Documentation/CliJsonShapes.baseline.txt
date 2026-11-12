@@ -631,6 +631,21 @@ $.experimentId: string
 $.model: string
 $.previousProduction: string
 $.status: string
+## promote-history | promote -> exit 0
+$: object
+$.modelName: string
+$.promotions: array
+$.promotions[]: object
+$.promotions[].action: string
+$.promotions[].by: null
+$.promotions[].experimentId: string
+$.promotions[].gate: string
+$.promotions[].gateDetail: null
+$.promotions[].metric: string
+$.promotions[].metricValue: number
+$.promotions[].previousExperimentId: null|string
+$.promotions[].timestamp: string
+$.promotions[].via: string
 ## prep-plan | prep plan -> exit 0
 $: object
 $.applied: object
