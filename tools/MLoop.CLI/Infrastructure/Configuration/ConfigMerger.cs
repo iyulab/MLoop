@@ -25,6 +25,12 @@ public class ConfigMerger
         ModelDefinition? baseDefinition = null;
         config.Models.TryGetValue(modelName, out baseDefinition);
 
+        // A blank task or label is no choice at all — the request body's `"labelColumn": ""` (a client writing «none» as an
+        // empty string) read as a column named «» and failed the run with `Could not find input column ''`. The same
+        // reading as a blank `dataFile`: absent, so mloop.yaml (then the task) decides.
+        cliTask = string.IsNullOrWhiteSpace(cliTask) ? null : cliTask;
+        cliLabel = string.IsNullOrWhiteSpace(cliLabel) ? null : cliLabel;
+
         // Determine final values with CLI override priority
         var task = cliTask
             ?? baseDefinition?.Task

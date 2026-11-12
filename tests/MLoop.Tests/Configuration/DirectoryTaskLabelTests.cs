@@ -38,6 +38,31 @@ public class DirectoryTaskLabelTests
         Assert.True(TrainingRunner.LabelColumnMustBeNamed(task));
     }
 
+    // A client that writes «none» as an empty string (`"labelColumn": ""`) named a column «» and the run failed with
+    // `Could not find input column ''`. A blank label or task is no choice: mloop.yaml, then the task, decides.
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void ABlankLabelOrTask_IsNoChoice_SoTheDefinitionAndTheTaskDecide(string blank)
+    {
+        var yaml = new MLoopConfig { Models = new Dictionary<string, ModelDefinition> { ["default"] = new() { Task = "image-classification", Label = null! } } };
+
+        var definition = new ConfigMerger().GetEffectiveModelDefinition(yaml, "default", cliLabel: blank, cliTask: blank);
+
+        Assert.Equal("image-classification", definition.Task);
+        Assert.Equal(CocoDataLoader.DefaultLabelColumn, definition.Label);
+    }
+
+    [Fact]
+    public void ABlankLabel_ForATableTask_IsStillRefusedAsMissing()
+    {
+        var yaml = new MLoopConfig { Models = new Dictionary<string, ModelDefinition> { ["default"] = new() { Task = "regression", Label = null! } } };
+
+        var ex = Assert.Throws<InvalidOperationException>(() => new ConfigMerger().GetEffectiveModelDefinition(yaml, "default", cliLabel: ""));
+
+        Assert.Contains("Label not specified", ex.Message);
+    }
+
     [Fact]
     public void ALabelTheUserNamedForADirectoryTask_IsKept()
     {
