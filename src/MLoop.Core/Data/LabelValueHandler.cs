@@ -86,6 +86,10 @@ public class LabelValueHandler
             };
         }
 
+        // The values are counted as the class distribution counts them (a label written as numbers is read as numbers: 3 and 3.00
+        // are one class), so the check and the distribution printed under it name the same number.
+        var classes = MLoop.Core.Diagnostics.ClassDistributionAnalyzer.FoldNumericSpellings(valueCounts);
+
         return new LabelAnalysisResult
         {
             TotalRows = totalRows,
@@ -94,8 +98,8 @@ public class LabelValueHandler
             HasMissingValues = missingCount > 0,
             MissingPercentage = missingCount * 100.0 / totalRows,
             LabelColumn = labelColumn,
-            UniqueValueCount = valueCounts.Count,
-            ValueDistribution = valueCounts
+            UniqueValueCount = classes.Count,
+            ValueDistribution = classes
         };
     }
 

@@ -49,6 +49,38 @@ public class LabelValueHandlerTests : IDisposable
         Assert.Equal(2, result.ValueDistribution["B"]);
     }
 
+    /// <summary>
+    /// The pre-training check said "2 unique values" for a label written as <c>3</c> and <c>3.00</c> and, one screen line below,
+    /// the class distribution (which folds numeric spellings) said one class and refused — the same file, two counts.
+    /// </summary>
+    [Fact]
+    public async Task AnalyzeLabelColumnAsync_CountsANumericLabelByValue_AsTheClassDistributionDoes()
+    {
+        var csvPath = Path.Combine(_tempDirectory, "spellings.csv");
+        await File.WriteAllTextAsync(csvPath, "Feature,Label\n1,3\n2,3.00\n3,3\n4,3.0\n5,4");
+
+        var result = await _labelHandler.AnalyzeLabelColumnAsync(csvPath, "Label");
+
+        Assert.Equal(2, result.UniqueValueCount);   // 3 (written three ways) and 4
+        Assert.Equal(4, result.ValueDistribution["3"]);   // the spelling most often written names the class
+        Assert.Equal(1, result.ValueDistribution["4"]);
+
+        var classes = await new MLoop.Core.Diagnostics.ClassDistributionAnalyzer(_csvHelper).AnalyzeAsync(csvPath, "Label");
+        Assert.Equal(classes.ClassCount, result.UniqueValueCount);   // one count, however it is asked
+    }
+
+    [Fact]
+    public async Task AnalyzeLabelColumnAsync_KeepsTextSpellingsApart()
+    {
+        // A label with a value that is not a number stays text: 01 and 1 are two classes there.
+        var csvPath = Path.Combine(_tempDirectory, "text.csv");
+        await File.WriteAllTextAsync(csvPath, "Feature,Label\n1,01\n2,1\n3,x");
+
+        var result = await _labelHandler.AnalyzeLabelColumnAsync(csvPath, "Label");
+
+        Assert.Equal(3, result.UniqueValueCount);
+    }
+
     [Fact]
     public async Task AnalyzeLabelColumnAsync_WithMissingValues_ReturnsCorrectStats()
     {
