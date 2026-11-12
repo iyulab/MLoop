@@ -110,7 +110,8 @@ public static class MissingNumbers
             throw new SeriesGapException(
                 $"The series '{column}' has {gaps} missing value{(gaps == 1 ? "" : "s")}{where}. A time-series model reads every point in order, " +
                 "and dropping a row would close up the time around it. Fill the gaps first — for example " +
-                $"`mloop prep plan --set fill-missing:forward --columns {column}` — or fill them in the file.");
+                $"`mloop prep plan --set fill-missing:forward --columns {column}` — or fill them in the file. " +
+                "That step fills empty cells: a cell written NA, N/A or ? is not empty to it, so clear those first.");
         }
     }
 }

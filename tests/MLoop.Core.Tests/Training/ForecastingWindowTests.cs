@@ -53,6 +53,25 @@ public class ForecastingWindowTests
         => Assert.Equal(expected, ForecastingWindow.MinimumRows(window, horizon));
 
     [Theory]
+    // a horizon longer than the series: no window can help, only a shorter horizon
+    [InlineData(300, 75, 500, "a horizon of at most 149")]
+    // too many rows for the horizon but a window that is too long
+    [InlineData(40, 20, 10, "a window_size of at most 14")]
+    // both could change
+    [InlineData(100, 40, 30, "a horizon of at most 19 or a window_size of at most 34")]
+    // eight points with the default horizon: the horizon is what to cut
+    [InlineData(8, 2, 10, "a horizon of at most 3")]
+    // nothing but both smaller helps
+    [InlineData(20, 15, 18, "both smaller (even the smallest window, 2, needs a horizon of at most 15)")]
+    // not even the smallest window and a horizon of one: only more points help
+    [InlineData(4, 2, 10, null)]
+    public void WhatToChangeWhenTheSeriesIsTooShortNamesOnlyWhatCanHelp(int rows, int window, int horizon, string? expected)
+    {
+        // "or a smaller window_size" was all the refusal said, to a series of 300 points with a horizon of 500.
+        Assert.Equal(expected, ForecastingWindow.Remedy(rows, window, horizon));
+    }
+
+    [Theory]
     [InlineData(1)]
     [InlineData(4)]
     [InlineData(1_000)]

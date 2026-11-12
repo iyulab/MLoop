@@ -37,6 +37,8 @@ public class MissingNumbersTests
 
         Assert.Contains("'Value' has 1 missing value (data row 2).", refusal.Message);
         Assert.Contains("fill-missing:forward --columns Value", refusal.Message);
+        // fill-missing fills empty cells only: a cell written NA is a gap it leaves, and the advice must not send the reader round in a circle
+        Assert.Contains("NA, N/A or ?", refusal.Message);
     }
 
     [Fact]

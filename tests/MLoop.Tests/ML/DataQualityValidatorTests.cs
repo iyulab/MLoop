@@ -76,6 +76,50 @@ public class DataQualityValidatorTests : IDisposable
 
     #endregion
 
+    #region Missing numbers in a series
+
+    private string Series(string cell) => CreateCsv("value\n" + string.Join("\n", Enumerable.Range(0, 60).Select(i => i == 30 ? cell : (10 + i * 0.1).ToString(System.Globalization.CultureInfo.InvariantCulture))) + "\n");
+
+    [Fact]
+    public void ValidateTrainingData_ANaInASeries_IsAGapTrainingRefuses_NotARowLeftOut()
+    {
+        const string task = "forecasting";   // time-series-anomaly has no label check at all (it is unsupervised to this validator)
+        // "those rows have no label and are left out of training" is what a table does; a series keeps its rows (dropping one closes up
+        // the time) and refuses the gap - the warning said the opposite of what happens next.
+        var result = _validator.ValidateTrainingData(Series("NA"), "value", task);
+
+        var matching = result.Warnings.Where(w => w.Contains("missing numbers", StringComparison.Ordinal)).ToList();
+        Assert.True(matching.Count == 1, "warnings: " + string.Join(" | ", result.Warnings) + " / error: " + result.ErrorMessage);
+        var warning = matching[0];
+        Assert.Contains("the series 'value'", warning, StringComparison.Ordinal);
+        Assert.Contains("gaps", warning, StringComparison.Ordinal);
+        Assert.DoesNotContain("left out of training", warning, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ValidateTrainingData_ANaInARegressionLabel_StillSaysTheRowIsLeftOut()
+    {
+        var result = _validator.ValidateTrainingData(Series("NA"), "value", "regression");
+
+        Assert.Contains(result.Warnings, w => w.Contains("left out of training", StringComparison.Ordinal));
+    }
+
+    #endregion
+
+    [Theory]
+    [InlineData("forecasting", false)]
+    [InlineData("regression", true)]
+    public void ValidateTrainingData_ATinyFile_TalksOfATestSplitOnlyWhereThereIsOne(string task, bool mentionsSplit)
+    {
+        // A series holds out its last horizon points; "Train/Test split may produce empty test sets" described a split it does not make.
+        var csv = CreateCsv("value\n" + string.Join("\n", Enumerable.Range(0, 8).Select(i => (10 + i * 0.1).ToString(System.Globalization.CultureInfo.InvariantCulture))) + "\n");
+
+        var result = _validator.ValidateTrainingData(csv, "value", task);
+
+        Assert.Contains(result.Warnings, w => w.Contains("Critically small dataset", StringComparison.Ordinal));
+        Assert.Equal(mentionsSplit, result.Warnings.Any(w => w.Contains("Train/Test split", StringComparison.Ordinal)));
+    }
+
     #region Structured label
 
     [Theory]

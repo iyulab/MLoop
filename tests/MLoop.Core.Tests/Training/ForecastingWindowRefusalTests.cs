@@ -45,4 +45,26 @@ public sealed class ForecastingWindowRefusalTests : IDisposable
         Assert.Contains("at least 131 rows", error.Message, StringComparison.Ordinal);
         Assert.Contains("window_size", error.Message, StringComparison.Ordinal);
     }
+    [Fact]
+    public async Task AHorizonLongerThanTheSeries_IsRefusedNamingTheHorizon_NotTheWindow()
+    {
+        // "or a smaller window_size" was all it said to a series of 300 points with a horizon of 500 - the one setting that cannot fix it.
+        var path = Path.Combine(_dir, "short.csv");
+        File.WriteAllLines(path, new[] { "value" }.Concat(Enumerable.Range(0, 300)
+            .Select(i => (50.0 + 0.1 * i).ToString("F3", CultureInfo.InvariantCulture))));
+
+        var ctx = new MLContext(seed: 42);
+        var error = await Assert.ThrowsAsync<InvalidOperationException>(() => new TrainingRunner(ctx, new CsvDataLoader(ctx)).RunAsync(new TrainingConfig
+        {
+            ModelName = "series",
+            DataFile = path,
+            LabelColumn = "value",
+            Task = "forecasting",
+            Horizon = 500,
+            TimeLimitSeconds = 10,
+        }));
+
+        Assert.Contains("a horizon of at most 149", error.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("window_size", error.Message, StringComparison.Ordinal);
+    }
 }

@@ -69,6 +69,32 @@ public sealed class ColumnLayoutOneColumnSeriesTests : IDisposable
         Assert.Throws<ColumnLayoutException>(() => ColumnLayoutInference.Infer(new MLContext(seed: 1), Write("review", "great", "broken"), null));
     }
 
+    [Theory]
+    [InlineData("NA")]
+    [InlineData("N/A")]
+    [InlineData("na")]
+    [InlineData("?")]
+    [InlineData("NaN")]
+    public void AMissingNumberWrittenAsText_IsAGapInTheSeries_NotAReasonToRefuseTheFile(string token)
+    {
+        // The file used to end in "Unable to split the file provided into multiple, consistent columns" (with advice about quoting
+        // commas): a cell that reads as a missing number made the column "not numbers all the way", so it was no series.
+        var path = Write("value", "1", "2", token, "4", "5");
+
+        var layout = ColumnLayoutInference.Infer(new MLContext(seed: 1), path, "value");
+
+        var data = new MLContext(seed: 1).Data.CreateTextLoader(layout.Options).Load(path);
+        Assert.Equal(1, MLoop.Core.Data.MissingNumbers.CountIn(data, "value"));
+        var refusal = Assert.Throws<SeriesGapException>(() => MLoop.Core.Data.MissingNumbers.RefuseGapsInSeries(data, "value"));
+        Assert.Contains("data row 3", refusal.Message);
+    }
+
+    [Fact]
+    public void AColumnOfWordsThatHoldsAnNA_IsStillNotASeries()
+    {
+        Assert.Null(ColumnLayoutInference.OneColumnSeries(Write("review", "great", "NA", "broken"), null));
+    }
+
     [Fact]
     public void AHeaderOnly_IsNotASeries()
     {

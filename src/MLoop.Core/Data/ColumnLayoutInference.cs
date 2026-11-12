@@ -189,8 +189,10 @@ public static class ColumnLayoutInference
             {
                 if (line.Length == 0)
                     continue;   // a blank line is no row (TableRows); the series commands read gaps from the loader
+                // A number, or a missing one written as the loader reads it (NA, N/A, NaN, ?): a gap the series commands name, not a reason
+                // to take the file for something that is not a series (which ended in "Unable to split the file").
                 if (CsvFieldParser.ParseFields(line) is not [var cell]
-                    || (cell.Trim().Length > 0 && !double.TryParse(cell, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _)))
+                    || (cell.Trim().Length > 0 && !Training.NumericLabelCheck.ReadsAsNumberOrMissing(cell.AsSpan().Trim())))
                     return null;
                 rows++;
             }

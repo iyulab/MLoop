@@ -39,7 +39,7 @@ public class DataQualityValidator
 
         // Then check dataset size — against the feature count only where the model reads the features.
         var readsFeatureColumns = TrainingRunner.ReadsFeatureColumns(taskType);
-        CheckDatasetSize(dataFile, result, readsFeatureColumns);
+        CheckDatasetSize(dataFile, result, readsFeatureColumns, TrainingRunner.IsTimeSeriesTask(taskType));
 
         // And the columns the model would read as words that are numbers written for people.
         if (readsFeatureColumns)
@@ -321,9 +321,13 @@ public class DataQualityValidator
             {
                 // N/A, NA, NaN and ? are not unparseable: the loader reads them as missing numbers, and a row without a label is
                 // left out of training. Said as what they are, next to the line that counted the empty ones.
-                result.Warnings.Add(taskType is not null && NumericLabelCheck.HasNumericLabel(taskType) && census.Unreadable == 0 && census.MissingTokens == parseErrors
-                    ? $"⚠ {parseErrors} values in label column '{labelColumn}' are written as missing numbers (N/A, NA, NaN or ?): those rows have no label and are left out of training"
-                    : $"⚠ {parseErrors} values in label column '{labelColumn}' could not be parsed as numbers");
+                // A time series keeps its rows: dropping one would close up the time around it, so a missing point is a gap and training refuses it.
+                var onlyMissingTokens = census.Unreadable == 0 && census.MissingTokens == parseErrors;
+                result.Warnings.Add(onlyMissingTokens && TrainingRunner.IsTimeSeriesTask(taskType)
+                    ? $"⚠ {parseErrors} values in the series '{labelColumn}' are written as missing numbers (N/A, NA, NaN or ?): gaps — a time-series model reads every point in order, so training will stop at the first"
+                    : onlyMissingTokens && taskType is not null && NumericLabelCheck.HasNumericLabel(taskType)
+                        ? $"⚠ {parseErrors} values in label column '{labelColumn}' are written as missing numbers (N/A, NA, NaN or ?): those rows have no label and are left out of training"
+                        : $"⚠ {parseErrors} values in label column '{labelColumn}' could not be parsed as numbers");
             }
 
             if (numericLabelValues.Count == 0 && !isClassificationTask)
@@ -671,7 +675,7 @@ public class DataQualityValidator
     /// <summary>
     /// Checks if dataset has sufficient samples for the number of features
     /// </summary>
-    private static void CheckDatasetSize(string dataFile, DataQualityResult result, bool readsFeatureColumns)
+    private static void CheckDatasetSize(string dataFile, DataQualityResult result, bool readsFeatureColumns, bool isSeries = false)
     {
         try
         {
@@ -705,7 +709,9 @@ public class DataQualityValidator
             {
                 result.Warnings.Add($"🔴 Critically small dataset: only {sampleCount} rows");
                 result.Warnings.Add($"   Minimum recommended: {CRITICAL_MINIMUM} rows for any ML task");
-                result.Warnings.Add("   Train/Test split may produce empty test sets, causing metric calculation failures");
+                // A series is not split into train and test rows: it holds out its last `horizon` points, and training says how many points that and the window need.
+                if (!isSeries)
+                    result.Warnings.Add("   Train/Test split may produce empty test sets, causing metric calculation failures");
                 result.Warnings.Add("");
                 result.Suggestions.Add($"💡 Collect at least {RECOMMENDED_MINIMUM}+ rows before training");
             }

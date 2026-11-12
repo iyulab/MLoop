@@ -30,6 +30,32 @@ public static class ForecastingWindow
     /// </summary>
     public static int MinimumRows(int windowSize, int horizon) => 2 * windowSize + horizon + 1;
 
+    /// <summary>
+    /// What to change when a series of <paramref name="rows"/> points is too short for <paramref name="windowSize"/> and
+    /// <paramref name="horizon"/>: the largest horizon this window allows and the largest window this horizon allows, each only when
+    /// it exists — or <see langword="null"/> when only more points help. A series shorter than the horizon cannot be helped by a smaller window — saying only that sent a user to the one
+    /// setting that could not fix it.
+    /// </summary>
+    public static string? Remedy(int rows, int windowSize, int horizon)
+    {
+        var options = new List<string>();
+        var longestHorizon = rows - 2 * windowSize - 1;
+        if (longestHorizon >= 1)
+            options.Add($"a horizon of at most {longestHorizon}");
+        var longestWindow = (rows - horizon - 1) / 2;
+        if (rows - horizon - 1 >= 2 * Minimum && longestWindow >= Minimum)
+            options.Add($"a window_size of at most {longestWindow}");
+        if (options.Count == 0)
+        {
+            var smallestWindowHorizon = rows - 2 * Minimum - 1;
+            if (smallestWindowHorizon < 1)
+                return null;   // not even the smallest window and a horizon of one fit: only more points help
+            options.Add($"both smaller (even the smallest window, {Minimum}, needs a horizon of at most {smallestWindowHorizon})");
+        }
+
+        return string.Join(" or ", options);
+    }
+
     /// <summary>The window for a series of <paramref name="seriesLength"/> points when the project names none.</summary>
     public static int Default(int seriesLength)
         => Math.Clamp(seriesLength / 4, Minimum, MaximumDefault);

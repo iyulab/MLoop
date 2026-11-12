@@ -2027,7 +2027,7 @@ public partial class TrainingRunner
 
             if (totalRows < ForecastingWindow.MinimumRows(windowSize, horizon))
                 throw new InvalidOperationException(
-                    $"Insufficient data: {totalRows} rows with horizon={horizon} and window={windowSize}; the training rows (all but the held-out horizon) must be more than twice the window, so this needs at least {ForecastingWindow.MinimumRows(windowSize, horizon)} rows — or a smaller window_size.");
+                    $"Insufficient data: {totalRows} rows with horizon={horizon} and window={windowSize}; the training rows (all but the held-out horizon) must be more than twice the window, so this needs at least {ForecastingWindow.MinimumRows(windowSize, horizon)} rows{(ForecastingWindow.Remedy(totalRows, windowSize, horizon) is { } remedy ? $" — or {remedy}" : "")}.");
 
             _logger.Info($"Forecasting: series='{valueColumn}', {totalRows} rows, horizon={horizon}, window={windowSize}, seriesLength={seriesLength}");
 

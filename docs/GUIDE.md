@@ -1159,7 +1159,8 @@ memory allows, profile a sample (`mloop sample create --from <file> --rows 10000
 
 A series is a file of one column of numbers (or a table whose `label:` column is the series). `forecasting` and
 `time-series-anomaly` read it in order, so a missing point — an empty cell, or a blank line in a one-column file — is
-refused by name rather than closed up; fill it first (`mloop prep plan --set fill-missing:forward --columns <series>`).
+refused by name rather than closed up; fill it first (`mloop prep plan --set fill-missing:forward --columns <series>`). That step fills
+*empty* cells: a point written `NA`, `N/A` or `?` is a gap too (the refusal names its row) but is not empty to it, so clear those cells first.
 
 **Forecasting.** The model forecasts the `horizon` points after the end of the series it was trained on, and
 `mloop predict` (and `POST /predict`) replay that series (kept beside the model, `series.csv`; a model trained before
