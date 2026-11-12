@@ -376,7 +376,7 @@ public class TrainingEngine : ITrainingEngine
             await _experimentStore.SaveAsync(modelName, experimentData, cancellationToken);
 
             throw new InvalidOperationException(
-                $"Training failed for experiment {modelName}/{experimentId}: {ex.Message}",
+                $"Training failed for experiment {modelName}/{experimentId}: {MLoop.CLI.Infrastructure.Diagnostics.FailureCause.Describe(ex)}",
                 ex);
         }
         finally
