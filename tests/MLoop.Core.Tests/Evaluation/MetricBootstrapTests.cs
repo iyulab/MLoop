@@ -124,6 +124,25 @@ public class MetricBootstrapTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public void APerfectScore_IsNotOfferedAsAnIntervalOfZeroWidth()
+    {
+        var rng = new Random(8);
+        var rows = Enumerable.Range(0, 70).Select(i =>
+        {
+            var y = i % 2 == 0;
+            var score = (float)((y ? 1 : -1) * (0.5 + rng.NextDouble()));
+            return new BinaryRow { Label = y, Score = score, Probability = 1 / (1 + MathF.Exp(-score)), PredictedLabel = y };
+        }).ToList();
+        var read = WeightedMetrics.ReadBinary(_ml.Data.LoadFromEnumerable(rows), "Label", null)!;
+
+        var result = MetricBootstrap.Measure(read);
+
+        Assert.False(result.Intervals.ContainsKey("accuracy"));
+        Assert.Contains("perfect score", result.Note, StringComparison.Ordinal);
+        Assert.Contains("accuracy", result.Note, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ARowSetTooLargeToResample_SaysSoInsteadOfGuessing()
     {
         var rows = new Rows(2_000_000);

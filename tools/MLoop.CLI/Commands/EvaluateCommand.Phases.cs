@@ -276,10 +276,10 @@ public static partial class EvaluateCommand
         if (primary is not null && uncertainty.Intervals.TryGetValue(primary, out var interval) && testMetrics.TryGetValue(primary, out var value))
         {
             AnsiConsole.MarkupLineInterpolated(
-                $"[grey]{primary} {MetricSanitizer.Display(primary, value)}, {uncertainty.Level:P0} interval [[{MetricSanitizer.Display(primary, interval.Low)}, {MetricSanitizer.Display(primary, interval.High)}]] from resampling these {uncertainty.Rows:N0} test rows (bootstrap).[/]");
+                $"[grey]{primary} {MetricSanitizer.Display(primary, value)}, {uncertainty.Level:P0} interval [[{MetricSanitizer.Display(primary, interval.Low)}, {MetricSanitizer.Display(primary, interval.High)}]] over {uncertainty.Rows:N0} test rows.[/]");
             return;
         }
-        if (uncertainty.Intervals.Count == 0 && uncertainty.Note is { } note)
-            AnsiConsole.MarkupLineInterpolated($"[grey]No interval for these metrics: {note}.[/]");
+        if (uncertainty.Note is { } note && !(primary is not null && uncertainty.Intervals.ContainsKey(primary)))
+            AnsiConsole.MarkupLineInterpolated($"[grey]No interval for {primary ?? "these metrics"}: {note}.[/]");
     }
 }

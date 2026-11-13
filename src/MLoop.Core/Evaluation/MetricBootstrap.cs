@@ -103,6 +103,7 @@ public static class MetricBootstrap
         }
 
         var intervals = new Dictionary<string, MetricInterval>();
+        var agreed = new List<string>();
         foreach (var (key, list) in values)
         {
             if (list.Count < MinimumResamples || list.Count < resamples / 2)
@@ -110,10 +111,19 @@ public static class MetricBootstrap
             list.Sort();
             var low = list[(int)Math.Floor((1 - Level) / 2 * (list.Count - 1))];
             var high = list[(int)Math.Ceiling((1 + Level) / 2 * (list.Count - 1))];
+            if (low == high)
+            {
+                // A perfect score: every resample of the rows gives it again. That is not certainty - the rows
+                // simply held no miss to resample - so it is not offered as an interval of zero width.
+                agreed.Add(key);
+                continue;
+            }
             intervals[key] = new MetricInterval(low, high, list.Count);
         }
-        return new MetricBootstrapResult(counting.Count, Level, intervals,
-            intervals.Count == 0 ? "no metric was defined in enough resamples" : null);
+        var note = agreed.Count > 0
+            ? $"every resample of these {counting.Count:N0} rows gave the same value for {string.Join(", ", agreed)} - a perfect score on a sample this size does not make the model certain"
+            : intervals.Count == 0 ? "no metric was defined in enough resamples" : null;
+        return new MetricBootstrapResult(counting.Count, Level, intervals, note);
     }
 
     private static readonly IReadOnlyDictionary<string, MetricInterval> Empty = new Dictionary<string, MetricInterval>();
