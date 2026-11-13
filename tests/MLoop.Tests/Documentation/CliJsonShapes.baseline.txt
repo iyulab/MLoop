@@ -553,6 +553,11 @@ $.trainer: object
 $.trainer.name: string
 $.trainingTimeSec: number
 $.ts: string
+$.validated: object
+$.validated.folds: number
+$.validated.metric: string
+$.validated.standardError: number
+$.validated.value: number
 ## train#trial | train -> exit 0
 $: object
 $.elapsedMs: number

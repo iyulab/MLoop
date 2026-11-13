@@ -334,6 +334,7 @@ public class TrainingEngine : ITrainingEngine
                 Schema = inputSchema ?? trained.Schema,
                 RowCount = trained.RowCount,
                 TestRows = trained.TestRows,
+                Validated = ValidatedScore.OfWinner(trained.Trials, trained.RankingMetric),
                 HookRefusal = hookRefusal
             };
         }
