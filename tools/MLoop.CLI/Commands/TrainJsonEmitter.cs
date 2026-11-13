@@ -166,6 +166,7 @@ public sealed class TrainJsonEmitter(TextWriter output)
         bestTrainer = result.BestTrainer,
         trainer = result.Trainer,
         metrics = result.Metrics,
+        validated = result.Validated,
         trainingTimeSec = result.TrainingTimeSeconds,
         modelPath = result.ModelPath,
         reportPath = result.ReportPath,

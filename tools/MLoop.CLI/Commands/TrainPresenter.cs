@@ -181,6 +181,23 @@ internal static class TrainPresenter
         return promotionFollows ? always : [.. always, $"mloop promote {experimentId} --name {modelName}"];
     }
 
+    /// <summary>
+    /// The score the search validated the model at on the training rows, with its standard error, beside the held-out table:
+    /// the table is one split, and on a small one it can sit far from this. The same sentence, in the same units, as the report's row.
+    /// </summary>
+    internal static string ValidatedLine(ValidatedScore validated, long? testRows)
+    {
+        var name = validated.Metric.Replace("_", " ").ToUpperInvariant();
+        var spread = validated.Folds > 1
+            ? $"standard error over {validated.Folds.ToString(System.Globalization.CultureInfo.InvariantCulture)} folds"
+            : "spread of the validation slices";
+        var held = testRows is { } rows
+            ? $" The test table above is one split of {rows.ToString("N0", System.Globalization.CultureInfo.InvariantCulture)} rows; a split this size moves with the rows it draws."
+            : "";
+        return $"Validated on the training rows: {name} {MetricSanitizer.Display(validated.Metric, validated.Value)} ± "
+            + $"{validated.StandardError.ToString("G3", System.Globalization.CultureInfo.InvariantCulture)} ({spread}).{held}";
+    }
+
     /// <param name="promotionFollows">
     /// Whether this command is about to promote the experiment itself. The next steps are printed
     /// before the promotion runs, so with this false the reader is told to run a command that the
@@ -222,6 +239,8 @@ internal static class TrainPresenter
         }
 
         AnsiConsole.Write(metricsTable);
+        if (result.Validated is { } validated)
+            AnsiConsole.MarkupLineInterpolated($"[grey]{ValidatedLine(validated, result.TestRows)}[/]");
         if (!string.IsNullOrEmpty(weightColumn))
             AnsiConsole.MarkupLineInterpolated($"[grey]Each test row counts by its {weightColumn}.[/]");
         AnsiConsole.WriteLine();

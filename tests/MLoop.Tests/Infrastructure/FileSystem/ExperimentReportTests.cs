@@ -421,4 +421,31 @@ public class ExperimentReportTests
         Assert.Contains("best first by `detection_rate` (higher is better)", ranked, StringComparison.Ordinal);
         Assert.Contains("| Optimized for | detection_rate |", ranked, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void TheResult_SaysWhatTheWinnerWasValidatedAt_WhenTheTrialCarriesASpread()
+    {
+        var trial = new TrialRecord
+        {
+            TrialNumber = 1,
+            Trainer = TrainerDescriptor.Of("FastTree"),
+            Metrics = new Dictionary<string, double> { ["auc"] = 0.91234 },
+            RuntimeSeconds = 1,
+            Validation = new TrialValidation(5, new Dictionary<string, double> { ["auc"] = 0.02 }, new Dictionary<string, double> { ["auc"] = 0.0089 })
+        };
+
+        var page = ExperimentReport.Render(Completed([trial]), [trial], Root, Version);
+
+        Assert.Contains("| Validated on the training rows | auc 0.91234 ± 0.0089 (standard error over 5 folds) |", page, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheResult_HasNoValidatedRow_WhenNoTrialCarriesASpread()
+    {
+        var trial = Trial(1, TrainerDescriptor.Of("FastTree"), "auc", 0.91234);
+
+        var page = ExperimentReport.Render(Completed([trial]), [trial], Root, Version);
+
+        Assert.DoesNotContain("Validated on the training rows", page, StringComparison.Ordinal);
+    }
 }

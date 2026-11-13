@@ -58,7 +58,11 @@ mloop train datasets/train.csv --label price --time 60
 # > Experiment ID: exp-001
 # > Best Trainer: FastTree
 # > Training Time: 60.1s
-# then a table of the metrics (R SQUARED, RMSE, MAE, ...) for the held-out rows
+# then a table of the metrics (R SQUARED, RMSE, MAE, ...) for the held-out rows, and under it
+# "Validated on the training rows: R SQUARED 0.4316 ± 0.102 (standard error over 5 folds)" — what the search
+# validated the kept model at, with how far that could move on other rows. The table is one split: on a
+# few hundred rows it can sit well away from the validated score, and the standard error says by how much to trust either.
+# (`--json`: `validated` on the result event; the experiment's report.md: "Validated on the training rows")
 
 # 3. Make predictions
 mloop predict

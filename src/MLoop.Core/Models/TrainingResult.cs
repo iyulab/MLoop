@@ -30,6 +30,12 @@ public class TrainingResult
     public long? TestRows { get; init; }
 
     /// <summary>
+    /// What the search validated the model's score at on the training rows, with its standard error — the spread the held-out
+    /// score (<see cref="Metrics"/>) alone does not show. Null where the path scores one split or ranked nothing.
+    /// </summary>
+    public ValidatedScore? Validated { get; init; }
+
+    /// <summary>
     /// Which post-train hook refused this model, and why — <c>null</c> when none did. The model is
     /// saved, but a refused model is not promoted automatically (<c>mloop train</c>, <c>POST /train</c>).
     /// </summary>

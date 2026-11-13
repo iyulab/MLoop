@@ -142,6 +142,10 @@ internal static class ExperimentReport
         if (!string.IsNullOrEmpty(result.Trainer?.FallbackReason))
             Row(sb, "Fallback", result.Trainer.FallbackReason);
         Row(sb, "Training time", Seconds(result.TrainingTimeSeconds));
+        if (ValidatedScore.OfWinner(experiment.Trials, experiment.RankingMetric) is { } validated)
+            Row(sb, "Validated on the training rows",
+                $"{validated.Metric} {validated.Value.ToString("G6", CultureInfo.InvariantCulture)} ± {validated.StandardError.ToString("G3", CultureInfo.InvariantCulture)} " +
+                $"({(validated.Folds > 1 ? $"standard error over {validated.Folds.ToString(CultureInfo.InvariantCulture)} folds" : "spread of the validation slices")})");
         sb.AppendLine();
     }
 

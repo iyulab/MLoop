@@ -1,5 +1,6 @@
 using System.Text.RegularExpressions;
 using MLoop.CLI.Commands;
+using MLoop.Core.Models;
 using Spectre.Console;
 
 namespace MLoop.Tests.Commands;
@@ -50,5 +51,23 @@ public class TrainPresenterTests : IDisposable
 
         Assert.Matches(@"Candidate features\s*│\s*2", summary);
         Assert.DoesNotMatch(@"│\s*Features\s*│", summary);
+    }
+
+    [Fact]
+    public void TheValidatedLine_GivesTheScoreAndItsStandardError_BesideTheRowsOfTheTestTable()
+    {
+        var line = TrainPresenter.ValidatedLine(new ValidatedScore("r_squared", 0.4316, 0.1021, 5), 88);
+
+        Assert.Contains("R SQUARED 0.4316 ± 0.102 (standard error over 5 folds)", line, StringComparison.Ordinal);
+        Assert.Contains("one split of 88 rows", line, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void TheValidatedLine_NamesTheSpreadOfSlices_ForAHoldout_AndLeavesOutRowsItDoesNotKnow()
+    {
+        var line = TrainPresenter.ValidatedLine(new ValidatedScore("auc", 0.9, 0.01, 1), null);
+
+        Assert.Contains("spread of the validation slices", line, StringComparison.Ordinal);
+        Assert.DoesNotContain("one split of", line, StringComparison.Ordinal);
     }
 }
