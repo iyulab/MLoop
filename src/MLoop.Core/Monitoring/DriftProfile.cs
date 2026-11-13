@@ -101,7 +101,7 @@ public sealed record DriftProfile
         var columns = ColumnsOf(schema);
         var texts = TextColumnsOf(schema);
         var textRows = sample.Project(texts);
-        return Build(sample.Project(columns.Select(c => c.Column).ToList()), columns) with
+        return Build(sample.Project(columns.Select(c => c.Column).ToList()), columns, sample.TrendColumns) with
         {
             Texts = texts.Select((column, i) => TextProfile.Build(column, textRows.Select(r => r[i]).ToList())).ToList(),
         };
@@ -118,11 +118,20 @@ public sealed record DriftProfile
     {
         ArgumentNullException.ThrowIfNull(columns);
         var sample = await SampleCsvAsync(path, sampleSize, cancellationToken).ConfigureAwait(false);
-        return Build(sample.Project(columns.Select(c => c.Column).ToList()), columns);
+        return Build(sample.Project(columns.Select(c => c.Column).ToList()), columns, sample.TrendColumns);
     }
 
     /// <summary>Rows of the training file a profile is built from, at most.</summary>
     public const int DefaultSampleSize = 20_000;
+
+    /// <summary>Fewest rows a file needs before a column that rises through it counts as a trend.</summary>
+    public const int MinimumTrendRows = 100;
+
+    /// <summary>
+    /// Fewest times a column must step up (to a larger value than the row before) to count as a trend: a file sorted by a label or a group
+    /// has a column that never falls too, with a handful of steps, and that is not time passing.
+    /// </summary>
+    public const int MinimumTrendSteps = 20;
 
     /// <summary>
     /// Reads every row of <paramref name="path"/> (a CSV with a header) once and keeps a fixed-seed
@@ -145,19 +154,46 @@ public sealed record DriftProfile
             var random = new Random(20261021);
             var reservoir = new List<string?[]>();
             var seen = 0;
+            // Per column, while the file streams past in order: still rising? how many steps up? A column stops being followed
+            // the moment it falls or holds a non-number, so most columns cost one comparison.
+            var following = Enumerable.Repeat(true, header.Length).ToArray();
+            var last = new double?[header.Length];
+            var steps = new int[header.Length];
             while (await csv.ReadAsync().ConfigureAwait(false))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var row = new string?[header.Length];
                 for (var i = 0; i < header.Length; i++)
+                {
                     row[i] = i < csv.FieldCount ? csv.GetString(i) : null;
+                    if (!following[i] || string.IsNullOrWhiteSpace(row[i]))
+                        continue;
+                    if (!double.TryParse(row[i], NumberStyles.Float, CultureInfo.InvariantCulture, out var x) || !double.IsFinite(x))
+                    {
+                        following[i] = false;
+                        continue;
+                    }
+                    x = FeatureProfile.AsSingle(x);
+                    if (last[i] is { } previous)
+                    {
+                        if (x < previous)
+                            following[i] = false;
+                        else if (x > previous)
+                            steps[i]++;
+                    }
+                    last[i] = x;
+                }
                 seen++;
                 if (reservoir.Count < sampleSize)
                     reservoir.Add(row);
                 else if (random.Next(seen) is var slot && slot < sampleSize)
                     reservoir[slot] = row;
             }
-            return new CsvSample(header, reservoir);
+            var trend = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            for (var i = 0; i < header.Length; i++)
+                if (following[i] && seen >= MinimumTrendRows && steps[i] >= MinimumTrendSteps)
+                    trend.Add(header[i]);
+            return new CsvSample(header, reservoir) { TrendColumns = trend };
         }
         finally
         {
@@ -167,7 +203,8 @@ public sealed record DriftProfile
     }
 
     /// <summary>Builds a profile from rows of raw values, one array per row in the order of <paramref name="columns"/>.</summary>
-    public static DriftProfile Build(IReadOnlyList<string?[]> rows, IReadOnlyList<(string Column, bool Numeric)> columns)
+    public static DriftProfile Build(
+        IReadOnlyList<string?[]> rows, IReadOnlyList<(string Column, bool Numeric)> columns, IReadOnlySet<string>? trendColumns = null)
     {
         ArgumentNullException.ThrowIfNull(rows);
         ArgumentNullException.ThrowIfNull(columns);
@@ -175,7 +212,8 @@ public sealed record DriftProfile
         for (var i = 0; i < columns.Count; i++)
         {
             var values = rows.Select(r => r[i]).ToList();
-            features.Add(columns[i].Numeric ? FeatureProfile.Numeric(columns[i].Column, values) : FeatureProfile.Categorical(columns[i].Column, values));
+            var feature = columns[i].Numeric ? FeatureProfile.Numeric(columns[i].Column, values) : FeatureProfile.Categorical(columns[i].Column, values);
+            features.Add(columns[i].Numeric && trendColumns?.Contains(columns[i].Column) == true ? feature with { Trend = true } : feature);
         }
         return new DriftProfile { Rows = rows.Count, Features = features };
     }
@@ -309,6 +347,13 @@ public sealed record TextProfile
 /// </summary>
 public sealed record CsvSample(IReadOnlyList<string> Header, IReadOnlyList<string?[]> Rows)
 {
+    /// <summary>
+    /// The columns whose numbers rose through the whole file in file order, with enough distinct steps for it to mean something
+    /// (<see cref="DriftProfile.MinimumTrendRows"/>, <see cref="DriftProfile.MinimumTrendSteps"/>). Read while the file was streamed, since
+    /// the sampled rows have lost the order. Empty for a sample that was not read from a file.
+    /// </summary>
+    public IReadOnlySet<string> TrendColumns { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>The rows cut down to <paramref name="columns"/>, in that order; a column the file lacks is missing in every row.</summary>
     public IReadOnlyList<string?[]> Project(IReadOnlyList<string> columns)
     {
@@ -359,6 +404,15 @@ public sealed record FeatureProfile
 
     /// <summary>Share of training rows per bin, the last being missing values. Sums to 1 over a non-empty profile.</summary>
     public required IReadOnlyList<double> Shares { get; init; }
+
+    /// <summary>
+    /// Numeric: the column rose through the whole training file, in file order, step after step - a serial number, a counter, a
+    /// time. Every later window lies past its training maximum, so its "drift" is the passing of time rather than news: it is
+    /// still measured and shown, but left out of the overall level, the range signal and the retraining trigger. Judged on the
+    /// file read in order (<see cref="CsvSample.TrendColumns"/>), so a shuffled file shows none. False in profiles written before.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    public bool Trend { get; init; }
 
     /// <summary>How many bins there are, the missing bin included.</summary>
     [JsonIgnore]

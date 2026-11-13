@@ -123,7 +123,7 @@ public static class DriftEvaluator
                 .ToList();
         }
 
-        var top = report.Features.FirstOrDefault();
+        var top = report.Judged.FirstOrDefault();
         var message = top is null
             ? $"No profiled feature to compare for {experimentId}."
             : $"{Describe(report.Level)} over {entries.Count} predictions of {experimentId}: most moved '{top.Column}' "
@@ -135,6 +135,8 @@ public static class DriftEvaluator
                        + $"{answers.MostChangedBin}: {answers.ReferenceShare:P0} → {answers.CurrentShare:P0}).";
         if (DescribeRange(report) is { } range)
             message += " " + range;
+        if (DescribeTrend(report) is { } trend)
+            message += " " + trend;
         return new DriftCheck(DriftCheckStatus.Measured, experimentId, entries.Count, report, slices, message);
     }
 
@@ -182,6 +184,20 @@ public static class DriftEvaluator
         return $"Values past the training range, counted apart from the PSI: {string.Join(", ", parts)}{more}.";
     }
 
+    /// <summary>
+    /// A sentence naming the columns that rose through the whole training file (<see cref="FeatureDrift.Trend"/>) — a serial number, a counter, a time — or
+    /// <c>null</c> when none did. Every window lies past such a column's training range, so it is measured and shown but not counted in the level or the
+    /// retraining trigger.
+    /// </summary>
+    public static string? DescribeTrend(DriftReport report)
+    {
+        var trend = report.Features.Where(f => f.Trend).Select(f => $"'{f.Column}'").ToList();
+        if (trend.Count == 0)
+            return null;
+        return $"{string.Join(", ", trend)} rose through the whole training file (a serial number, a counter or a time), so every later window lies past its training range — "
+               + "shown above, but left out of the level and the retraining trigger.";
+    }
+
     private static FeatureDriftSignal Signal(FeatureDrift f) => new(
         f.Column,
         f.Psi,
@@ -190,7 +206,8 @@ public static class DriftEvaluator
         f.ReferenceShare,
         f.CurrentShare,
         f.Bound,
-        f.Range is { } r ? new RangeCountsSignal(r.Below, r.Above, r.WindowValues, r.ReferenceValues, r.P, r.Notable) : null);
+        f.Range is { } r ? new RangeCountsSignal(r.Below, r.Above, r.WindowValues, r.ReferenceValues, r.P, r.Notable) : null,
+        f.Trend);
 
     private static string Describe(DriftLevel level) => level switch
     {
@@ -223,7 +240,7 @@ public sealed record DriftSignal(
     [property: JsonPropertyName("features")] IReadOnlyList<FeatureDriftSignal> Features,
     [property: JsonPropertyName("prediction")] FeatureDriftSignal? Prediction);
 
-/// <summary>One column's (or the answers') drift.</summary>
+/// <summary>One column's (or the answers') drift. <c>trend</c> is written only when true: the column rose through the whole training file and is not counted in the level.</summary>
 public sealed record FeatureDriftSignal(
     [property: JsonPropertyName("column")] string Column,
     [property: JsonPropertyName("psi")] double Psi,
@@ -232,7 +249,8 @@ public sealed record FeatureDriftSignal(
     [property: JsonPropertyName("referenceShare")] double ReferenceShare,
     [property: JsonPropertyName("currentShare")] double CurrentShare,
     [property: JsonPropertyName("noDriftBound")] double NoDriftBound,
-    [property: JsonPropertyName("range")] RangeCountsSignal? Range);
+    [property: JsonPropertyName("range")] RangeCountsSignal? Range,
+    [property: JsonPropertyName("trend"), JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)] bool Trend = false);
 
 /// <summary>How many of a numeric column's values left the range it was trained on.</summary>
 public sealed record RangeCountsSignal(

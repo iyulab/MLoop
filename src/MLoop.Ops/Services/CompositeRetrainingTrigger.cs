@@ -112,7 +112,7 @@ public sealed class CompositeRetrainingTrigger : IRetrainingTrigger
     public static bool InputMoved(MLoop.Core.Monitoring.DriftReport report, double threshold)
     {
         ArgumentNullException.ThrowIfNull(report);
-        return report.Features.Any(f => f.Psi >= Math.Max(threshold, f.Bound));
+        return report.Judged.Any(f => f.Psi >= Math.Max(threshold, f.Bound));
     }
 
     public async Task<TriggerEvaluation> EvaluateAsync(

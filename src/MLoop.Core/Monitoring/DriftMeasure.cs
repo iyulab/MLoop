@@ -32,6 +32,10 @@ public enum DriftLevel
 /// <c>null</c> for a column that is not numeric, for a profile written before the range was kept, and for the answers' drift. It never moves
 /// <paramref name="Level"/>.
 /// </param>
+/// <param name="Trend">
+/// The column rose through the whole training file (<see cref="FeatureProfile.Trend"/>): its PSI and range counts are reported, but it is
+/// left out of the report's <see cref="DriftReport.Level"/>, <see cref="DriftReport.MaxPsi"/> and <see cref="DriftReport.RangeNotable"/>.
+/// </param>
 public sealed record FeatureDrift(
     string Column,
     double Psi,
@@ -40,7 +44,8 @@ public sealed record FeatureDrift(
     double ReferenceShare,
     double CurrentShare,
     double Bound = 0,
-    RangeSignal? Range = null);
+    RangeSignal? Range = null,
+    bool Trend = false);
 
 /// <summary>
 /// The values of a window that lie past the training minimum or maximum of a numeric column, counted on their own. The PSI folds them into its two
@@ -82,15 +87,18 @@ public sealed record RangeSignal(int Below, int Above, int WindowValues, int Ref
 /// </param>
 public sealed record DriftReport(int Rows, IReadOnlyList<FeatureDrift> Features, FeatureDrift? Prediction = null)
 {
-    /// <summary>The largest PSI of any input column; 0 with none.</summary>
-    public double MaxPsi => Features.Count == 0 ? 0 : Features.Max(f => f.Psi);
+    /// <summary>The input columns that say something about the window: all but the trend columns (<see cref="FeatureDrift.Trend"/>).</summary>
+    public IEnumerable<FeatureDrift> Judged => Features.Where(f => !f.Trend);
 
-    /// <summary>The level of the most moved input column.</summary>
-    public DriftLevel Level => Features.Count == 0 ? DriftLevel.None : Features.Max(f => f.Level);
+    /// <summary>The largest PSI of any input column but a trend column; 0 with none.</summary>
+    public double MaxPsi => Judged.Select(f => f.Psi).DefaultIfEmpty(0).Max();
+
+    /// <summary>The level of the most moved input column, a trend column apart.</summary>
+    public DriftLevel Level => Judged.Select(f => f.Level).DefaultIfEmpty(DriftLevel.None).Max();
 
     /// <summary>The input columns whose values left the training range by more than chance allows (<see cref="RangeSignal.Notable"/>), the least likely first. Apart from <see cref="Level"/>.</summary>
     public IReadOnlyList<FeatureDrift> RangeNotable
-        => [.. Features.Where(f => f.Range is { Notable: true }).OrderBy(f => f.Range!.P)];
+        => [.. Judged.Where(f => f.Range is { Notable: true }).OrderBy(f => f.Range!.P)];
 }
 
 /// <summary>
@@ -188,10 +196,10 @@ public static class DriftMeasure
     {
         ArgumentNullException.ThrowIfNull(profile);
         ArgumentNullException.ThrowIfNull(rows);
-        var family = profile.Features.Count + 2 * (profile.Texts?.Count ?? 0);
+        var family = profile.Features.Count(f => !f.Trend) + 2 * (profile.Texts?.Count ?? 0);
         // Free text is left out of the range signal: a training row's words are all in the vocabulary by construction, so its share of unseen
         // words is not drawn like a new row's.
-        var rangeTests = profile.Features.Count(HasRange);
+        var rangeTests = profile.Features.Count(f => HasRange(f) && !f.Trend);
         var features = profile.Features
             .Select(feature => Measure(feature, rows.Select(r => ValueOf(r, feature.Column)).ToList(), family, profile.Rows, rangeTests))
             .Concat((profile.Texts ?? []).SelectMany(text =>
@@ -211,7 +219,7 @@ public static class DriftMeasure
 
     private static FeatureDrift Measure(FeatureProfile feature, IReadOnlyCollection<string?> values, int family, int referenceRows, int rangeTests = 0)
     {
-        var drift = MeasureBins(feature, values, family, referenceRows);
+        var drift = MeasureBins(feature, values, family, referenceRows) with { Trend = feature.Trend };
         return rangeTests > 0 && HasRange(feature) ? drift with { Range = RangeOf(feature, values, referenceRows, rangeTests) } : drift;
     }
 
