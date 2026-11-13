@@ -192,6 +192,7 @@ public static class TrainingEndpoints
                 job.CompletedAt,
                 job.ExperimentId,
                 job.Metrics,
+                job.Validated,
                 job.BestTrainer,
                 job.Promoted,
                 ProjectRelativeText.In(job.KeptInStagingReason, projectRootPath.Value),

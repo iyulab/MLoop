@@ -187,7 +187,7 @@ public class TrainingJobRunner : BackgroundService
             var diagnostics = new MLoop.Core.Diagnostics.PerformanceDiagnostics().Analyze(
                 config.Task, result.Metrics, rowCount: (int)Math.Min(result.RowCount, int.MaxValue));
             _jobStore.SetResult(job.JobId, result.ExperimentId, result.Metrics, result.BestTrainer,
-                [.. warnings.Warnings.Concat(diagnostics.Warnings).Distinct(StringComparer.Ordinal)]);
+                [.. warnings.Warnings.Concat(diagnostics.Warnings).Distinct(StringComparer.Ordinal)], result.Validated);
 
             // Decided before the job reads Completed, so a client that polls to completion and then reads
             // production sees the outcome — and the job says which it was.

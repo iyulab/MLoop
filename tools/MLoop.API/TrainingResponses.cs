@@ -47,6 +47,7 @@ public sealed record JobDetailResponse(
     DateTime? CompletedAt,
     string? ExperimentId,
     Dictionary<string, double>? Metrics,
+    MLoop.Core.Models.ValidatedScore? Validated,
     string? BestTrainer,
     bool? Promoted,
     string? KeptInStagingReason,

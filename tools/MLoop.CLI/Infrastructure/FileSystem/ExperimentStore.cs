@@ -359,6 +359,9 @@ public class ExperimentStore : IExperimentStore
             Trainer = trainer,
             TrainingTimeSeconds = trainingTime,
             Ensemble = ensemble,
+            Validated = resultElement.TryGetProperty("validated", out var vs) && vs.ValueKind == JsonValueKind.Object
+                ? vs.Deserialize<ValidatedScore>(TrialJsonOptions)
+                : null,
             TestRows = resultElement.TryGetProperty("testRows", out var tr) && tr.ValueKind == JsonValueKind.Number && tr.TryGetInt64(out var rows) ? rows : null
         };
     }

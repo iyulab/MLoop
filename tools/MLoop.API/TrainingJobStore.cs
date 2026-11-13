@@ -115,7 +115,7 @@ public class TrainingJobStore
     }
 
     public void SetResult(string jobId, string experimentId, Dictionary<string, double>? metrics, string? bestTrainer,
-        IReadOnlyList<string>? warnings = null)
+        IReadOnlyList<string>? warnings = null, MLoop.Core.Models.ValidatedScore? validated = null)
     {
         if (_jobs.TryGetValue(jobId, out var job))
         {
@@ -123,6 +123,7 @@ public class TrainingJobStore
             {
                 job.ExperimentId = experimentId;
                 job.Metrics = metrics;
+                job.Validated = validated;
                 job.BestTrainer = bestTrainer;
                 job.Warnings = warnings ?? [];
                 Save(job);
@@ -219,6 +220,8 @@ public class TrainingJob
     // Result fields
     public string? ExperimentId { get; set; }
     public Dictionary<string, double>? Metrics { get; set; }
+    /// <summary>What the search validated the model's score at on the training rows, with its standard error — as <c>mloop train</c> prints it.</summary>
+    public MLoop.Core.Models.ValidatedScore? Validated { get; set; }
     public string? BestTrainer { get; set; }
     /// <summary>Whether the experiment went to production; <c>null</c> until the job completes.</summary>
     public bool? Promoted { get; set; }

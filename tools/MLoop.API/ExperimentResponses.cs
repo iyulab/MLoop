@@ -34,7 +34,8 @@ public sealed record ExperimentDetailResponse(
     string Task,
     ExperimentConfigView Config,
     ExperimentResultView? Result,
-    Dictionary<string, double>? Metrics);
+    Dictionary<string, double>? Metrics,
+    MLoop.Core.Models.ValidatedScore? Validated = null);
 
 /// <summary>What an experiment was trained with.</summary>
 public sealed record ExperimentConfigView(
