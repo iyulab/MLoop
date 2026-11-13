@@ -1709,6 +1709,8 @@ Both stores are written one file per model per UTC day, so whole days leave and 
 name is not a day are left alone. Logs and feedback share the period, since a retraining set joins them — and
 feedback is matched to its logged prediction, so the period is also how late feedback can arrive. Without `retention:` (or with `days` below 1, which `mloop validate` reports) nothing is removed.
 
+Retention reaches only those two stores (`.mloop/logs/` and `.mloop/feedback/`). The experiments under `models/` — each run's metrics, `report.md`, data fingerprint, the promotion history (`mloop promote --history`) and the drift profile — are never removed by it, so keeping a record of how a model was trained, judged and promoted does not depend on this setting. If a deployment must keep its prediction logs for a fixed period, leave `retention:` unset or set `days` to at least that period.
+
 ---
 
 ### `mloop feedback`
