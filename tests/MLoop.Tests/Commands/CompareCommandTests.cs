@@ -370,6 +370,50 @@ public class CompareCommandTests : IDisposable
         Assert.Equal(0.87, cands[0].Metrics["r_squared"]);
     }
 
+    [Fact]
+    public async Task TheValidatedScore_IsKeptWithTheExperiment_AndReadBackForTheComparison()
+    {
+        var saved = new ExperimentData
+        {
+            ModelName = "revenue",
+            ExperimentId = "exp-001",
+            Timestamp = DateTime.UtcNow,
+            Status = "Completed",
+            Task = "regression",
+            Config = new ExperimentConfig { DataFile = "test-data.csv", LabelColumn = "Target", TimeLimitSeconds = 60, Metric = "r_squared", TestSplit = 0.2 },
+            Metrics = new Dictionary<string, double> { ["r_squared"] = 0.4 },
+            Result = new ExperimentResult
+            {
+                BestTrainer = "FastTree",
+                TrainingTimeSeconds = 12,
+                Validated = new MLoop.Core.Models.ValidatedScore("r_squared", 0.4316, 0.1021, 5)
+            }
+        };
+        await _experimentStore.SaveAsync("revenue", saved, CancellationToken.None);
+
+        var loaded = await _experimentStore.LoadAsync("revenue", "exp-001", CancellationToken.None);
+
+        Assert.Equal(new MLoop.Core.Models.ValidatedScore("r_squared", 0.4316, 0.1021, 5), loaded.Result!.Validated);
+    }
+
+    [Fact]
+    public async Task AnExperimentSavedWithoutAValidatedScore_ReadsBackWithoutOne()
+    {
+        await CreateTestExperiment("revenue", "exp-002", 0.8, new Dictionary<string, double> { ["Accuracy"] = 0.8 });
+
+        var loaded = await _experimentStore.LoadAsync("revenue", "exp-002", CancellationToken.None);
+
+        Assert.Null(loaded.Result?.Validated);
+    }
+
+    [Fact]
+    public void TheValidatedCell_NamesTheMetric_ItsMean_AndTheStandardError()
+    {
+        var cell = MLoop.CLI.Commands.CompareCommand.ValidatedCell(new MLoop.Core.Models.ValidatedScore("r_squared", 0.4316, 0.1021, 5));
+
+        Assert.Equal("r_squared 0.4316 ± 0.102", cell);
+    }
+
     private async Task<ExperimentData> CreateTestExperiment(
         string modelName,
         string experimentId,

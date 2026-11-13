@@ -595,6 +595,11 @@ $.experiments[].status: string
 $.experiments[].task: string
 $.experiments[].timeLimitSeconds: number
 $.experiments[].timestamp: string
+$.experiments[].validated: null|object
+$.experiments[].validated.folds: number
+$.experiments[].validated.metric: string
+$.experiments[].validated.standardError: number
+$.experiments[].validated.value: number
 $.experiments[].weightColumn: null
 $.held: array
 $.metric: string

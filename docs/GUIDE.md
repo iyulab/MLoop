@@ -1579,7 +1579,10 @@ token it did not sign.
 ### `mloop compare`
 
 Puts experiments side by side — every metric they recorded, plus the configuration that produced
-them — and says which one wins on the metric the training actually optimized.
+them — and says which one wins on the metric the training actually optimized. A `Validated` row gives
+each experiment's score on its training rows with its standard error (`r_squared 0.4316 ± 0.102`; `-` for an experiment
+recorded before it existed): a difference between two experiments smaller than that spread is one a held-out split cannot tell from
+the split, and `compare --json` carries it as `validated` per experiment.
 
 ```bash
 mloop compare exp-001 exp-002      # two named experiments

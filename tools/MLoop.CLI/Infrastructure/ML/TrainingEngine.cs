@@ -271,6 +271,9 @@ public class TrainingEngine : ITrainingEngine
             if (inputSchema is not null && readByName.Count > 0)
                 inputSchema = inputSchema.WithReadByName(readByName);
 
+            // What the search validated the kept model at: recorded with the experiment and handed to the caller, one reading.
+            var validated = ValidatedScore.OfWinner(trained.Trials, trained.RankingMetric);
+
             // Prepare experiment data
             var experimentData = new ExperimentData
             {
@@ -303,7 +306,8 @@ public class TrainingEngine : ITrainingEngine
                     Trainer = trained.Trainer,
                     TrainingTimeSeconds = stopwatch.Elapsed.TotalSeconds,
                     Ensemble = trained.Ensemble,
-                    TestRows = trained.TestRows
+                    TestRows = trained.TestRows,
+                    Validated = validated
                 },
                 Metrics = trained.Metrics,
                 Trials = trained.Trials,
@@ -335,7 +339,7 @@ public class TrainingEngine : ITrainingEngine
                 Schema = inputSchema ?? trained.Schema,
                 RowCount = trained.RowCount,
                 TestRows = trained.TestRows,
-                Validated = ValidatedScore.OfWinner(trained.Trials, trained.RankingMetric),
+                Validated = validated,
                 HookRefusal = hookRefusal
             };
         }

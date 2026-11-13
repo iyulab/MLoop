@@ -261,6 +261,12 @@ public static class CompareCommand
                 AddComparisonRow(table, "Weight", experimentsToCompare,
                     e => string.IsNullOrEmpty(e.Config.WeightColumn) ? "-" : Markup.Escape(e.Config.WeightColumn));
 
+            // What each model was validated at on its training rows, beside the held-out numbers below: a difference between two
+            // experiments that is smaller than these spreads is not one a held-out split can tell from the split.
+            if (experimentsToCompare.Any(e => e.Result?.Validated is not null))
+                AddComparisonRow(table, "Validated", experimentsToCompare,
+                    e => e.Result?.Validated is { } v ? Markup.Escape(ValidatedCell(v)) : "[grey]-[/]");
+
             // Add separator
             table.AddEmptyRow();
 
@@ -497,7 +503,8 @@ public static class CompareCommand
                     bestTrainer = e.Result?.BestTrainer,
                     isProduction = productionByModel.TryGetValue(e.ModelName, out var prodExpId)
                         && prodExpId == e.ExperimentId,
-                    metrics = e.Metrics ?? []
+                    metrics = e.Metrics ?? [],
+                    validated = e.Result?.Validated
                 })
                 .ToList()
         };
@@ -652,6 +659,11 @@ public static class CompareCommand
             return 1;
         }
     }
+
+    /// <summary>The validated score as one cell: <c>r_squared 0.4316 ± 0.102</c> — the metric, its mean over the validation folds and the standard error.</summary>
+    internal static string ValidatedCell(MLoop.Core.Models.ValidatedScore validated) =>
+        $"{validated.Metric} {MetricSanitizer.Display(validated.Metric, validated.Value)} ± "
+        + validated.StandardError.ToString("G3", System.Globalization.CultureInfo.InvariantCulture);
 
     private static void AddComparisonRow(
         Table table,

@@ -221,6 +221,14 @@ public class ExperimentResult
     public long? TestRows { get; init; }
 
     /// <summary>
+    /// What the search validated the kept model's score at on the training rows, with its standard error — recorded so a reader
+    /// that does not load the trials (<c>GET /experiments/{id}</c>) says what <c>mloop train</c> printed. Absent on experiments
+    /// recorded before the field and where the path scores one split.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public MLoop.Core.Models.ValidatedScore? Validated { get; init; }
+
+    /// <summary>
     /// What a run asked for a blend (<c>ensemble</c>) came to: the blend's members and weights and its out-of-fold score against the
     /// best single trial's, or why the single best model stands. Absent where a blend was not asked for.
     /// </summary>
