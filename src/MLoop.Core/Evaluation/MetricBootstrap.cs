@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace MLoop.Core.Evaluation;
 
 /// <summary>
@@ -6,7 +8,10 @@ namespace MLoop.Core.Evaluation;
 /// <param name="Low">Lower end (2.5th percentile of the resampled metric).</param>
 /// <param name="High">Upper end (97.5th percentile).</param>
 /// <param name="Resamples">Resamples in which the metric was defined — a resample whose rows hold one class has no AUC.</param>
-public sealed record MetricInterval(double Low, double High, int Resamples);
+public sealed record MetricInterval(
+    [property: JsonPropertyName("low")] double Low,
+    [property: JsonPropertyName("high")] double High,
+    [property: JsonPropertyName("resamples")] int Resamples);
 
 /// <summary>What <see cref="MetricBootstrap.Measure"/> found out about a set of scored rows.</summary>
 /// <param name="Rows">Rows that count (positive weight): the sample the interval speaks for.</param>
@@ -14,7 +19,15 @@ public sealed record MetricInterval(double Low, double High, int Resamples);
 /// <param name="Intervals">An interval per metric the rows' own metrics report and the resamples defined often enough; empty when none.</param>
 /// <param name="Note">Why there are no (or fewer) intervals, when there are not; otherwise <c>null</c>.</param>
 public sealed record MetricBootstrapResult(
-    int Rows, double Level, IReadOnlyDictionary<string, MetricInterval> Intervals, string? Note);
+    [property: JsonPropertyName("rows")] int Rows,
+    [property: JsonPropertyName("level")] double Level,
+    [property: JsonPropertyName("intervals")] IReadOnlyDictionary<string, MetricInterval> Intervals,
+    [property: JsonPropertyName("note")] string? Note)
+{
+    /// <summary>How the interval was made — named so a reader of the JSON does not have to guess.</summary>
+    [JsonPropertyName("method")]
+    public string Method => MetricBootstrap.MethodName;
+}
 
 /// <summary>
 /// How far a test file's metrics move with the rows that happened to be in it: the rows are resampled with
@@ -31,6 +44,9 @@ public sealed record MetricBootstrapResult(
 /// </remarks>
 public static class MetricBootstrap
 {
+    /// <summary>How the intervals are made, as reported.</summary>
+    public const string MethodName = "bootstrap";
+
     /// <summary>The coverage aimed at.</summary>
     public const double Level = 0.95;
 

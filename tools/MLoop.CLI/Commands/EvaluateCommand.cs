@@ -107,7 +107,8 @@ public static partial class EvaluateCommand
         string? weightColumn = null,
         Comparison? comparison = null,
         ConfusionCounts? confusion = null,
-        IReadOnlyList<string>? warnings = null)
+        IReadOnlyList<string>? warnings = null,
+        MetricBootstrapResult? uncertainty = null)
     {
         warnings ??= JsonOutputScope.Warnings;
         var payload = new
@@ -115,6 +116,7 @@ public static partial class EvaluateCommand
             WeightColumn = weightColumn,
             Comparison = comparison,
             Confusion = confusion,
+            Uncertainty = uncertainty,
             Model = model,
             Skipped = skipped,
             ExperimentId = experimentId,
@@ -235,6 +237,7 @@ public static partial class EvaluateCommand
             // Perform evaluation with progress indicator
             Dictionary<string, double>? testMetrics = null;
             ConfusionCounts? confusion = null;
+            MetricBootstrapResult? uncertainty = null;
 
             await AnsiConsole.Status()
                 .Spinner(Spinner.Known.Dots)
@@ -253,14 +256,15 @@ public static partial class EvaluateCommand
                         experimentData.Config.UserColumn,
                         experimentData.Config.ItemColumn,
                         weightColumn,
-                        new MLoop.Core.Metrics.MetricEngine(projectRoot, new ConsoleLogger()));
-                    (testMetrics, confusion) = (evaluation.Metrics, evaluation.Confusion);
+                        new MLoop.Core.Metrics.MetricEngine(projectRoot, new ConsoleLogger()),
+                        withInterval: true);
+                    (testMetrics, confusion, uncertainty) = (evaluation.Metrics, evaluation.Confusion, evaluation.Uncertainty);
 
                     ctx.Status("[green]Evaluation complete![/]");
                 });
 
             var (overfitting, trainingMetrics) = ShowEvaluation(
-                experimentData!, testMetrics!, confusion, weightColumn, resolvedModelName, resolvedExperimentId);
+                experimentData!, testMetrics!, confusion, uncertainty, weightColumn, resolvedModelName, resolvedExperimentId);
 
             IReadOnlyList<EvaluationSlices.Slice>? slices = null;
             if (!string.IsNullOrWhiteSpace(sliceBy))
@@ -287,7 +291,7 @@ public static partial class EvaluateCommand
             if (jsonOutput)
                 EmitJson(resolvedModelName, resolvedExperimentId, reportedTestDataFile,
                     trainingMetrics, testMetrics, overfitting, sliceBy: sliceBy?.Trim(), slices: slices, weightColumn: weightColumn,
-                    comparison: comparison, confusion: confusion);
+                    comparison: comparison, confusion: confusion, uncertainty: uncertainty);
 
             return 0;
         }
