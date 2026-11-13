@@ -328,6 +328,7 @@ public class TrainingEngine : ITrainingEngine
                 ExperimentId = experimentId,
                 Trainer = trained.Trainer,
                 Metrics = trained.Metrics,
+                RankingMetric = trained.RankingMetric,
                 TrainingTimeSeconds = stopwatch.Elapsed.TotalSeconds,
                 ModelPath = modelPath,
                 ReportPath = _fileSystem.FileExists(reportPath) ? reportPath : null,

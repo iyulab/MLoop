@@ -209,6 +209,7 @@ internal static class ExperimentReport
         }
         sb.AppendLine("| Metric | Value |");
         sb.AppendLine("|---|---|");
+        // By name, unlike the table `train` prints: the page is committed, and a row that keeps its place from one experiment to the next is what a diff reads.
         foreach (var (name, value) in experiment.Metrics.OrderBy(m => m.Key, StringComparer.Ordinal))
             Row(sb, name, Measured(name, value));
         sb.AppendLine();
