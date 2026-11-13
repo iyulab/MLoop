@@ -82,11 +82,14 @@ public sealed class FeedbackBasedTrigger : IRetrainingTrigger
     {
         if (!metrics.Accuracy.HasValue)
         {
+            // Feedback that is all read as interval coverage has no accuracy to drop: say so, not that none was collected.
             return new ConditionResult(
                 condition,
                 IsMet: false,
                 CurrentValue: null,
-                Details: "No accuracy data available (no feedback collected" + Scope(metrics) + ")");
+                Details: metrics.IntervalCoverage is { } coverage
+                    ? $"Accuracy does not apply: the {metrics.TotalFeedback} feedback entries answer predictions that stated an interval, read as interval coverage ({coverage.Observed:P1} inside the {coverage.Nominal:P0} stated)" + Scope(metrics)
+                    : "No accuracy data available (no feedback collected" + Scope(metrics) + ")");
         }
 
         // An established drop, not a point estimate: enough feedback, and even the interval's best case below the

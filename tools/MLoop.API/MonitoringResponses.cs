@@ -1,3 +1,4 @@
+using MLoop.DataStore.Interfaces;
 using MLoop.Ops.Services;
 
 namespace MLoop.API;
@@ -16,7 +17,8 @@ public sealed record LogEntryView(
     IDictionary<string, object> Input,
     object Output,
     double? Confidence,
-    DateTimeOffset Timestamp);
+    DateTimeOffset Timestamp,
+    PredictionInterval? Interval = null);
 
 /// <summary><c>GET /feedback</c>.</summary>
 public sealed record FeedbackListResponse(int Count, string ModelName, IReadOnlyList<FeedbackEntryView> Feedback);

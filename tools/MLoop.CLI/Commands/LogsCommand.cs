@@ -250,6 +250,7 @@ public static class LogsCommand
             Input = l.Input,
             Output = l.Output,
             l.Confidence,
+            l.Interval,
             Timestamp = l.Timestamp.ToString("o")
         });
 

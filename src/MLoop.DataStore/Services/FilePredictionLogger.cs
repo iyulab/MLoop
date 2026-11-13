@@ -203,7 +203,8 @@ public sealed class FilePredictionLogger : IPredictionLogger
             Input = entry.Input.ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
             Output = entry.Output,
             Confidence = entry.Confidence,
-            Timestamp = entry.Timestamp
+            Timestamp = entry.Timestamp,
+            Interval = entry.Interval
         };
     }
 
@@ -216,7 +217,8 @@ public sealed class FilePredictionLogger : IPredictionLogger
             log.Output ?? new object(),
             log.Confidence,
             log.Timestamp,
-            log.Id);
+            log.Id,
+            log.Interval);
     }
 
     /// <summary>
@@ -231,5 +233,6 @@ public sealed class FilePredictionLogger : IPredictionLogger
         public object? Output { get; set; }
         public double? Confidence { get; set; }
         public DateTimeOffset Timestamp { get; set; }
+        public PredictionInterval? Interval { get; set; }
     }
 }

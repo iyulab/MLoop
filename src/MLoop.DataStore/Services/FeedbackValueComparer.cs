@@ -46,6 +46,29 @@ public static class FeedbackValueComparer
             predicted.ToString(), actual.ToString(), StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Whether <paramref name="actual"/> lies inside <paramref name="interval"/> — the judgement a prediction that stated an interval
+    /// is read by, in place of <see cref="ValuesMatch"/> (two numbers are never equal). <see langword="null"/> when it cannot be
+    /// judged: no interval, one that cannot hold a value (<see cref="Interfaces.PredictionInterval.CanJudge"/>), or an actual value that is not
+    /// a number. The one rule — the metrics and the <c>feedback list</c> Match column both ask it.
+    /// </summary>
+    public static bool? InsideInterval(Interfaces.PredictionInterval? interval, object? actual) =>
+        interval is { } stated && stated.CanJudge() && TryReadNumber(actual, out var number) ? stated.Contains(number) : null;
+
+    /// <summary>
+    /// Reads <paramref name="value"/> as a finite number — a number, a JSON number or its text — the way
+    /// <see cref="ValuesMatch"/> reads one, so an actual value is judged by the same reading everywhere.
+    /// </summary>
+    public static bool TryReadNumber(object? value, out double number)
+    {
+        number = 0;
+        if (value is null)
+            return false;
+        if (value is JsonElement element)
+            value = Normalize(element);
+        return TryAsDouble(value, out number) && double.IsFinite(number);
+    }
+
     private static bool TryAsDouble(object value, out double result)
     {
         switch (value)

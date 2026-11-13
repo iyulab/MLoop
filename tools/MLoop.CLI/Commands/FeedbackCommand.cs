@@ -11,6 +11,7 @@ using MLoop.Core.Data;
 using MLoop.Core.Storage;
 using MLoop.DataStore.Interfaces;
 using MLoop.DataStore.Services;
+using MLoop.Ops.Services;
 using Spectre.Console;
 
 namespace MLoop.CLI.Commands;
@@ -654,6 +655,7 @@ public static class FeedbackCommand
             f.Source,
             f.Weight,
             f.ExperimentId,
+            f.Interval,
             Timestamp = f.Timestamp.ToString("o")
         });
 
@@ -681,8 +683,13 @@ public static class FeedbackCommand
         {
             var predictedStr = entry.PredictedValue?.ToString() ?? "-";
             var actualStr = entry.ActualValue?.ToString() ?? "-";
-            var isMatch = FeedbackValueComparer.ValuesMatch(entry.PredictedValue, entry.ActualValue);
-            var matchStr = isMatch ? "[green]✓[/]" : "[red]✗[/]";
+            // A prediction that stated an interval is not "the same value" or not: the cell says whether the actual value fell inside.
+            var matchStr = FeedbackValueComparer.InsideInterval(entry.Interval, entry.ActualValue) switch
+            {
+                true => "[green]✓[/] [grey]inside[/]",
+                false => "[red]✗[/] [grey]outside[/]",
+                null => FeedbackValueComparer.ValuesMatch(entry.PredictedValue, entry.ActualValue) ? "[green]✓[/]" : "[red]✗[/]",
+            };
 
             // Values are the caller's text — escaped, or a '[' in a label is read as markup.
             var cells = new List<string>
@@ -721,8 +728,27 @@ public static class FeedbackCommand
             metrics.EffectiveSampleSize,
             metrics.ExperimentId,
             metrics.UnattributedFeedback,
+            metrics.IntervalCoverage,
             CalculatedAt = metrics.CalculatedAt.ToString("o")
         }, options));
+    }
+
+    /// <summary>
+    /// The posterior check of a stated interval: the share of actual values inside it against the level it stated, and when
+    /// even the best case of that share (the 95 % Wilson upper bound, as the accuracy trigger reads accuracy) falls short of
+    /// the stated level, that it did — the point of the line.
+    /// </summary>
+    private static void AddIntervalCoverageRows(Grid grid, FeedbackMetrics metrics, IntervalCoverage coverage)
+    {
+        var evidence = metrics.Weighted ? $"{coverage.EffectiveN:0.#} effective rows of {coverage.N}" : $"{coverage.N} rows";
+        var upper = RetrainingDefaults.AccuracyUpperBound(coverage.Observed, coverage.EffectiveN);
+        var color = upper < coverage.Nominal ? "red" : "green";
+        grid.AddRow(metrics.Weighted ? "[grey]Interval coverage (weighted):[/]" : "[grey]Interval coverage:[/]",
+            $"[{color}]{coverage.Observed:P1}[/] [grey]of the {coverage.Nominal:P0} the intervals stated ({evidence})[/]");
+        if (upper < coverage.Nominal)
+            grid.AddRow("", $"[red]Below the stated level:[/] [grey]even the best case of this share, {upper:P1} (95 % interval), is under {coverage.Nominal:P0} — the intervals are narrower than they say.[/]");
+        if (coverage.Unjudged > 0)
+            grid.AddRow("[grey]Not judged by an interval:[/]", $"[white]{coverage.Unjudged}[/] [grey](answered without an interval — logged before intervals were kept, or by a model that states none — or with an actual value that is not a number)[/]");
     }
 
     private static void OutputMetricsAsPanel(FeedbackMetrics metrics)
@@ -748,8 +774,13 @@ public static class FeedbackCommand
         }
         else
         {
-            grid.AddRow("[grey]Accuracy:[/]", "[grey]N/A[/]");
+            grid.AddRow("[grey]Accuracy:[/]", metrics.IntervalCoverage is null
+                ? "[grey]N/A[/]"
+                : "[grey]N/A (a value answer is judged by its interval, below)[/]");
         }
+
+        if (metrics.IntervalCoverage is { } coverage)
+            AddIntervalCoverageRows(grid, metrics, coverage);
 
         grid.AddRow("[grey]Calculated At:[/]", $"[grey]{TimestampDisplay.Local(metrics.CalculatedAt)}[/]");
 

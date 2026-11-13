@@ -50,6 +50,15 @@ public interface IPredictionLogger
 /// <summary>
 /// Represents a single prediction log entry.
 /// </summary>
+/// <param name="ModelName">The model name the prediction is logged under.</param>
+/// <param name="ExperimentId">The experiment that answered.</param>
+/// <param name="Input">What the answer was made from.</param>
+/// <param name="Output">The answer (<c>PredictionLogOutput</c>).</param>
+/// <param name="Confidence">The answer's per-row confidence, when it has one.</param>
+/// <param name="Timestamp">When it was logged.</param>
+/// <param name="Id">The id feedback names it by; made when none is given.</param>
+/// <param name="Interval">The interval the answer stated around its value (a regression or forecast answer), or null when it
+/// stated none — what lets a later reader judge whether the stated level held (<see cref="FeedbackMetrics.IntervalCoverage"/>).</param>
 public record PredictionLogEntry(
     string ModelName,
     string ExperimentId,
@@ -57,7 +66,26 @@ public record PredictionLogEntry(
     object Output,
     double? Confidence,
     DateTimeOffset Timestamp,
-    string? Id = null);
+    string? Id = null,
+    PredictionInterval? Interval = null);
+
+/// <summary>
+/// The interval a prediction stated around its value: <paramref name="Lower"/> to <paramref name="Upper"/> at the level
+/// <paramref name="Confidence"/> (a share, 0.9 for "90 %"). Kept as stated — what the answer said, not a recomputation.
+/// </summary>
+public sealed record PredictionInterval(double Lower, double Upper, double Confidence)
+{
+    /// <summary>
+    /// Whether this interval can be judged against an actual value: finite bounds the right way round and a level that is a
+    /// share. (A method, not a property — a property would be written into every log line.)
+    /// </summary>
+    public bool CanJudge() =>
+        double.IsFinite(Lower) && double.IsFinite(Upper) && Lower <= Upper
+        && double.IsFinite(Confidence) && Confidence is > 0 and < 1;
+
+    /// <summary>Whether <paramref name="actual"/> lies in the interval, its bounds included.</summary>
+    public bool Contains(double actual) => actual >= Lower && actual <= Upper;
+}
 
 /// <summary>
 /// The identifier a logged prediction is known by — what feedback names when it reports the actual
