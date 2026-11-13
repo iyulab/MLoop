@@ -14,6 +14,9 @@ public class TrainingResult
     /// <summary>The human-facing rendering of <see cref="Trainer"/>. Derived, not stored.</summary>
     public string BestTrainer => Trainer.Display;
     public required Dictionary<string, double> Metrics { get; init; }
+
+    /// <summary>The canonical name of the metric the search ranked trials by — the one a table of <see cref="Metrics"/> puts first. Null where nothing was ranked.</summary>
+    public string? RankingMetric { get; init; }
     public required double TrainingTimeSeconds { get; init; }
     public required string ModelPath { get; init; }
 

@@ -225,7 +225,7 @@ internal static class TrainPresenter
             .AddColumn("Metric")
             .AddColumn("Value");
 
-        foreach (var (metricName, metricValue) in result.Metrics.OrderByDescending(m => m.Value))
+        foreach (var (metricName, metricValue) in MetricDisplayOrder.Of(result.Metrics, result.RankingMetric ?? TaskMetadata.PrimaryMetric(taskType)))
         {
             var formattedValue = MetricSanitizer.Display(metricName, metricValue);
             var color = MetricSanitizer.IsUndefinedSentinel(metricName, metricValue) ? "red" :
@@ -334,7 +334,7 @@ internal static class TrainPresenter
             .AddColumn(new TableColumn($"[cyan]New ({result.ExperimentId})[/]").RightAligned())
             .AddColumn(new TableColumn("Delta").RightAligned());
 
-        foreach (var (metricName, newValue) in result.Metrics.OrderByDescending(m => m.Value))
+        foreach (var (metricName, newValue) in MetricDisplayOrder.Of(result.Metrics, result.RankingMetric))
         {
             var prodValue = production.Metrics!.TryGetValue(metricName, out var pv) ? pv : (double?)null;
             var prodStr = prodValue.HasValue ? $"{prodValue.Value:F4}" : "[grey]-[/]";
