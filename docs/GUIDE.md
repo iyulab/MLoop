@@ -1543,7 +1543,7 @@ curl -X POST http://localhost:5000/predict \
   entry that leaves the folder (absolute path, drive, `..`, backslash), a link, a file no dataset holds (images, `.json`,
   `.txt`, `.names`, `.yaml`, `.csv`, `.tsv`), a name that is not a plain file name. Limits (`413`), in `appsettings.json`
   or the environment: `Serve:Datasets:MaxUploadBytes` (2 GiB), `MaxExpandedBytes` (8 GiB, counted as a zip unpacks —
-  its declared sizes are the sender's word), `MaxEntries` (100,000). `DELETE /datasets/{id}` refuses (`409`) while a queued or
+  its declared sizes are the sender's word), `MaxEntries` (100,000), and `MaxTotalBytes` (32 GiB — what the stored uploads add up to; an upload that would pass it is refused with the room that is left, and `DELETE /datasets/{id}` or the retention below frees some; it is a ceiling judged as each upload begins, not a quota between uploads in flight at once). `DELETE /datasets/{id}` refuses (`409`) while a queued or
   running job trains on the upload. Uploads are kept until deleted, unless `Serve:Datasets:RetentionDays` is set: then the server removes, once a day, the uploads older than that many days (by the time in their id; never one a queued or running job reads).
 - Swagger/OpenAPI documentation at `/swagger`
 - Single and batch predictions

@@ -41,7 +41,7 @@ public static class DatasetEndpoints
             try
             {
                 var store = new DatasetStore(projectRootPath.Value);
-                var dataset = await store.SaveAsync(request.Body, fileName, limits, path => LayoutRefusal(task, path, projectRootPath.Value), ct);
+                var dataset = await store.SaveAsync(request.Body, fileName, limits, path => LayoutRefusal(task, path, projectRootPath.Value), ct, request.ContentLength);
                 logger.LogInformation("Dataset '{Id}' stored: {Kind}, {Files} file(s), {Bytes} bytes", dataset.Id, dataset.Kind, dataset.Files, dataset.Bytes);
                 return TypedResults.Created($"/datasets/{dataset.Id}", DatasetResponse.Of(dataset));
             }

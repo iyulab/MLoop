@@ -281,6 +281,61 @@ public class DatasetUploadApiTests : IClassFixture<TestWebApplicationFactory>
         response.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
     }
 
+    /// <summary>What the stored uploads add up to now — the other tests of this class share the project.</summary>
+    private async Task<long> StoredTotalAsync() =>
+        (await JsonOf(await _client.GetAsync("/datasets"))).GetProperty("datasets").EnumerateArray().Sum(d => d.GetProperty("bytes").GetInt64());
+
+    [Fact]
+    public async Task UploadsBeyondTheTotalLimit_AreTooLarge_UntilARemovalMakesRoom()
+    {
+        var csv = Csv();
+        var stored = await StoredTotalAsync();
+        using var limited = _factory.WithWebHostBuilder(b => b.UseSetting("Serve:Datasets:MaxTotalBytes", (stored + 2 * csv.Length + 10).ToString()));
+        var client = limited.CreateClient();
+        var before = StoredIds().ToHashSet();
+
+        var first = await UploadAsync("a.csv", csv, client: client);
+        var second = await UploadAsync("b.csv", csv, client: client);
+        var third = await UploadAsync("c.csv", csv, client: client);
+
+        first.StatusCode.Should().Be(HttpStatusCode.Created);
+        second.StatusCode.Should().Be(HttpStatusCode.Created);
+        third.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
+        var message = await third.Content.ReadAsStringAsync();
+        message.Should().Contain("Serve:Datasets:MaxTotalBytes", "the refusal names the setting that bound it");
+        message.Should().Contain("DELETE /datasets/{id}", "and what frees room");
+        StoredIds().Except(before).Should().HaveCount(2, "the refused upload left nothing");
+        Leftovers().Should().BeEmpty();
+
+        var firstId = (await JsonOf(first)).GetProperty("id").GetString()!;
+        (await client.DeleteAsync($"/datasets/{firstId}")).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await UploadAsync("d.csv", csv, client: client)).StatusCode.Should().Be(HttpStatusCode.Created);
+    }
+
+    [Fact]
+    public async Task AZipThatUnpacksBeyondTheRoomLeft_IsTooLarge_NamingTheTotalLimit()
+    {
+        var stored = await StoredTotalAsync();
+        using var limited = _factory.WithWebHostBuilder(b => b.UseSetting("Serve:Datasets:MaxTotalBytes", (stored + 65536).ToString()));
+        var client = limited.CreateClient();
+        var zip = Zip(new() { ["ok/a.csv"] = new byte[1 << 20] });
+
+        var response = await UploadAsync("bomb.zip", zip, client: client);
+
+        response.StatusCode.Should().Be(HttpStatusCode.RequestEntityTooLarge);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("Serve:Datasets:MaxTotalBytes");
+        Leftovers().Should().BeEmpty();
+    }
+
+    [Fact]
+    public void TheTotalLimit_DefaultsToACeilingAboveTheLimitOfOneUpload()
+    {
+        var limits = DatasetLimits.From(new Microsoft.Extensions.Configuration.ConfigurationBuilder().Build());
+
+        limits.MaxTotalBytes.Should().Be(DatasetLimits.DefaultMaxTotalBytes);
+        limits.MaxTotalBytes.Should().BeGreaterThan(limits.MaxExpandedBytes);
+    }
+
     [Fact]
     public async Task TheStoredUploads_AreListedNewestFirst_AndRemovedById()
     {

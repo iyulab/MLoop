@@ -6,19 +6,21 @@ using MLoop.Core.Storage;
 
 namespace MLoop.API;
 
-/// <summary>What the server takes in one upload, and how big a zip may grow when it is unpacked — <c>Serve:Datasets</c> in the
-/// server's configuration. The defaults are ceilings for a project on one machine, not measured thresholds; a deployment
-/// that takes larger datasets raises them.</summary>
-public sealed record DatasetLimits(long MaxUploadBytes, int MaxEntries, long MaxExpandedBytes)
+/// <summary>What the server takes in one upload, how big a zip may grow when it is unpacked, and how much the stored uploads may
+/// add up to — <c>Serve:Datasets</c> in the server's configuration. The defaults are ceilings for a project on one machine, not
+/// measured thresholds; a deployment that takes larger datasets raises them.</summary>
+public sealed record DatasetLimits(long MaxUploadBytes, int MaxEntries, long MaxExpandedBytes, long MaxTotalBytes = DatasetLimits.DefaultMaxTotalBytes)
 {
     public const long DefaultMaxUploadBytes = 2L << 30;
     public const int DefaultMaxEntries = 100_000;
     public const long DefaultMaxExpandedBytes = 8L << 30;
+    public const long DefaultMaxTotalBytes = 32L << 30;
 
     public static DatasetLimits From(IConfiguration configuration) => new(
         configuration.GetValue("Serve:Datasets:MaxUploadBytes", DefaultMaxUploadBytes),
         configuration.GetValue("Serve:Datasets:MaxEntries", DefaultMaxEntries),
-        configuration.GetValue("Serve:Datasets:MaxExpandedBytes", DefaultMaxExpandedBytes));
+        configuration.GetValue("Serve:Datasets:MaxExpandedBytes", DefaultMaxExpandedBytes),
+        configuration.GetValue("Serve:Datasets:MaxTotalBytes", DefaultMaxTotalBytes));
 }
 
 /// <summary>An upload the server will not take, and why — the caller's mistake (400), or a limit (413).</summary>
@@ -66,15 +68,34 @@ public sealed class DatasetStore(string projectRoot)
 
     /// <summary>Keeps <paramref name="content"/> as a dataset. <paramref name="check"/> judges the dataset's place before it is
     /// kept (the training layout of a task, say): a text refuses it.</summary>
+    /// <remarks>
+    /// <paramref name="declaredLength"/> is the length the sender announced, when it did: an upload that cannot fit is refused
+    /// before a byte is read. What the stored uploads add up to is judged against <see cref="DatasetLimits.MaxTotalBytes"/> as
+    /// the upload begins and counted as it arrives — a ceiling, not a quota: two uploads in flight at once are each judged
+    /// against what was stored when they began.
+    /// </remarks>
     /// <exception cref="DatasetRefusedException">The upload cannot be taken — nothing is left of it.</exception>
     public async Task<StoredDataset> SaveAsync(
-        Stream content, string? fileName, DatasetLimits limits, Func<string, string?>? check, CancellationToken ct)
+        Stream content, string? fileName, DatasetLimits limits, Func<string, string?>? check, CancellationToken ct,
+        long? declaredLength = null)
     {
         var name = CheckFileName(fileName);
         var isZip = name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
         if (!isZip && !DataFileFormats.IsReadable(name))
             throw new DatasetRefusedException(
                 $"'{name}' is neither a table file the trainers read (csv, tsv, xlsx, parquet, jsonl …) nor a .zip of a directory dataset.");
+
+        // What the disk may still take: the most one upload and one unpacked zip may then be is that, and the refusal names the setting that bound it.
+        var room = limits.MaxTotalBytes - StoredBytes();
+        var totalSetting = $"Serve:Datasets:MaxTotalBytes — the stored uploads would pass {limits.MaxTotalBytes.ToString("N0", CultureInfo.InvariantCulture)} bytes; DELETE /datasets/{{id}} or Serve:Datasets:RetentionDays frees room";
+        if (room <= 0 || declaredLength > room)
+            throw new DatasetRefusedException(
+                $"The upload does not fit: the stored uploads leave {Math.Max(room, 0).ToString("N0", CultureInfo.InvariantCulture)} bytes of room ({totalSetting}).",
+                StatusCodes.Status413PayloadTooLarge);
+        var uploadLimit = Math.Min(limits.MaxUploadBytes, room);
+        var uploadSetting = room < limits.MaxUploadBytes ? totalSetting : "Serve:Datasets:MaxUploadBytes";
+        var expandedLimit = Math.Min(limits.MaxExpandedBytes, room);
+        var expandedSetting = room < limits.MaxExpandedBytes ? totalSetting : "Serve:Datasets:MaxExpandedBytes";
 
         var createdAt = DateTime.UtcNow;
         var id = $"ds-{TimestampKeys.Stamp(createdAt)}-{Guid.NewGuid().ToString("N")[..8]}";
@@ -90,10 +111,10 @@ public sealed class DatasetStore(string projectRoot)
             {
                 var archive = Path.Combine(staging, ".upload.zip");
                 await using (var file = File.Create(archive))
-                    await CopyLimitedAsync(content, file, limits.MaxUploadBytes, "The upload", ct);
+                    await CopyLimitedAsync(content, file, uploadLimit, "The upload", uploadSetting, ct);
                 var unpacked = Path.Combine(staging, "content");
                 Directory.CreateDirectory(unpacked);
-                await UnpackAsync(archive, unpacked, limits, ct);
+                await UnpackAsync(archive, unpacked, limits, expandedLimit, expandedSetting, ct);
                 File.Delete(archive);
                 // A zip of «the folder» holds that one folder at its root: it is the dataset, as it would be on disk.
                 var children = Directory.GetFileSystemEntries(unpacked);
@@ -106,7 +127,7 @@ public sealed class DatasetStore(string projectRoot)
                 datasetPath = Path.Combine(staging, name);
                 await using (var file = File.Create(datasetPath))
                 {
-                    if (await CopyLimitedAsync(content, file, limits.MaxUploadBytes, "The upload", ct) == 0)
+                    if (await CopyLimitedAsync(content, file, uploadLimit, "The upload", uploadSetting, ct) == 0)
                         throw new DatasetRefusedException("The request body is empty: send the file's bytes as the body.");
                 }
             }
@@ -129,6 +150,9 @@ public sealed class DatasetStore(string projectRoot)
             throw;
         }
     }
+
+    /// <summary>What the stored uploads add up to, in bytes.</summary>
+    public long StoredBytes() => List().Sum(d => d.Bytes);
 
     /// <summary>The stored uploads, newest first.</summary>
     public IReadOnlyList<StoredDataset> List()
@@ -259,7 +283,8 @@ public sealed class DatasetStore(string projectRoot)
         return null;
     }
 
-    private static async Task UnpackAsync(string archivePath, string destination, DatasetLimits limits, CancellationToken ct)
+    private static async Task UnpackAsync(
+        string archivePath, string destination, DatasetLimits limits, long expandedLimit, string expandedSetting, CancellationToken ct)
     {
         ZipArchive zip;
         try
@@ -296,8 +321,8 @@ public sealed class DatasetStore(string projectRoot)
                 if (!ZipFileExtensions.Contains(extension))
                     throw new DatasetRefusedException(
                         $"The zip's entry '{entry.FullName}' is not a file a dataset holds ({string.Join(" ", ZipFileExtensions.Order())}).");
-                if (entry.Length > limits.MaxExpandedBytes)
-                    throw new DatasetRefusedException($"The zip's entry '{entry.FullName}' alone unpacks beyond the limit (Serve:Datasets:MaxExpandedBytes).", StatusCodes.Status413PayloadTooLarge);
+                if (entry.Length > expandedLimit)
+                    throw new DatasetRefusedException($"The zip's entry '{entry.FullName}' alone unpacks beyond the limit ({expandedSetting}).", StatusCodes.Status413PayloadTooLarge);
             }
 
             long written = 0;
@@ -316,13 +341,13 @@ public sealed class DatasetStore(string projectRoot)
                 await using var input = entry.Open();
                 await using var output = File.Create(target);
                 // The bytes that come out are counted, not the size the entry declares.
-                written += await CopyLimitedAsync(input, output, limits.MaxExpandedBytes - written, "The unpacked zip", ct);
+                written += await CopyLimitedAsync(input, output, expandedLimit - written, "The unpacked zip", expandedSetting, ct);
             }
         }
     }
 
     /// <summary>Copies up to <paramref name="limit"/> bytes; more is a 413 and the caller removes what was written.</summary>
-    private static async Task<long> CopyLimitedAsync(Stream source, Stream destination, long limit, string what, CancellationToken ct)
+    private static async Task<long> CopyLimitedAsync(Stream source, Stream destination, long limit, string what, string setting, CancellationToken ct)
     {
         var buffer = new byte[81920];
         long total = 0;
@@ -332,7 +357,7 @@ public sealed class DatasetStore(string projectRoot)
             total += read;
             if (total > limit)
                 throw new DatasetRefusedException(
-                    $"{what} is larger than the server takes (Serve:Datasets:MaxUploadBytes / MaxExpandedBytes — {limit.ToString("N0", CultureInfo.InvariantCulture)} bytes).",
+                    $"{what} is larger than the server takes ({limit.ToString("N0", CultureInfo.InvariantCulture)} bytes; {setting}).",
                     StatusCodes.Status413PayloadTooLarge);
             await destination.WriteAsync(buffer.AsMemory(0, read), ct);
         }
