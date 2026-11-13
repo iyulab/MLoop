@@ -208,6 +208,10 @@ public static class TriggerCommand
         AnsiConsole.Write(table);
         foreach (var drift in result.ConditionResults.Where(r => r.Condition.Type == ConditionType.DataDrift && r.Details is not null))
             AnsiConsole.MarkupLine($"[grey]Drift:[/] {Markup.Escape(drift.Details!)}");
+        // A condition that could not be measured shows «-» — and says why (no feedback yet, accuracy that does not apply to an
+        // answer with an interval, too few rows), which the --json document carries as `details`.
+        foreach (var unmeasured in result.ConditionResults.Where(r => r.CurrentValue is null && r.Condition.Type != ConditionType.DataDrift && r.Details is not null))
+            AnsiConsole.MarkupLine($"[grey]{Markup.Escape(unmeasured.Condition.Name)}:[/] {Markup.Escape(unmeasured.Details!)}");
         AnsiConsole.WriteLine();
 
         // Recommendation
@@ -235,6 +239,7 @@ public static class TriggerCommand
             ConditionType.FeedbackVolume => $"[yellow]>= {condition.Threshold:N0}[/]",
             ConditionType.TimeBased => $"[yellow]> {condition.Threshold:N0} days[/]",
             ConditionType.DataDrift => $"[yellow]PSI >= {condition.Threshold:0.##}[/]",
+            ConditionType.IntervalCoverage => $"[yellow]< level - {condition.Threshold * 100:0.##}%[/]",
             _ => $"[yellow]{condition.Threshold}[/]"
         };
     }
@@ -251,6 +256,7 @@ public static class TriggerCommand
             ConditionType.FeedbackVolume => $"[{color}]{result.CurrentValue:N0}[/]",
             ConditionType.TimeBased => $"[{color}]{result.CurrentValue:N0} days[/]",
             ConditionType.DataDrift => $"[{color}]PSI {result.CurrentValue:0.000}[/]",
+            ConditionType.IntervalCoverage => $"[{color}]{result.CurrentValue:P1}[/]",
             _ => $"[{color}]{result.CurrentValue}[/]"
         };
     }

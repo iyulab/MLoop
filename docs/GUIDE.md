@@ -1784,7 +1784,9 @@ of the same model that was answered without an interval — logged before interv
 "below the stated level" line appears only when the best case of the share is below it. The value-match `accuracy` is `null`
 for these predictions: two numbers are never equal, so it said `0 %` for every regression.
 
-Coverage is a check on the model, not a gate: nothing is promoted or refused by it. When it stays well under the stated level
+Coverage is a check on the model, not a gate: nothing is promoted or refused by it. `mloop trigger check` reads it as a
+retraining condition (`interval_coverage` — below the stated level less 5 points, established on at least 30 rows, as an
+accuracy drop is) and, for feedback that has no accuracy, says why its accuracy row shows `-`. When it stays well under the stated level
 on rows from the same distribution the band is too narrow for the model as it runs; when it falls only on a slice of rows, the
 inputs moved (`mloop drift`).
 
@@ -1936,6 +1938,7 @@ mloop trigger check --json                  # shouldRetrain, recommendedAction, 
 | Condition | Met when | Measured from |
 |-----------|----------|---------------|
 | `accuracy_threshold` (`AccuracyDrop`) | accuracy on feedback is established below 70% (`--accuracy`): at least 30 rows of feedback, and the 95% interval's upper end below the threshold | `mloop feedback add` / `POST /feedback` |
+| `interval_coverage` (`IntervalCoverage`) | the intervals a regression model states hold established less often than they say: at least 30 rows of feedback on predictions that stated an interval, and the 95% interval's upper end for the share inside below the stated level less 5 points | the same feedback (`mloop feedback metrics` shows the share) |
 | `feedback_count` (`FeedbackVolume`) | ≥ 100 feedback entries (`--feedback`) | the same feedback |
 | `Scheduled Retraining` (`TimeBased`) | the model is older than 30 days | the production model's training time |
 | `input_drift` (`DataDrift`) | PSI ≥ 0.25 on any input column and over what chance alone gives for the window (the answers' drift is reported apart and does not count) | logged predictions against the training profile (`mloop drift`) |

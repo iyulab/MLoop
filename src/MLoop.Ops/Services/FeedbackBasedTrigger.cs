@@ -44,6 +44,7 @@ public sealed class FeedbackBasedTrigger : IRetrainingTrigger
             {
                 ConditionType.AccuracyDrop => EvaluateAccuracyDrop(condition, metrics),
                 ConditionType.FeedbackVolume => EvaluateFeedbackVolume(condition, metrics),
+                ConditionType.IntervalCoverage => EvaluateIntervalCoverage(condition, metrics),
                 _ => CreateUnsupportedResult(condition)
             };
             results.Add(result);
@@ -71,7 +72,7 @@ public sealed class FeedbackBasedTrigger : IRetrainingTrigger
         string modelName,
         CancellationToken cancellationToken = default)
     {
-        var defaults = new List<RetrainingCondition> { RetrainingDefaults.Accuracy(), RetrainingDefaults.Feedback() };
+        var defaults = new List<RetrainingCondition> { RetrainingDefaults.Accuracy(), RetrainingDefaults.Coverage(), RetrainingDefaults.Feedback() };
 
         return Task.FromResult<IReadOnlyList<RetrainingCondition>>(defaults);
     }
@@ -127,6 +128,50 @@ public sealed class FeedbackBasedTrigger : IRetrainingTrigger
               + (metrics.UnattributedFeedback > 0
                   ? $"; {metrics.UnattributedFeedback} earlier feedback names no experiment its log still records and is not counted"
                   : "");
+
+    /// <summary>
+    /// The coverage of the intervals the answers stated, judged as accuracy is: not on the point estimate but on whether even
+    /// its best case (the 95 % Wilson upper bound over the effective rows) is under the level they stated less the tolerance
+    /// (<see cref="RetrainingCondition.Threshold"/>), and only with enough rows to say.
+    /// </summary>
+    private static ConditionResult EvaluateIntervalCoverage(
+        RetrainingCondition condition,
+        FeedbackMetrics metrics)
+    {
+        if (metrics.IntervalCoverage is not { } coverage)
+        {
+            return new ConditionResult(
+                condition,
+                IsMet: false,
+                CurrentValue: null,
+                Details: "No interval coverage data available (no feedback for a prediction that stated an interval" + Scope(metrics) + ")");
+        }
+
+        var n = coverage.EffectiveN;
+        var evidence = (metrics.Weighted ? $"{n:0.#} effective rows of feedback" : $"{coverage.N} feedback") + Scope(metrics);
+        if (n < RetrainingDefaults.MinimumAccuracyFeedback)
+        {
+            return new ConditionResult(
+                condition,
+                IsMet: false,
+                CurrentValue: coverage.Observed,
+                Details: $"Interval coverage {coverage.Observed:P1} of the {coverage.Nominal:P0} stated, on {evidence} — too few to judge (needs {RetrainingDefaults.MinimumAccuracyFeedback})");
+        }
+
+        var floor = coverage.Nominal - condition.Threshold;
+        var upper = RetrainingDefaults.AccuracyUpperBound(coverage.Observed, n);
+        var isMet = upper < floor;
+        var stated = $"the {coverage.Nominal:P0} stated";
+        string details;
+        if (isMet)
+            details = $"Interval coverage {coverage.Observed:P1} of {stated} (95% interval up to {upper:P1}, {evidence}) is below {floor:P1}";
+        else if (coverage.Observed < floor)
+            details = $"Interval coverage {coverage.Observed:P1} of {stated} is below {floor:P1}, but its 95% interval reaches {upper:P1} on {evidence} — not established";
+        else
+            details = $"Interval coverage {coverage.Observed:P1} of {stated} is at or above {floor:P1} ({evidence})";
+
+        return new ConditionResult(condition, IsMet: isMet, CurrentValue: coverage.Observed, Details: details);
+    }
 
     private static ConditionResult EvaluateFeedbackVolume(
         RetrainingCondition condition,

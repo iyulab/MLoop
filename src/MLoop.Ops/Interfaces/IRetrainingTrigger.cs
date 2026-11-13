@@ -52,7 +52,14 @@ public enum ConditionType
     FeedbackVolume,
 
     /// <summary>Model performance degraded on recent data.</summary>
-    PerformanceDegradation
+    PerformanceDegradation,
+
+    /// <summary>
+    /// The intervals a regression model states held less often than they say: the share of actual values inside them is
+    /// established below the stated level (less a tolerance). The feedback counterpart of <see cref="AccuracyDrop"/> for an
+    /// answer that is a value with an interval.
+    /// </summary>
+    IntervalCoverage
 }
 
 /// <summary>

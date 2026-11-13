@@ -26,6 +26,15 @@ public static class RetrainingDefaults
     public const string FeedbackVolumeName = "feedback_count";
     public const string IntervalName = "Scheduled Retraining";
     public const string DriftName = "input_drift";
+    public const string CoverageName = "interval_coverage";
+
+    /// <summary>
+    /// How far below the level an interval states its coverage may fall before retraining is recommended: a «90 %» interval that
+    /// holds 86 % of the time is not what a retraining is for, one that holds 56 % is. A default, not a measurement — the same
+    /// kind of number as <see cref="AccuracyThreshold"/>. The judgment is on evidence, not on the point estimate
+    /// (<see cref="AccuracyUpperBound"/>).
+    /// </summary>
+    public const double CoverageShortfall = 0.05;
 
     /// <summary>Retrain when any input column's PSI against the training profile reaches this (significant drift).</summary>
     public const double DriftThreshold = MLoop.Core.Monitoring.DriftMeasure.SignificantThreshold;
@@ -59,6 +68,10 @@ public static class RetrainingDefaults
         new(ConditionType.AccuracyDrop, AccuracyName, threshold,
             $"Trigger retraining when accuracy drops below {threshold:P0}");
 
+    public static RetrainingCondition Coverage(double shortfall = CoverageShortfall) =>
+        new(ConditionType.IntervalCoverage, CoverageName, shortfall,
+            $"Trigger retraining when the share of actual values inside the intervals the model stated is established more than {shortfall:P0} points below the level they stated");
+
     public static RetrainingCondition Feedback(int count = FeedbackVolume) =>
         new(ConditionType.FeedbackVolume, FeedbackVolumeName, count,
             $"Trigger retraining when {count}+ new feedback entries are available");
@@ -72,7 +85,7 @@ public static class RetrainingDefaults
             $"Trigger retraining when an input column's PSI against the training data reaches {threshold:0.##}");
 
     /// <summary>Every default condition, in the order they are reported.</summary>
-    public static IReadOnlyList<RetrainingCondition> All { get; } = [Accuracy(), Feedback(), Interval(), Drift()];
+    public static IReadOnlyList<RetrainingCondition> All { get; } = [Accuracy(), Coverage(), Feedback(), Interval(), Drift()];
 }
 
 /// <summary>

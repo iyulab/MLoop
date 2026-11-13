@@ -24,7 +24,7 @@ public class CompositeRetrainingTriggerTests : IDisposable
         var defaults = await trigger.GetDefaultConditionsAsync("m");
 
         defaults.Select(c => c.Type).Should().Equal(
-            ConditionType.AccuracyDrop, ConditionType.FeedbackVolume, ConditionType.TimeBased, ConditionType.DataDrift);
+            ConditionType.AccuracyDrop, ConditionType.IntervalCoverage, ConditionType.FeedbackVolume, ConditionType.TimeBased, ConditionType.DataDrift);
     }
 
     [Fact]
