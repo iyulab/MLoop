@@ -118,7 +118,7 @@ public static class NewHookCommand
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine("[yellow]Next steps:[/]");
             AnsiConsole.MarkupLine("  1. Edit the hook script to implement your logic");
-            AnsiConsole.MarkupLine("  2. Run [blue]mloop train[/] - hook will be auto-discovered");
+            AnsiConsole.MarkupLine($"  2. Run [blue]{RunningCommand(hookTypeEnum.Value)}[/] - the hook is discovered and run at its stage");
             AnsiConsole.WriteLine();
 
             return 0;
@@ -129,6 +129,14 @@ public static class NewHookCommand
             return 1;
         }
     }
+
+    /// <summary>The command that runs a stage's hooks — <c>HookStagesRunContractTests</c> holds each stage to exactly one.</summary>
+    internal static string RunningCommand(HookType stage) => stage switch
+    {
+        HookType.PrePredict => "mloop predict",
+        HookType.PostEvaluate => "mloop evaluate",
+        _ => "mloop train"
+    };
 
     internal static HookType? ValidateAndParseHookType(string type)
     {

@@ -590,9 +590,10 @@ Thumbs.db
         // Create example hook README
         var hookReadme = @"# MLoop Hooks
 
-Hooks run at lifecycle points during training. Put each hook in the folder of its stage —
-`pre-train/` or `post-train/` — not in this folder itself: a file here runs at no stage.
-`mloop new hook <name> --type pre-train` writes one.
+Hooks run at lifecycle points. Put each hook in the folder of its stage — `pre-train/` and
+`post-train/` (run by `mloop train`), `pre-predict/` (`mloop predict`), `post-evaluate/`
+(`mloop evaluate`) — not in this folder itself: a file here runs at no stage.
+`mloop new hook <name> pre-train` writes one.
 
 ## Example Hook
 
@@ -626,9 +627,9 @@ public class DataValidationHook : IMLoopHook
 
 ## Usage
 
-1. Create a new .cs file in `pre-train/` or `post-train/`
+1. Create a new .cs file in the folder of its stage
 2. Implement the `IMLoopHook` interface
-3. Run `mloop train` - hooks are compiled and run at their stage
+3. Run the command of that stage - hooks are compiled and run there
 
 See the Extensibility section of the MLoop guide (docs/GUIDE.md).
 ";
