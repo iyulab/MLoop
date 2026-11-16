@@ -149,4 +149,15 @@ public class TriggerCommandTests
     }
 
     #endregion
+
+    [Fact]
+    public void TheCoverageConditionShowsItsToleranceAndTheShareInside()
+    {
+        var condition = RetrainingDefaults.Coverage();
+
+        Assert.Contains("level - 5%", TriggerCommand.FormatThreshold(condition), StringComparison.Ordinal);
+        var met = new ConditionResult(condition, IsMet: true, CurrentValue: 0.558, Details: "x");
+        Assert.Contains("55.8%", TriggerCommand.FormatCurrentValue(met), StringComparison.Ordinal);
+        Assert.Equal("[grey]-[/]", TriggerCommand.FormatCurrentValue(new ConditionResult(condition, IsMet: false, CurrentValue: null, Details: "y")));
+    }
 }

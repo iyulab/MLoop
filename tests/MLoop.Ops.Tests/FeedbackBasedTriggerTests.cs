@@ -38,6 +38,127 @@ public class FeedbackBasedTriggerTests : IDisposable
         }
     }
 
+    /// <summary>Logs <paramref name="inside"/> predictions whose actual value fell inside the interval they stated (90 %, [10, 20]) and <paramref name="outside"/> whose actual fell outside, and records the feedback.</summary>
+    private async Task StatedIntervalScenario(string model, int inside, int outside, double? weight = null)
+    {
+        for (var i = 0; i < inside + outside; i++)
+        {
+            var id = PredictionIds.New();
+            await _logger.LogBatchAsync(model, "exp-001",
+            [
+                new PredictionLogEntry(model, "exp-001", new Dictionary<string, object> { ["x"] = i }, 15.0, null,
+                    DateTimeOffset.UtcNow, id, new PredictionInterval(10, 20, 0.9)),
+            ]);
+            await _feedbackCollector.RecordFeedbackAsync(id, i < inside ? 15.0 : 40.0, weight: weight);
+        }
+    }
+
+    private static readonly RetrainingCondition Coverage = RetrainingDefaults.Coverage();
+
+    [Fact]
+    public async Task EvaluateAsync_IntervalCoverage_TriggersWhenTheStatedLevelIsEstablishedBroken()
+    {
+        // 15 of 40 inside a stated 90 %: 37.5 % — even the best case of that share (about 53 %) is under 85 % (the level less the tolerated 5 points).
+        await StatedIntervalScenario("reg", inside: 15, outside: 25);
+
+        var result = await _trigger.EvaluateAsync("reg", [Coverage]);
+
+        result.ShouldRetrain.Should().BeTrue();
+        var r = result.ConditionResults.Single();
+        r.IsMet.Should().BeTrue();
+        r.CurrentValue.Should().BeApproximately(0.375, 1e-9);
+        r.Details.Should().Contain("37.5%").And.Contain("90%").And.Contain("95% interval up to");
+        result.RecommendedAction.Should().Contain(RetrainingDefaults.CoverageName);
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_IntervalCoverage_DoesNotTriggerOnAShareThatCouldBeTheStatedLevel()
+    {
+        // 32 of 40 = 80 %: under the 85 % floor on its face, but its 95 % interval reaches past it — not established.
+        await StatedIntervalScenario("reg", inside: 32, outside: 8);
+
+        var result = await _trigger.EvaluateAsync("reg", [Coverage]);
+
+        result.ShouldRetrain.Should().BeFalse();
+        result.ConditionResults.Single().CurrentValue.Should().BeApproximately(0.8, 1e-9);
+        result.ConditionResults.Single().Details.Should().Contain("not established");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_IntervalCoverage_DoesNotTriggerWithinTheTolerance()
+    {
+        // 35 of 40 = 87.5 % of a stated 90 %: a couple of points under the level is not what a retraining is for.
+        await StatedIntervalScenario("reg", inside: 35, outside: 5);
+
+        var result = await _trigger.EvaluateAsync("reg", [Coverage]);
+
+        result.ShouldRetrain.Should().BeFalse();
+        result.ConditionResults.Single().Details.Should().Contain("at or above 85.0%");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_IntervalCoverage_NeedsEnoughFeedbackToJudge()
+    {
+        // Two of ten inside is 20 % — and ten rows are too few to call it.
+        await StatedIntervalScenario("reg", inside: 2, outside: 8);
+
+        var result = await _trigger.EvaluateAsync("reg", [Coverage]);
+
+        result.ShouldRetrain.Should().BeFalse();
+        result.ConditionResults.Single().Details.Should().Contain("too few to judge").And.Contain("30");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_IntervalCoverage_CountsWeightedFeedbackByItsEffectiveRows()
+    {
+        // 40 rows all weighted 1/16 stand for the evidence of 40 rows (Kish: equal weights), the same verdict as unweighted.
+        await StatedIntervalScenario("reg", inside: 15, outside: 25, weight: 16);
+
+        var result = await _trigger.EvaluateAsync("reg", [Coverage]);
+
+        result.ConditionResults.Single().IsMet.Should().BeTrue();
+        result.ConditionResults.Single().Details.Should().Contain("effective rows");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_IntervalCoverage_IsNotMeasuredWithoutFeedbackThatStatedAnInterval()
+    {
+        // A classifier's feedback states no interval: the condition is not measured — not met, no value, and says why.
+        for (var i = 0; i < 40; i++)
+        {
+            var id = PredictionIds.New();
+            await _logger.LogBatchAsync("clf", "exp-001", [new PredictionLogEntry("clf", "exp-001", new Dictionary<string, object> { ["x"] = i }, "yes", 0.9, DateTimeOffset.UtcNow, id)]);
+            await _feedbackCollector.RecordFeedbackAsync(id, "no");
+        }
+
+        var result = await _trigger.EvaluateAsync("clf", [Coverage]);
+
+        result.ShouldRetrain.Should().BeFalse();
+        var r = result.ConditionResults.Single();
+        r.CurrentValue.Should().BeNull();
+        r.Details.Should().Contain("no feedback for a prediction that stated an interval");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_IntervalCoverage_IsNotMeasuredWithoutAnyFeedback()
+    {
+        var result = await _trigger.EvaluateAsync("nothing", [Coverage]);
+
+        result.ConditionResults.Single().IsMet.Should().BeFalse();
+        result.ConditionResults.Single().CurrentValue.Should().BeNull();
+    }
+
+    [Fact]
+    public void The_coverage_default_tolerates_a_few_points_and_names_itself()
+    {
+        var c = RetrainingDefaults.Coverage();
+
+        c.Type.Should().Be(ConditionType.IntervalCoverage);
+        c.Name.Should().Be(RetrainingDefaults.CoverageName).And.Be("interval_coverage");
+        c.Threshold.Should().Be(RetrainingDefaults.CoverageShortfall).And.BeApproximately(0.05, 1e-12);
+        RetrainingDefaults.All.Should().Contain(Coverage);
+    }
+
     [Fact]
     public async Task EvaluateAsync_AccuracyDrop_DoesNotJudgeValueAnswersThatStatedAnInterval()
     {
@@ -247,9 +368,10 @@ public class FeedbackBasedTriggerTests : IDisposable
         var conditions = await _trigger.GetDefaultConditionsAsync("test-model");
 
         // Assert
-        conditions.Should().HaveCount(2);
+        conditions.Should().HaveCount(3);
         conditions.Should().Contain(c => c.Type == ConditionType.AccuracyDrop);
         conditions.Should().Contain(c => c.Type == ConditionType.FeedbackVolume);
+        conditions.Should().Contain(c => c.Type == ConditionType.IntervalCoverage);
     }
 
     [Fact]
