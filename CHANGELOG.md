@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.51.0] - 2026-11-16
+
 ### Added
 
 - **Training, prediction and evaluation read JSON Lines (`.jsonl`, `.ndjson`).** One JSON object per line is read as a table (null fields as empty cells), the same way a workbook is: the file is turned into a CSV copy at the one place a command settles its data path. A `.jsonl` file used to be read as delimited text, as one column headed by its first record. Takes FilePrepper 0.15.0.
