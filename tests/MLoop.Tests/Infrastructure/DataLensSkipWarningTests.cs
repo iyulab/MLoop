@@ -18,8 +18,9 @@ public class DataLensSkipWarningTests : IDisposable
     {
         var rng = new Random(3);
         string V() => (rng.NextDouble() * 10).ToString("R", CultureInfo.InvariantCulture);
-        // Eight columns: a table of seven or fewer is answered by a k-d tree and is never stopped by the work threshold.
-        File.WriteAllLines(_csv, new[] { "a,b,c,d,e,f,g,h" }.Concat(Enumerable.Range(0, 120).Select(_ => string.Join(",", Enumerable.Range(0, 8).Select(_ => V())))));
+        // Thirteen columns: a table of twelve or fewer is answered by a k-d tree and is never stopped by the work threshold.
+        var names = Enumerable.Range(0, 13).Select(i => ((char)('a' + i)).ToString());
+        File.WriteAllLines(_csv, new[] { string.Join(",", names) }.Concat(Enumerable.Range(0, 120).Select(_ => string.Join(",", Enumerable.Range(0, 13).Select(_ => V())))));
     }
 
     public void Dispose() => File.Delete(_csv);

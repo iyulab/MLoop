@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **`mloop info --analyze` and `mloop analyze` take DataLens 0.26.0** (was 0.25.0). A table of more than 50,000 rows no longer gets a DBSCAN cluster report: the analysis skips it, as it already skipped HDBSCAN above its row threshold, and says so in the warnings it prints (DBSCAN's time grew about as the square of the rows whatever the columns — 31 s at 50,000 rows, 146 s at 100,000 on a synthetic five-cluster table). The local outlier factor now runs on tables of up to 12 numeric columns whatever the work (was 7), from a faster nearest-neighbour search in UInsight 0.43.1.
+
 ### Fixed
 
 - **A forecasting or time-series anomaly run that cannot load its native library no longer prints the loader's list of paths.** Since 0.51.0 the failure text of a run carries the innermost exception's message, and for a missing OpenMP runtime that message is the loader's own: a dozen `.so` paths it probed and advice to use `strace`. The screen is the sentence written for the machine (the runtime, the install step, or the platform that cannot run it) and nothing under it.
