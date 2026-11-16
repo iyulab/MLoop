@@ -290,6 +290,14 @@ public static partial class PredictCommand
                 return 1;
             resolvedDataFile = preparedRows;
 
+            // pre-predict hooks see the table this run is about to score, and a refusal means nothing is scored.
+            if (await BatchCommandHooks.RefusalAsync(MLoop.Extensibility.Hooks.HookType.PrePredict, projectRoot, resolvedModelName,
+                    experimentId, taskType, configLabelColumn, resolvedDataFile, resolvedModelPath) is { } hookRefusal)
+            {
+                ErrorConsole.Error(Markup.Escape($"No predictions were made: a pre-predict hook refused the input — {hookRefusal}"));
+                return 1;
+            }
+
             // Parse unknown value strategy
             var strategy = UnknownValueStrategies.Parse(unknownStrategy) ?? UnknownValueStrategy.Auto;
 

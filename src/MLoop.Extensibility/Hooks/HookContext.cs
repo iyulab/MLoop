@@ -25,16 +25,16 @@ public class HookContext
     public required MLContext MLContext { get; init; }
 
     /// <summary>
-    /// Training or prediction data as ML.NET IDataView.
-    /// Available for: PreTrain, PrePredict, PostEvaluate
-    /// Null for: PostTrain (use Model and ExperimentResult instead)
+    /// Training data as ML.NET IDataView, when the loader can read it.
+    /// Available for: PreTrain
+    /// Null for: the other stages (PrePredict and PostEvaluate read <c>Metadata["DataFile"]</c>; PostTrain uses Model and ExperimentResult)
     /// </summary>
     public IDataView? DataView { get; init; }
 
     /// <summary>
     /// Trained ML model.
-    /// Available for: PostTrain, PostEvaluate
-    /// Null for: PreTrain, PrePredict
+    /// Available for: PostTrain
+    /// Null for: the other stages (<c>Metadata["ModelPath"]</c> names the model file)
     /// </summary>
     public ITransformer? Model { get; init; }
 
@@ -47,7 +47,7 @@ public class HookContext
 
     /// <summary>
     /// Model evaluation metrics.
-    /// Available for: PostTrain, PostEvaluate
+    /// Available for: PostTrain, PostEvaluate (an <c>IReadOnlyDictionary&lt;string, double&gt;</c>, name → value)
     /// Null for: PreTrain, PrePredict
     /// </summary>
     public object? Metrics { get; init; }  // Typed metrics (BinaryClassificationMetrics, etc.)

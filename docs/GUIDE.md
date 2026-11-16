@@ -93,7 +93,7 @@ mloop init sentiment-analysis --task multiclass-classification
 my-project/
 ├── .mloop/
 │   └── scripts/
-│       ├── hooks/       # Pre/post-train hooks
+│       ├── hooks/       # Lifecycle hooks (pre-train · post-train · pre-predict · post-evaluate)
 │       └── metrics/     # Custom metrics
 ├── datasets/
 ├── models/
@@ -2435,15 +2435,18 @@ MLoop supports code-based extensibility through hooks and custom metrics.
 
 ### Hooks
 
-Custom logic before and after training. A hook is a C# file in a folder named for its stage —
-`.mloop/scripts/hooks/pre-train/` or `.mloop/scripts/hooks/post-train/` — compiled when training
-starts (and cached). `mloop train` and `POST /train` run the same hooks, each once. A file directly in
+Custom logic at four stages. A hook is a C# file in a folder named for its stage under `.mloop/scripts/hooks/`,
+compiled when its command starts (and cached). Each stage is run by one command: `mloop train` and `POST /train`
+run `pre-train` and `post-train` (the same hooks, each once), `mloop predict` runs `pre-predict`, `mloop evaluate`
+runs `post-evaluate`. `mloop serve` — `POST /predict` and `POST /evaluate` — runs no hooks. A file directly in
 `.mloop/scripts/hooks/` belongs to no stage and does not run — training warns and names it.
 
-| Stage | What the hook gets | `HookResult.Abort` |
-|-------|--------------------|--------------------|
-| `pre-train` | `DataView` (the training data) · `Metadata["DataFile"]` · `LabelColumn` · `TaskType` · `ModelName` · `ExperimentId` | stops the run before training |
-| `post-train` | `Metrics` (name → value, as the run reports them) · `Model` · `Metadata["ModelPath"]` · `BestTrainer` | the model is saved but kept in staging — not promoted automatically; `mloop promote <exp-id>` promotes it anyway |
+| Stage | Run by | What the hook gets | `HookResult.Abort` |
+|-------|--------|--------------------|--------------------|
+| `pre-train` | `mloop train` | `DataView` (the training data) · `Metadata["DataFile"]` · `LabelColumn` · `TaskType` · `ModelName` · `ExperimentId` | stops the run before training |
+| `post-train` | `mloop train` | `Metrics` (name → value, as the run reports them) · `Model` · `Metadata["ModelPath"]` · `BestTrainer` | the model is saved but kept in staging — not promoted automatically; `mloop promote <exp-id>` promotes it anyway |
+| `pre-predict` | `mloop predict` (a table; not forecasting or image folders) | `Metadata["DataFile"]` (the table about to be scored, as CSV) · `LabelColumn` · `TaskType` · `ModelName` · `ModelPath` · `ExperimentId` | nothing is scored; exit code 1 |
+| `post-evaluate` | `mloop evaluate` | `Metrics` (name → value, as `evaluate` reports them) · `Metadata["DataFile"]` · `LabelColumn` · `TaskType` · `ModelName` · `ModelPath` · `ExperimentId` | the command fails with exit code 1 (the evaluation was printed; with `--json` stdout carries an `error` document instead of the result) |
 
 A script that does not compile is reported with the compiler's errors and skipped.
 
@@ -2559,7 +2562,7 @@ my-ml-project/
 ├── .mloop/                    # Project marker (like .git)
 │   ├── config.json            # Optional project config
 │   └── scripts/
-│       ├── hooks/             # Pre/post-train hooks
+│       ├── hooks/             # Lifecycle hooks (pre-train · post-train · pre-predict · post-evaluate)
 │       ├── metrics/           # Custom metrics
 │       └── preprocess/        # Preprocessing scripts
 │

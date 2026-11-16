@@ -284,6 +284,15 @@ public static partial class EvaluateCommand
                 ShowComparison(comparison, testMetrics!);
             }
 
+            // post-evaluate hooks see the metrics this run measured (name → value) and may refuse them: the command fails.
+            if (await BatchCommandHooks.RefusalAsync(MLoop.Extensibility.Hooks.HookType.PostEvaluate, projectRoot, resolvedModelName,
+                    resolvedExperimentId, experimentData!.Task, experimentData.Config.LabelColumn, resolvedTestDataFile, resolvedModelPath,
+                    testMetrics) is { } hookRefusal)
+            {
+                ErrorConsole.Error(Markup.Escape($"A post-evaluate hook refused this evaluation — {hookRefusal}"));
+                return 1;
+            }
+
             if (jsonOutput)
                 EmitJson(resolvedModelName, resolvedExperimentId, reportedTestDataFile,
                     trainingMetrics, testMetrics, overfitting, sliceBy: sliceBy?.Trim(), slices: slices, weightColumn: weightColumn,
