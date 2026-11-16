@@ -1386,6 +1386,8 @@ mloop evaluate exp-003 datasets/rechecked.csv --weight inv_pi
 mloop evaluate exp-004 datasets/rechecked.csv --weight inv_pi --against production
 ```
 
+**A small test file says how far its numbers can move.** Under the metrics table the task's main metric carries a 95% interval, found by resampling the test rows with replacement and recomputing the metric the way the reported value was computed (with `--weight`, each row keeps its weight). `--json` has the interval of every metric in `uncertainty`. Read it as the spread *this file's rows* leave for *this model* — on a few dozen rows a score can sit a long way from what other rows would give, and the interval says how far. It is not a guarantee (the measured coverage is a little under 95% at 40 rows and about 95% from 100), it is not the training-fold standard error `train` shows (a different question: how much the search's choice moved between folds), and promotion and the quality gate do not read it. Binary, multiclass and regression only; a file too large to resample cheaply says so, and a perfect score on a small file shows a note instead of an interval of zero width — every resample repeats it, which does not make it certain.
+
 **The file the model was trained on is warned about.** Training records its data file's fingerprint
 (`dataFileHash`, the SHA-256 of its content); evaluating a file with the same content — under any name —
 says that most of its rows were in the training partition, so the test metrics overstate how the model

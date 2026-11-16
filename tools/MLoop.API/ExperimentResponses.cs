@@ -115,7 +115,8 @@ public sealed record EvaluateResponse(
     Comparison? Comparison,
     string? SliceBy,
     IReadOnlyList<EvaluationSlices.Slice>? Slices,
-    IReadOnlyList<string>? Warnings);
+    IReadOnlyList<string>? Warnings,
+    MLoop.Core.Evaluation.MetricBootstrapResult? Uncertainty = null);
 
 /// <summary><c>POST /evaluate</c> for a file that does not match the schema the experiment was trained on.</summary>
 public sealed record SchemaRefusalResponse(string Error, IReadOnlyList<string> MissingColumns, IReadOnlyList<string> Suggestions);

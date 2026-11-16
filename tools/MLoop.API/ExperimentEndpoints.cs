@@ -405,11 +405,13 @@ public static class ExperimentEndpoints
                     }
                 }
 
-                var (metrics, confusion) = await evaluationEngine.EvaluateAsync(
+                var evaluation = await evaluationEngine.EvaluateAsync(
                     modelPath, resolvedTestPath, labelColumn, taskType, ct,
                     experiment.Config.InputSchema, experiment.Config.GroupColumn,
                     experiment.Config.UserColumn, experiment.Config.ItemColumn, weightColumn,
-                    new MLoop.Core.Metrics.MetricEngine(projectRootPath.Value, new MLoop.CLI.Infrastructure.Diagnostics.ConsoleLogger()));
+                    new MLoop.Core.Metrics.MetricEngine(projectRootPath.Value, new MLoop.CLI.Infrastructure.Diagnostics.ConsoleLogger()),
+                    withInterval: true);
+                var (metrics, confusion) = evaluation;
 
                 var comparison = baseline is null
                     ? null
@@ -434,7 +436,8 @@ public static class ExperimentEndpoints
                     comparison,
                     sliceBy,
                     slices,
-                    warnings.Count == 0 ? null : warnings));
+                    warnings.Count == 0 ? null : warnings,
+                    evaluation.Uncertainty));
             }
             catch (Exception ex) when (ex is MLoop.Core.Training.UnreadableLabelException or MLoop.Core.Data.ColumnLayoutException or MLoop.Core.Data.EmptyTableFileException or MLoop.Core.Data.UnterminatedQuoteException)
             {

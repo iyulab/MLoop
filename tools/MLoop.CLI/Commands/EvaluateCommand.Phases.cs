@@ -206,7 +206,7 @@ public static partial class EvaluateCommand
     /// <summary>The metrics table against training, the confusion matrix, and the overfitting finding.</summary>
     private static (bool Overfitting, Dictionary<string, double> TrainingMetrics) ShowEvaluation(
         ExperimentData experimentData, Dictionary<string, double> testMetrics, ConfusionCounts? confusion,
-        string? weightColumn, string resolvedModelName, string resolvedExperimentId)
+        MetricBootstrapResult? uncertainty, string? weightColumn, string resolvedModelName, string resolvedExperimentId)
     {
         AnsiConsole.WriteLine();
         AnsiConsole.Write(new Rule("[green]Evaluation Results[/]").LeftJustified());
@@ -236,6 +236,7 @@ public static partial class EvaluateCommand
         AnsiConsole.Write(table);
         if (weightColumn is not null)
             AnsiConsole.MarkupLineInterpolated($"[grey]Each test row counts by its {weightColumn}.[/]");
+        ShowUncertainty(uncertainty, experimentData.Task, testMetrics);
         AnsiConsole.WriteLine();
         if (confusion is not null)
             ShowConfusion(confusion, weightColumn is not null);
@@ -261,5 +262,24 @@ public static partial class EvaluateCommand
         AnsiConsole.WriteLine();
 
         return (overfitting, trainingMetrics);
+    }
+
+    /// <summary>
+    /// One line under the metrics table: how far the task's main metric moves with the rows of this test file.
+    /// It is the sampling noise of this file for this model — not the training-fold spread <c>train</c> shows.
+    /// </summary>
+    private static void ShowUncertainty(MetricBootstrapResult? uncertainty, string? task, Dictionary<string, double> testMetrics)
+    {
+        if (uncertainty is null)
+            return;
+        var primary = TaskMetadata.PrimaryMetric(task);
+        if (primary is not null && uncertainty.Intervals.TryGetValue(primary, out var interval) && testMetrics.TryGetValue(primary, out var value))
+        {
+            AnsiConsole.MarkupLineInterpolated(
+                $"[grey]{primary} {MetricSanitizer.Display(primary, value)}, {uncertainty.Level:P0} interval [[{MetricSanitizer.Display(primary, interval.Low)}, {MetricSanitizer.Display(primary, interval.High)}]] over {uncertainty.Rows:N0} test rows.[/]");
+            return;
+        }
+        if (uncertainty.Note is { } note && !(primary is not null && uncertainty.Intervals.ContainsKey(primary)))
+            AnsiConsole.MarkupLineInterpolated($"[grey]No interval for {primary ?? "these metrics"}: {note}.[/]");
     }
 }

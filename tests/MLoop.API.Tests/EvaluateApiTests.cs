@@ -116,6 +116,32 @@ public class EvaluateApiTests : IClassFixture<TestWebApplicationFactory>, IAsync
         body.TryGetProperty("warnings", out _).Should().BeFalse("the API leaves null fields out");
     }
 
+    [Fact]
+    public async Task TheAnswer_SaysHowFarTheMetricsMoveWithTheRowsOfTheFile()
+    {
+        var holdout = Path.Combine(_factory.TestProjectRoot, "datasets", "interval-holdout.csv");
+        var csv = new StringBuilder("x,z,w,y\n");
+        var rng = new Random(12);
+        for (var i = 0; i < 80; i++)
+        {
+            var x = rng.NextDouble();
+            csv.Append(CultureInfo.InvariantCulture, $"{x:F4},{rng.NextDouble():F4},{(x > 0.5 ? 3 : 1)},{(x + rng.NextDouble() * 0.4 > 0.7 ? "true" : "false")}\n");
+        }
+        await File.WriteAllTextAsync(holdout, csv.ToString());
+
+        var (status, body) = await EvaluateAsync(new { name = Model, experimentId = "exp-001", testDataPath = holdout });
+
+        status.Should().Be(HttpStatusCode.OK, body.ToString());
+        var uncertainty = body.GetProperty("uncertainty");
+        uncertainty.GetProperty("method").GetString().Should().Be("bootstrap");
+        uncertainty.GetProperty("level").GetDouble().Should().Be(0.95);
+        uncertainty.GetProperty("rows").GetInt32().Should().Be(80);
+        var accuracy = uncertainty.GetProperty("intervals").GetProperty("accuracy");
+        var reported = body.GetProperty("metrics").GetProperty("accuracy").GetDouble();
+        accuracy.GetProperty("low").GetDouble().Should().BeLessThanOrEqualTo(reported);
+        accuracy.GetProperty("high").GetDouble().Should().BeGreaterThanOrEqualTo(reported);
+    }
+
     /// <summary>
     /// The file the experiment was trained on — the same content, under any name — is mostly training
     /// rows: the answer says so before any other warning.

@@ -22,7 +22,14 @@ public class EvaluationEngine
     }
 
     /// <summary>What one evaluation measured: the metrics, and for a classifier how its answers fell (<see cref="ConfusionCounts"/>).</summary>
-    public sealed record Evaluation(Dictionary<string, double> Metrics, ConfusionCounts? Confusion);
+    public sealed record Evaluation(Dictionary<string, double> Metrics, ConfusionCounts? Confusion)
+    {
+        /// <summary>
+        /// How far the metrics move with the rows of this test file (<see cref="MetricBootstrap"/>), when it was asked for
+        /// and the task has rows to resample; <c>null</c> otherwise.
+        /// </summary>
+        public MetricBootstrapResult? Uncertainty { get; init; }
+    }
 
     /// <summary>
     /// Evaluates a trained model on test data — the metrics and, for a classifier, the confusion counts, from one
@@ -40,7 +47,8 @@ public class EvaluationEngine
         string? userColumn = null,
         string? itemColumn = null,
         string? weightColumn = null,
-        MLoop.Core.Metrics.MetricEngine? metricScripts = null)
+        MLoop.Core.Metrics.MetricEngine? metricScripts = null,
+        bool withInterval = false)
     {
         if (!string.IsNullOrEmpty(weightColumn) && !RowWeights.Supports(taskType))
             throw new NotSupportedException(
@@ -212,7 +220,8 @@ public class EvaluationEngine
                 // Single-authority guard: normalize any non-finite metric (NaN/±∞) to the
                 // direction-aware worst before it is returned/persisted (mirrors the training
                 // path in TrainingRunner.RunAsync). System.Text.Json cannot serialize non-finite.
-                return new Evaluation(MetricSanitizer.SanitizeAndReturn(metrics), confusion);
+                var uncertainty = withInterval ? IntervalsOf(predictions, taskType, labelColumn, weightColumn, metrics) : null;
+                return new Evaluation(MetricSanitizer.SanitizeAndReturn(metrics), confusion) { Uncertainty = uncertainty };
             }
             finally
             {
@@ -226,6 +235,39 @@ public class EvaluationEngine
                 }
             }
         }, cancellationToken);
+    }
+
+    /// <summary>
+    /// The bootstrap intervals of the metrics of a binary, multiclass or regression evaluation, kept only for the
+    /// metrics whose value, recomputed by the interval's own arithmetic, is the value being reported — an interval
+    /// around a different number would mislead. <c>null</c> for a task without rows to resample.
+    /// </summary>
+    private static MetricBootstrapResult? IntervalsOf(
+        IDataView predictions, string taskType, string labelColumn, string? weightColumn, Dictionary<string, double> reported)
+    {
+        var rows = MLoop.Core.Models.TaskTypes.Canonical(taskType) switch
+        {
+            "binary-classification" => WeightedMetrics.ReadBinary(predictions, labelColumn, weightColumn),
+            "multiclass-classification" => WeightedMetrics.ReadMulticlass(predictions, labelColumn, weightColumn),
+            "regression" => WeightedMetrics.ReadRegression(predictions, labelColumn, weightColumn),
+            _ => null,
+        };
+        if (rows is null)
+            return null;
+
+        var result = MetricBootstrap.Measure(rows);
+        if (result.Intervals.Count == 0 || rows.Compute() is not { } recomputed)
+            return result;
+
+        var agreeing = result.Intervals
+            .Where(i => recomputed.TryGetValue(i.Key, out var again) && reported.TryGetValue(i.Key, out var shown)
+                && Math.Abs(again - shown) <= 1e-6 * Math.Max(1, Math.Abs(shown)))
+            .ToDictionary(i => i.Key, i => i.Value);
+        return result with
+        {
+            Intervals = agreeing,
+            Note = agreeing.Count == 0 ? "the resampled metrics do not reproduce the reported values" : result.Note,
+        };
     }
 
     /// <summary>
