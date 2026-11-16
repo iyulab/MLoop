@@ -31,7 +31,7 @@ Metrics: binary ROC AUC, multiclass log-loss, regression RMSE. Datasets are fetc
   python run.py run --mloop "dotnet ../../tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" --seeds 0,1,2 --budget 60
   python run.py summarize results-*.jsonl
 """
-import argparse, collections, json, math, os, shlex, shutil, subprocess, sys, tempfile, time
+import argparse, collections, json, math, os, platform, shlex, shutil, subprocess, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TASK_FLAG = {'binary': 'binary-classification', 'multiclass': 'multiclass-classification', 'regression': 'regression'}
@@ -314,6 +314,41 @@ def run_library(kind, entry, train, test):
     return {'learner': kind, 'wall_s': round(time.time() - started, 1), 'test': test_metrics}
 
 
+# the packages whose versions decide what a row means; `requirements.txt` locks them and each row records what was installed
+LIBRARIES = ['flaml', 'lightgbm', 'xgboost', 'scikit-learn', 'pandas', 'numpy', 'scipy', 'autogluon.tabular']
+
+
+def provenance(mloop_command):
+    """What produced a row: the CLI's version, the interpreter, the libraries it compared against and the CI run (when there is one).
+
+    It sits in every row because a result has to be readable on its own - a run log in a public repository does not outlive the retention
+    window, so a figure that names no versions cannot be reproduced or questioned later."""
+    from importlib import metadata
+    libraries = {}
+    for name in LIBRARIES:
+        try:
+            libraries[name] = metadata.version(name)
+        except metadata.PackageNotFoundError:
+            pass
+    mloop = None
+    try:
+        done = subprocess.run(mloop_command + ['--version'], capture_output=True, text=True, timeout=120)
+        lines = done.stdout.strip().splitlines()
+        if done.returncode == 0 and lines:
+            mloop = lines[-1].strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    env = os.environ
+    return {'mloop': mloop, 'python': platform.python_version(), 'platform': platform.platform(), 'libraries': libraries,
+            'commit': env.get('GITHUB_SHA'), 'run_id': env.get('GITHUB_RUN_ID'), 'run_attempt': env.get('GITHUB_RUN_ATTEMPT')}
+
+
+def result_row(entry, rows, seed, system, budget, result, stamp):
+    """One line of a result file: which table (with the licence OpenML declares for it), which seed and system, what came out, what made it."""
+    return {'dataset': entry['name'], 'openml_id': entry['id'], 'openml_licence': entry.get('openml_licence'), 'task': entry['task'],
+            'rows': rows, 'seed': seed, 'system': system, 'budget': budget, **result, 'provenance': stamp}
+
+
 def run_all(args):
     mloop = shlex.split(args.mloop)
     entries = json.load(open(os.path.join(HERE, 'datasets.json')))
@@ -321,6 +356,7 @@ def run_all(args):
         wanted = set(args.datasets.split(','))
         entries = [e for e in entries if e['name'] in wanted]
     ensemble_command = shlex.split(args.ensemble_probe)
+    stamp = provenance(mloop)
     done = set()
     if os.path.exists(args.out):
         for line in open(args.out):
@@ -343,8 +379,7 @@ def run_all(args):
                     except Exception as error:
                         rows = {'ens-single': {'error': repr(error)[:300]}}
                     for name, result in rows.items():
-                        record = {'dataset': entry['name'], 'openml_id': entry['id'], 'task': entry['task'], 'rows': len(df),
-                                  'seed': seed, 'system': name, 'budget': args.budget, **result}
+                        record = result_row(entry, len(df), seed, name, args.budget, result, stamp)
                         with open(args.out, 'a') as out:
                             out.write(json.dumps(record) + '\n')
                         print(entry['name'], seed, name, json.dumps(result.get('test') or result.get('error'))[:100], flush=True)
@@ -372,8 +407,7 @@ def run_all(args):
                         result = run_library(system, entry, train, test)
                 except Exception as error:  # a failed run is a row, not the end of the sweep
                     result = {'error': repr(error)[:300]}
-                record = {'dataset': entry['name'], 'openml_id': entry['id'], 'task': entry['task'], 'rows': len(df),
-                          'seed': seed, 'system': system, 'budget': args.budget, **result}
+                record = result_row(entry, len(df), seed, system, args.budget, result, stamp)
                 with open(args.out, 'a') as out:
                     out.write(json.dumps(record) + '\n')
                 print(entry['name'], seed, system, json.dumps(result.get('test') or result.get('error'))[:100], flush=True)

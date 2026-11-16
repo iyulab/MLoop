@@ -83,8 +83,9 @@ jobs:
       with:
         python-version: '3.12'
 
+    # Locked: benchmarks/engine-compare/requirements.txt (the command that made it is in its header)
     - name: Install Python packages
-      run: pip install flaml lightgbm xgboost scikit-learn pandas numpy
+      run: pip install -r benchmarks/engine-compare/requirements.txt
 
     - name: Build the CLI
       run: dotnet build tools/MLoop.CLI --configuration Release
@@ -118,7 +119,7 @@ jobs:
       with:
         python-version: '3.12'
 
-    - run: pip install numpy
+    - run: pip install -c benchmarks/engine-compare/requirements.txt numpy
 
     - name: Download this run's results
       uses: actions/download-artifact@v4

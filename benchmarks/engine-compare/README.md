@@ -26,7 +26,7 @@ the search (or a claim about it) has numbers behind it.
   workflow does).
 
 ```bash
-pip install flaml lightgbm xgboost scikit-learn pandas numpy
+pip install -r benchmarks/engine-compare/requirements.txt
 dotnet build tools/MLoop.CLI -c Release
 python benchmarks/engine-compare/run.py run --mloop "dotnet tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" --seeds 0,1,2 --budget 60
 python benchmarks/engine-compare/run.py summarize results.jsonl
@@ -35,6 +35,16 @@ python benchmarks/engine-compare/run.py summarize results.jsonl
 The `Engine compare` workflow (`workflow_dispatch`) runs one job per split seed (the `seeds` input, `0,1,2` by default) and writes the summary table to the run.
 
 `summarize` ends with a per-seed table when the rows hold `mloop` and `flaml` or `mloop-ensemble`: the sign of each split seed (`+` the first system is better, `-` worse, `=` the same value) next to the verdict, the number of runs that took longer than the budget plus the larger of 2 s and 20 %, and the held-out expected calibration error of the MLoop rows. `ensemble where run vs flaml` counts a blend where `--ensemble` was run (binary, regression) and the single model where it was not (multiclass), so its tally covers every table.
+
+## Reproducing a result
+
+A figure from this benchmark can be rerun only if the comparison is pinned, so three things are kept in the repository and in every result row:
+
+- **The libraries are locked.** `requirements.txt` pins every package (FLAML, LightGBM, XGBoost, scikit-learn, pandas, NumPy and what they pull in) for Python 3.12 on Linux x64, and `requirements-autogluon.txt` does the same with AutoGluon, whose own pins replace some of them. Both are generated, not edited: the command is in each file's header (`uv pip compile … --exclude-newer <time>`; the time is the moment the locked set was last the newest). To move to newer libraries, rerun it with a later time, commit the new lock, and treat the next results as a new baseline - a change of library version can move a figure as much as a change in MLoop.
+- **Each row says what made it.** The `provenance` field holds the `mloop` version (with its commit), the Python version and platform, the installed versions of the compared libraries, and - when a CI run made the row - the commit, run id and attempt. The public run log does not outlive its retention window; the row does.
+- **Each table names its licence.** `datasets.json` carries `openml_licence`, the licence field OpenML lists for the table (CC BY 4.0, MIT, Public Domain or "Public"). It is what OpenML declares for its copy, not a statement about the original source's terms; check the source before redistributing a table or a model trained on it. The tables are fetched at run time and never stored in this repository.
+
+`test_repro.py` keeps the workflows installing from the lock, the lock pinning every line, and the rows carrying the stamp.
 
 ## Reading one execution against an earlier one (`regress`)
 

@@ -68,13 +68,16 @@ jobs:
       with:
         python-version: '3.12'
 
+    # Every version is locked (benchmarks/engine-compare/requirements.txt, made by `uv pip compile` - the command is in its header), so a
+    # sweep compares against the same libraries on every run and a row's `provenance` can be checked against the lock.
     - name: Install Python packages
-      run: pip install flaml lightgbm xgboost scikit-learn pandas numpy
+      if: "!contains(inputs.systems, 'autogluon')"
+      run: pip install -r benchmarks/engine-compare/requirements.txt
 
-    # AutoGluon pins its own versions of the libraries above, so it is installed only when it is asked for.
-    - name: Install AutoGluon
+    # AutoGluon pins its own versions of the libraries above, so it has a lock of its own and replaces the one above when it is asked for.
+    - name: Install Python packages with AutoGluon
       if: contains(inputs.systems, 'autogluon')
-      run: pip install "autogluon.tabular[lightgbm,catboost,xgboost]"
+      run: pip install -r benchmarks/engine-compare/requirements-autogluon.txt
 
     - name: Build the CLI
       run: dotnet build tools/MLoop.CLI --configuration Release
@@ -115,7 +118,7 @@ jobs:
         python-version: '3.12'
 
     - name: Install Python packages
-      run: pip install numpy
+      run: pip install -c benchmarks/engine-compare/requirements.txt numpy
 
     - name: Download the results
       uses: actions/download-artifact@v4
