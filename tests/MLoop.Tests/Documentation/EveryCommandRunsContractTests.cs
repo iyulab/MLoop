@@ -175,6 +175,10 @@ public sealed class EveryCommandRunsContractTests : IClassFixture<EveryCommandRu
     internal static string[] OnSemicolonCopies(string[] args) =>
         [.. args.Select((a, i) => !IsOutputPath(args, i) && DataFiles.Any(f => a == $"datasets/{f}.csv") ? Path.ChangeExtension(a, ".semi.csv") : a)];
 
+    /// <summary>The command line with each data file it reads named by its JSON Lines copy (<c>train.jsonl</c>); an output path is left as it is.</summary>
+    internal static string[] OnJsonLines(string[] args) =>
+        [.. args.Select((a, i) => !IsOutputPath(args, i) && DataFiles.Any(f => a == $"datasets/{f}.csv") ? Path.ChangeExtension(a, ".jsonl") : a)];
+
     /// <summary>The cases that read a data file named on their command line.</summary>
     internal static List<string> DataFileCases() =>
         [.. Runs.OrderBy(r => r.Key, StringComparer.Ordinal).Where(r => !OnWorkbooks(r.Value.Args).SequenceEqual(r.Value.Args)).Select(r => r.Key)];
@@ -218,6 +222,26 @@ public sealed class EveryCommandRunsContractTests : IClassFixture<EveryCommandRu
     {
         var plan = Runs[name];
         var args = OnSemicolonCopies(plan.Args);
+        Assert.NotEqual(plan.Args, args);
+
+        var seen = await _project.RunAsync(args);
+
+        Assert.True(seen.Exit == plan.Exit, $"mloop {string.Join(' ', args)} exited {seen.Exit}\n{seen.Out}\n{seen.Err}");
+        (plan.OnWorkbook ?? plan.Effect)(seen, _project.Root);
+        if (plan.Then is { } undo) await _project.RunAsync(undo);
+    }
+
+    /// <summary>
+    /// One JSON object per line is how logs and dataset exports are written; named <c>.jsonl</c> it was read as delimited text - one column
+    /// headed by its first record. Each command that reads a data file named on its command line runs here once more with a JSON Lines copy of
+    /// the same table, and must do what it does with the CSV.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(DataFileCommandNames))]
+    public async Task TheCommandReadsAJsonLinesFileAsTheTableItHolds(string name)
+    {
+        var plan = Runs[name];
+        var args = OnJsonLines(plan.Args);
         Assert.NotEqual(plan.Args, args);
 
         var seen = await _project.RunAsync(args);
@@ -346,6 +370,12 @@ public sealed class EveryCommandRunsContractTests : IClassFixture<EveryCommandRu
                     // ... and as the semicolon-delimited text Excel writes as .csv in many locales (the fixture's fields hold no comma or semicolon)
                     var table = await System.IO.File.ReadAllTextAsync(Path.Combine("datasets", name + ".csv"));
                     await System.IO.File.WriteAllTextAsync(Path.Combine("datasets", name + ".semi.csv"), table.Replace(',', ';'));
+                    // ... and as JSON Lines: one object per row, the values as the numbers and words they are
+                    var rows = table.TrimStart('\uFEFF').Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                    var header = rows[0].Split(',');
+                    await System.IO.File.WriteAllLinesAsync(Path.Combine("datasets", name + ".jsonl"), rows.Skip(1).Select(row =>
+                        "{" + string.Join(",", row.Split(',').Select((cell, i) =>
+                            JsonSerializer.Serialize(header[i]) + ":" + (double.TryParse(cell, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out _) ? cell : JsonSerializer.Serialize(cell)))) + "}"));
                 }
             }
             finally

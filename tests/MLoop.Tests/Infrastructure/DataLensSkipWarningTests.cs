@@ -18,7 +18,8 @@ public class DataLensSkipWarningTests : IDisposable
     {
         var rng = new Random(3);
         string V() => (rng.NextDouble() * 10).ToString("R", CultureInfo.InvariantCulture);
-        File.WriteAllLines(_csv, new[] { "a,b,c" }.Concat(Enumerable.Range(0, 120).Select(_ => $"{V()},{V()},{V()}")));
+        // Eight columns: a table of seven or fewer is answered by a k-d tree and is never stopped by the work threshold.
+        File.WriteAllLines(_csv, new[] { "a,b,c,d,e,f,g,h" }.Concat(Enumerable.Range(0, 120).Select(_ => string.Join(",", Enumerable.Range(0, 8).Select(_ => V())))));
     }
 
     public void Dispose() => File.Delete(_csv);
@@ -31,7 +32,7 @@ public class DataLensSkipWarningTests : IDisposable
         var result = await new DataLensAnalyzer().AnalyzeAsync(_csv, DataLensAnalyzer.Only(o =>
         {
             o.IncludeOutliers = true;
-            o.LofWorkThreshold = 50;
+            o.PairwiseWorkThreshold = 50;
         }));
 
         Assert.NotNull(result);

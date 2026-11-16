@@ -1075,7 +1075,7 @@ mloop analyze series sensor.csv --column temp   # a column read as an ordered se
 |------------|-----------------|
 | `profile` | Per column: missing count and rate, approximate unique values, type, and mean/stddev/min/max |
 | `correlation` | The full pairwise correlation matrix, label included |
-| `importance` | Each numeric feature against the label — permutation importance for a numeric label, mutual information (or ANOVA F) for a class label; the table header names which. A text, category or constant column is not ranked, and the command says which (`not ranked: …`); `mloop explain` scores every column a trained model reads |
+| `importance` | Each numeric feature against the label — permutation importance for a numeric label (the fall of a fitted model's score when the column is shuffled — it can exceed the model's own score for a column that carries nearly everything, and sits at zero for one that carries nothing), mutual information (or ANOVA F) for a class label; the table header names which. A text, category or constant column is not ranked, and the command says which (`not ranked: …`); `mloop explain` scores every column a trained model reads |
 | `outliers` | How many rows are outliers - rows that at least two of isolation forest, local outlier factor and Mahalanobis distance flag - and the isolation forest score threshold used |
 | `distribution` | Median, quartiles, IQR, skewness and kurtosis per column |
 | `series` | One column as an ordered series: autocorrelation and partial autocorrelation with their bands, the ADF and KPSS stationarity tests read together at 5% (`stationary`, `non-stationary`, `unsettled`), and the dominant period. Evidence only — whether to difference or detrend is your call |

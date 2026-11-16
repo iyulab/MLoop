@@ -51,6 +51,48 @@ public class TabularDataFileTests : IDisposable
         Assert.Contains(name + " is empty", error.Message, StringComparison.Ordinal);
     }
 
+    // A macro-enabled workbook or a template is a zip of the same XML parts a plain workbook is; named by an extension FilePrepper's
+    // table did not list, it was read as delimited text - archive bytes under a header such as "PK..." and no error.
+    [Theory]
+    [InlineData("book.xlsm")]
+    [InlineData("book.xltx")]
+    public async Task A_workbook_variant_becomes_a_csv_of_its_cells(string name)
+    {
+        OfficeOpenXml.ExcelPackage.License.SetNonCommercialPersonal("MLoop.Core.Tests");
+        var source = Path.Combine(_dir, "source.xlsx");
+        using (var package = new OfficeOpenXml.ExcelPackage())
+        {
+            var sheet = package.Workbook.Worksheets.Add("data");
+            sheet.Cells[1, 1].Value = "a";
+            sheet.Cells[1, 2].Value = "b";
+            sheet.Cells[2, 1].Value = 1;
+            sheet.Cells[2, 2].Value = "x";
+            package.SaveAs(new FileInfo(source));
+        }
+        var path = Path.Combine(_dir, name);
+        File.Copy(source, path);
+
+        var csv = await TabularDataFile.AsCsvAsync(path);
+
+        Assert.Equal(["a,b", "1,x"], (await File.ReadAllLinesAsync(csv)).Select(l => l.TrimStart('\uFEFF')).ToArray());
+    }
+
+    // One JSON object per line is how logs and exports are written; named .jsonl it was read as delimited text (a single column
+    // headed by its first record) and the label was then "not found" among columns that were never columns.
+    [Theory]
+    [InlineData("rows.jsonl")]
+    [InlineData("rows.ndjson")]
+    [InlineData("rows.json")]
+    public async Task One_object_per_line_becomes_a_csv_of_its_fields(string name)
+    {
+        var path = Path.Combine(_dir, name);
+        await File.WriteAllTextAsync(path, "{\"a\": 1, \"b\": \"x\"}\n{\"a\": 2, \"b\": \"y\"}\n");
+
+        var csv = await TabularDataFile.AsCsvAsync(path);
+
+        Assert.Equal(["a,b", "1,x", "2,y"], (await File.ReadAllLinesAsync(csv)).Select(l => l.TrimStart('\uFEFF')).ToArray());
+    }
+
     [Theory]
     [InlineData("[]")]
     [InlineData("{}")]
