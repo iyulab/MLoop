@@ -35,4 +35,14 @@ public class FailureCauseTests
     [Fact]
     public void NoInnerException_IsJustTheMessage()
         => Assert.Equal("plain", FailureCause.Describe(new InvalidOperationException("plain")));
+
+    [Fact]
+    public void ALibraryThatDoesNotLoad_KeepsTheMessageWrittenForIt_NotTheLoadersPathList()
+    {
+        var loader = new DllNotFoundException("libiomp5.so: cannot open shared object file: No such file or directory\n"
+            + "/usr/share/dotnet/shared/libiomp5.so: cannot open shared object file\n/lib/x86_64-linux-gnu/libiomp5.so: cannot open shared object file");
+        var ex = new PlatformNotSupportedException("Time-series algorithms need ML.NET's MKL native library; install the OpenMP runtime.", loader);
+
+        Assert.Equal("Time-series algorithms need ML.NET's MKL native library; install the OpenMP runtime.", FailureCause.Describe(ex));
+    }
 }

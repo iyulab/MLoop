@@ -111,6 +111,21 @@ public class DetectCommandTests : IDisposable
     }
 
     [Fact]
+    public async Task A_gap_is_named_by_its_data_row_counted_below_the_header_as_train_counts_it()
+    {
+        // The third data row is the one that fails: the header is not row 1 (a user opening the file counts the line, `train` counts the row).
+        var wide = WriteCsv("A,B", "1,2", "3,4", "5,oops", "7,8");
+        var (code, _, stderr) = await CliRunner.RunAsync(["detect", wide, "--column", "B"]);
+        Assert.Equal(1, code);
+        Assert.Contains("at data row 3", stderr, StringComparison.Ordinal);
+
+        var single = WriteCsv("Value", "1", "2", "", "4");
+        (code, _, stderr) = await CliRunner.RunAsync(["detect", single]);
+        Assert.Equal(1, code);
+        Assert.Contains("at data row 3", stderr, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Create_ParsesArgumentsAndOptions()
     {
         var command = DetectCommand.Create();

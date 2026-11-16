@@ -240,7 +240,7 @@ public static class DetectCommand
         // gap, so every reading after it sits at the wrong row. In a wider file the empty cell fails the parse below.
         if (headers.Count == 1 && BlankLineInside(dataFile) is { } blankLine)
         {
-            ErrorConsole.Error(Markup.Escape($"Column '{resolved}' has a blank value at data row {blankLine} — " +
+            ErrorConsole.Error(Markup.Escape($"Column '{resolved}' has a blank value at data row {blankLine - 1} — " +
                        "the series must be fully numeric with no gaps."));
             return null;
         }
@@ -252,9 +252,9 @@ public static class DetectCommand
             var raw = row[index];
             if (!double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var v))
             {
-                // Row numbering: +2 = 1-based + header line. The transform needs a contiguous numeric
-                // series, so a gap is an input error, not something to silently skip.
-                ErrorConsole.Error(Markup.Escape($"Column '{resolved}' has a non-numeric value '{raw}' at data row {values.Count + 2} — " +
+                // Row numbering: a data row counts from 1 below the header, as `train` counts it (the header line is not row 1).
+                // The transform needs a contiguous numeric series, so a gap is an input error, not something to silently skip.
+                ErrorConsole.Error(Markup.Escape($"Column '{resolved}' has a non-numeric value '{raw}' at data row {values.Count + 1} — " +
                            "the series must be fully numeric with no gaps."));
                 return null;
             }

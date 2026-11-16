@@ -13,6 +13,10 @@ public static class FailureCause
     public static string Describe(Exception ex)
     {
         var message = ex.Message;
+        // A native library that does not load already has a message written for the machine it failed on; the loader's own text under it lists
+        // every path it tried, dozens of lines a user cannot act on (MLoop.Core.Runtime.NativeLoad).
+        if (MLoop.Core.Runtime.NativeLoad.IsMissing(ex))
+            return message;
         var root = Innermost(ex);
         if (ReferenceEquals(root, ex) || string.IsNullOrWhiteSpace(root.Message))
             return message;

@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **A forecasting or time-series anomaly run that cannot load its native library no longer prints the loader's list of paths.** Since 0.51.0 the failure text of a run carries the innermost exception's message, and for a missing OpenMP runtime that message is the loader's own: a dozen `.so` paths it probed and advice to use `strace`. The screen is the sentence written for the machine (the runtime, the install step, or the platform that cannot run it) and nothing under it.
+- **`mloop detect` names a gap by its data row, counted from the first row below the header.** The message said "data row 151" for the empty cell in the 150th row of the file (it counted the header line), where `mloop train` says "data row 150" for the same file.
+
 ## [0.51.0] - 2026-11-16
 
 ### Added
