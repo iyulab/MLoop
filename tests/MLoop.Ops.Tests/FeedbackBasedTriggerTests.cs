@@ -1,5 +1,6 @@
 using System.Text.Json;
 using FluentAssertions;
+using MLoop.DataStore.Interfaces;
 using MLoop.DataStore.Services;
 using MLoop.Ops.Interfaces;
 using MLoop.Ops.Services;
@@ -35,6 +36,31 @@ public class FeedbackBasedTriggerTests : IDisposable
         {
             // Ignore cleanup errors
         }
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_AccuracyDrop_DoesNotJudgeValueAnswersThatStatedAnInterval()
+    {
+        // 40 regression answers, none "equal" to its actual value: matched as values that is accuracy 0 and a
+        // retrain for every regression model. Read as the intervals they stated they are judged by coverage —
+        // and the trigger says that, not that no feedback was collected.
+        for (var i = 0; i < 40; i++)
+        {
+            var id = PredictionIds.New();
+            await _logger.LogBatchAsync("reg", "exp-001",
+            [
+                new PredictionLogEntry("reg", "exp-001", new Dictionary<string, object> { ["x"] = i }, 15.0 + i,
+                    null, DateTimeOffset.UtcNow, id, new PredictionInterval(10 + i, 20 + i, 0.9)),
+            ]);
+            await _feedbackCollector.RecordFeedbackAsync(id, 16.3 + i);
+        }
+
+        var result = await _trigger.EvaluateAsync("reg", [new RetrainingCondition(ConditionType.AccuracyDrop, "accuracy_check", 0.7)]);
+
+        result.ShouldRetrain.Should().BeFalse();
+        result.ConditionResults[0].IsMet.Should().BeFalse();
+        result.ConditionResults[0].CurrentValue.Should().BeNull();
+        result.ConditionResults[0].Details.Should().Contain("Accuracy does not apply").And.Contain("interval coverage");
     }
 
     [Fact]

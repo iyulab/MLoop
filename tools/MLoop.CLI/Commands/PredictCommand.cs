@@ -363,7 +363,8 @@ public static partial class PredictCommand
                     resolvedModelName,
                     experimentId ?? "unknown",
                     resolvedDataFile,
-                    resolvedOutputPath);
+                    resolvedOutputPath,
+                    interval?.Confidence);
 
                 AnsiConsole.MarkupLine($"[green]>[/] Predictions logged to: [cyan].mloop/logs/{resolvedModelName}/[/]");
             }
@@ -466,12 +467,13 @@ public static partial class PredictCommand
         return $"Data file not found: {resolvedDataFile}";
     }
 
-    private static async Task LogPredictionsAsync(
+    internal static async Task LogPredictionsAsync(
         string projectRoot,
         string modelName,
         string experimentId,
         string inputFile,
-        string outputFile)
+        string outputFile,
+        double? intervalLevel)
     {
         var logger = new FilePredictionLogger(projectRoot);
 
@@ -485,10 +487,12 @@ public static partial class PredictCommand
         // Read output data (predictions)
         var predictions = new List<object>();
         var confidences = new List<double?>();
+        var intervals = new List<PredictionInterval?>();
         await foreach (var dict in ReadRecordsAsync(outputFile))
         {
             predictions.Add(SelectPredictionValue(dict));
             confidences.Add(SelectConfidence(dict));
+            intervals.Add(SelectInterval(dict, intervalLevel));
         }
 
         // Log each prediction
@@ -503,7 +507,8 @@ public static partial class PredictCommand
                 inputRecords[i],
                 predictions[i],
                 confidences[i],
-                timestamp));
+                timestamp,
+                Interval: intervals[i]));
         }
 
         if (entries.Count > 0)
@@ -542,6 +547,24 @@ public static partial class PredictCommand
             }
             yield return record;
         }
+    }
+
+    /// <summary>
+    /// The interval the output row states: its <c>ScoreLowerBound</c> and <c>ScoreUpperBound</c> cells, at the level the model's
+    /// band is fitted to (<paramref name="level"/> — the file carries the bounds, not the level). Null when the row has no
+    /// bounds or the model states no level.
+    /// </summary>
+    internal static PredictionInterval? SelectInterval(IDictionary<string, object> row, double? level) =>
+        TryReadCell(row, "ScoreLowerBound", out var lower) && TryReadCell(row, "ScoreUpperBound", out var upper)
+            ? ServedPredictionLog.StatedInterval(lower, upper, level)
+            : null;
+
+    private static bool TryReadCell(IDictionary<string, object> row, string column, out double value)
+    {
+        value = 0;
+        var key = row.Keys.FirstOrDefault(k => string.Equals(k, column, StringComparison.OrdinalIgnoreCase));
+        return key is not null
+            && double.TryParse(Convert.ToString(row[key], CultureInfo.InvariantCulture), NumberStyles.Float, CultureInfo.InvariantCulture, out value);
     }
 
     internal static double? SelectConfidence(IDictionary<string, object> row)

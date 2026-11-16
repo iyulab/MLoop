@@ -1767,6 +1767,31 @@ carries a weight, `feedback metrics` counts each prediction by its weight (`Accu
 in `--json`): when some answers are checked more often than others, counting the checked rows alike misstates the
 model's accuracy.
 
+#### A regression's interval, checked against what happened
+
+A regression answer states an interval around its value (`scoreLowerBound` · `scoreUpperBound` at the level the band was
+fitted to, 90 % by default). Whether that level holds is only known once actual values come back, so each logged prediction
+keeps the interval it stated (`interval` in `mloop logs --json`), and `feedback metrics` reads the predictions that stated
+one as **interval coverage** instead of an accuracy:
+
+```text
+Accuracy:                N/A (a value answer is judged by its interval, below)
+Interval coverage:       55.8% of the 90% the intervals stated (240 rows)
+                         Below the stated level: even the best case of this share, 62.0% (95 % interval), is under 90% — the
+                         intervals are narrower than they say.
+```
+
+`intervalCoverage` in `--json` carries `nominal` (the stated level), `observed` (the share inside, bounds included), `n`
+(rows judged), `effectiveN` (what the share is worth as evidence when feedback carries weights) and `unjudged` (feedback
+of the same model that was answered without an interval — logged before intervals were kept, or by a model that states none
+— or with an actual value that is not a number). A share a little under the level on a few rows is not a finding; the
+"below the stated level" line appears only when the best case of the share is below it. The value-match `accuracy` is `null`
+for these predictions: two numbers are never equal, so it said `0 %` for every regression.
+
+Coverage is a check on the model, not a gate: nothing is promoted or refused by it. When it stays well under the stated level
+on rows from the same distribution the band is too narrow for the model as it runs; when it falls only on a slice of rows, the
+inputs moved (`mloop drift`).
+
 ---
 
 ### `mloop sample`

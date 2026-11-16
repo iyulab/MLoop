@@ -60,7 +60,7 @@ public static class MonitoringEndpoints
                 return TypedResults.Ok(new LogListResponse(
                     logs.Count,
                     modelName,
-                    [.. logs.Select(l => new LogEntryView(l.Id, l.ModelName, l.ExperimentId, l.Input, l.Output, l.Confidence, l.Timestamp))]));
+                    [.. logs.Select(l => new LogEntryView(l.Id, l.ModelName, l.ExperimentId, l.Input, l.Output, l.Confidence, l.Timestamp, l.Interval))]));
             }
             catch (Exception ex)
             {

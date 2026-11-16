@@ -65,6 +65,7 @@ $[].input: object
 $[].input.w: string
 $[].input.x: string
 $[].input.z: string
+$[].interval: null
 $[].modelName: string
 $[].output: string
 $[].timestamp: string
@@ -84,6 +85,7 @@ $.accuracy: null
 $.calculatedAt: string
 $.effectiveSampleSize: null
 $.experimentId: null
+$.intervalCoverage: null
 $.modelName: string
 $.totalFeedback: number
 $.unattributedFeedback: number
@@ -97,6 +99,7 @@ $: array
 $[]: object
 $[].actualValue: string
 $[].experimentId: string
+$[].interval: null
 $[].modelName: string
 $[].predictedValue: string
 $[].predictionId: string
@@ -109,6 +112,7 @@ $.accuracy: number
 $.calculatedAt: string
 $.effectiveSampleSize: number
 $.experimentId: null
+$.intervalCoverage: null
 $.modelName: string
 $.totalFeedback: number
 $.unattributedFeedback: number

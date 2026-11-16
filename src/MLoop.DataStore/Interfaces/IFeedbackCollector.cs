@@ -92,7 +92,8 @@ public record FeedbackEntry(
     string? Source,
     DateTimeOffset Timestamp,
     double? Weight = null,
-    string? ExperimentId = null)
+    string? ExperimentId = null,
+    PredictionInterval? Interval = null)
 {
     /// <summary>The weight this entry counts with — 1 when none was recorded.</summary>
     public double EffectiveWeight => Weight ?? 1.0;
@@ -134,6 +135,9 @@ public record FeedbackEntry(
 /// name.</param>
 /// <param name="UnattributedFeedback">Scoped metrics only: feedback left out because neither it nor a prediction log
 /// line names the experiment that answered (written before feedback recorded it, its log since pruned).</param>
+/// <param name="IntervalCoverage">How often the actual value fell inside the interval the answer stated — present when any
+/// counted prediction stated an interval and its actual value is a number; those predictions are read here and are left out of
+/// <see cref="Accuracy"/>, which for a value answer is a match of two numbers and means nothing. Null otherwise.</param>
 public record FeedbackMetrics(
     string ModelName,
     int TotalFeedback,
@@ -142,4 +146,20 @@ public record FeedbackMetrics(
     bool Weighted = false,
     double? EffectiveSampleSize = null,
     string? ExperimentId = null,
-    int UnattributedFeedback = 0);
+    int UnattributedFeedback = 0,
+    IntervalCoverage? IntervalCoverage = null);
+
+/// <summary>
+/// The posterior check of a stated prediction interval: of the predictions that stated one, the share whose actual value fell
+/// inside it, against the level they stated. A "90 % interval" that holds 72 % of the time has not told the truth, and nothing
+/// else in the product can say so — it is the operation of the model that moves it.
+/// </summary>
+/// <param name="Nominal">The level the intervals stated (a share) — the mean of their levels, by weight, when a retrained model
+/// stated another.</param>
+/// <param name="Observed">The share of judged predictions whose actual value lay inside the interval (bounds included), counted
+/// by weight when any feedback carries one.</param>
+/// <param name="N">How many predictions were judged (rows, not weights).</param>
+/// <param name="EffectiveN">What <see cref="Observed"/> is worth as evidence: <see cref="N"/> unweighted, Kish's (Σw)² ÷ Σw² weighted.</param>
+/// <param name="Unjudged">Predictions of the same counted feedback that were not judged — answered without an interval (logged
+/// before intervals were kept, or by a model that states none) or with an actual value that is not a number.</param>
+public sealed record IntervalCoverage(double Nominal, double Observed, int N, double EffectiveN, int Unjudged);

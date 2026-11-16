@@ -184,6 +184,114 @@ public class PredictResponseContractTests : IClassFixture<TestWebApplicationFact
                 "the API checks the same default conditions as `mloop trigger check`");
     }
 
+    private sealed class ValuePoint
+    {
+        public float X1 { get; set; }
+        public float X2 { get; set; }
+        public float Y { get; set; }
+    }
+
+    /// <summary>
+    /// A regression model seeded as production with the band a training run stores (<c>interval_half_width_90</c> — a constant
+    /// ±2 around the score), so a served answer states an interval.
+    /// </summary>
+    private string SeedRegressionProductionModel()
+    {
+        const string modelName = "rg";
+        var modelsDir = Path.Combine(_factory.TestProjectRoot, "models", modelName);
+        var stagingDir = Path.Combine(modelsDir, "staging", "exp-001");
+        var productionDir = Path.Combine(modelsDir, "production");
+        Directory.CreateDirectory(stagingDir);
+        Directory.CreateDirectory(productionDir);
+
+        var ml = new MLContext(seed: 42);
+        var points = Enumerable.Range(0, 60)
+            .Select(i => new ValuePoint { X1 = i % 10, X2 = i / 10, Y = 2 * (i % 10) + (i / 10) })
+            .ToList();
+        var data = ml.Data.LoadFromEnumerable(points);
+        var featurized = ml.Transforms.Concatenate("Features", "X1", "X2").Fit(data).Transform(data);
+        var model = ml.Regression.Trainers.SingleThreadSdca(labelColumnName: "Y", featureColumnName: "Features").Fit(featurized);
+        ml.Model.Save(model, featurized.Schema, Path.Combine(productionDir, "model.zip"));
+
+        var json = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+        var metrics = new Dictionary<string, double> { ["r_squared"] = 0.9, ["interval_half_width_90"] = 2.0 };
+        File.WriteAllText(Path.Combine(stagingDir, "config.json"), JsonSerializer.Serialize(new
+        {
+            dataFile = Path.Combine(stagingDir, "train.csv"),
+            labelColumn = "Y",
+            timeLimitSeconds = 10,
+            metric = "r_squared",
+            testSplit = 0.2,
+            inputSchema = new
+            {
+                columns = new[]
+                {
+                    new { name = "X1", dataType = "Numeric", purpose = "Feature" },
+                    new { name = "X2", dataType = "Numeric", purpose = "Feature" },
+                    new { name = "Y", dataType = "Numeric", purpose = "Label" },
+                },
+                capturedAt = DateTime.UtcNow,
+            },
+        }, json));
+        File.WriteAllText(Path.Combine(stagingDir, "metadata.json"), JsonSerializer.Serialize(new
+        {
+            modelName,
+            experimentId = "exp-001",
+            timestamp = DateTime.UtcNow,
+            status = "Completed",
+            task = "regression",
+            result = new { bestTrainer = "Sdca", trainingTimeSeconds = 1.0 },
+        }, json));
+        File.WriteAllText(Path.Combine(stagingDir, "metrics.json"), JsonSerializer.Serialize(metrics, json));
+        File.WriteAllText(Path.Combine(productionDir, "metadata.json"), JsonSerializer.Serialize(new
+        {
+            modelName,
+            experimentId = "exp-001",
+            promotedAt = DateTime.UtcNow,
+            metrics,
+            task = "regression",
+            bestTrainer = "Sdca",
+            labelColumn = "Y",
+        }, json));
+        return modelName;
+    }
+
+    [Fact]
+    public async Task A_served_regression_logs_the_interval_it_stated_and_feedback_reads_it_as_coverage()
+    {
+        // The stated level is only checkable if the log kept what was stated: each row's bounds and the level, written with the
+        // answer, carried by the feedback that names it, and read by `feedback metrics` as the share inside.
+        var modelName = SeedRegressionProductionModel();
+
+        var predict = await _client.PostAsJsonAsync($"/predict?name={modelName}",
+            new[] { new { X1 = 4.0, X2 = 3.0 }, new { X1 = 6.0, X2 = 1.0 } });
+        predict.StatusCode.Should().Be(HttpStatusCode.OK, await predict.Content.ReadAsStringAsync());
+        var rows = JsonSerializer.Deserialize<JsonElement>(await predict.Content.ReadAsStringAsync()).GetProperty("predictions");
+        var first = rows[0];
+        first.GetProperty("intervalConfidence").GetDouble().Should().BeApproximately(0.9, 1e-9);
+        var lower = first.GetProperty("scoreLowerBound").GetDouble();
+        var upper = first.GetProperty("scoreUpperBound").GetDouble();
+        var ids = rows.EnumerateArray().Select(r => r.GetProperty("predictionId").GetString()!).ToArray();
+
+        var logs = JsonSerializer.Deserialize<JsonElement>(await _client.GetStringAsync($"/logs?name={modelName}"))
+            .GetProperty("logs").EnumerateArray().ToDictionary(l => l.GetProperty("id").GetString()!);
+        var stated = logs[ids[0]].GetProperty("interval");
+        stated.GetProperty("lower").GetDouble().Should().BeApproximately(lower, 1e-9);
+        stated.GetProperty("upper").GetDouble().Should().BeApproximately(upper, 1e-9);
+        stated.GetProperty("confidence").GetDouble().Should().BeApproximately(0.9, 1e-9);
+
+        // One actual inside its interval, one far outside.
+        (await _client.PostAsJsonAsync("/feedback", new { predictionId = ids[0], actualValue = (lower + upper) / 2 })).StatusCode.Should().Be(HttpStatusCode.OK);
+        (await _client.PostAsJsonAsync("/feedback", new { predictionId = ids[1], actualValue = 1000.0 })).StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var metrics = await new MLoop.DataStore.Services.FileFeedbackCollector(_factory.TestProjectRoot).CalculateMetricsAsync(modelName);
+        metrics.Accuracy.Should().BeNull("a value answer is judged by its interval");
+        metrics.IntervalCoverage.Should().NotBeNull();
+        metrics.IntervalCoverage!.N.Should().Be(2);
+        metrics.IntervalCoverage.Observed.Should().BeApproximately(0.5, 1e-12);
+        metrics.IntervalCoverage.Nominal.Should().BeApproximately(0.9, 1e-9);
+    }
+
     /// <summary>
     /// A shadow prediction over HTTP, as `mloop predict --experiment`: a candidate in staging answers,
     /// the response names it, its logged rows carry its id, and production stays where it was.

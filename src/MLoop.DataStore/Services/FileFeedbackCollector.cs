@@ -56,6 +56,7 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
             ModelName = prediction.Value.ModelName,
             ExperimentId = prediction.Value.ExperimentId,
             PredictedValue = prediction.Value.Output,
+            Interval = prediction.Value.Interval,
             ActualValue = actualValue,
             Source = source,
             Weight = weight,
@@ -127,6 +128,7 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
                 ModelName = prediction.ModelName,
                 ExperimentId = prediction.ExperimentId,
                 PredictedValue = prediction.Output,
+                Interval = prediction.Interval,
                 ActualValue = actual,
                 Source = row.Source,
                 Weight = row.Weight,
@@ -222,11 +224,24 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
         // sampling reads it too — so each prediction is counted once.
         feedback = FeedbackEntry.LatestPerPrediction(feedback);
 
+        // A prediction that stated an interval and was answered with a number is read against its interval: for a value
+        // answer, "the same value" is not a measure (it is ≈ 0 for every regression), so those rows are left out of
+        // accuracy and read as coverage. Everything else is read as before.
+        var judged = new List<(FeedbackEntry Entry, bool Inside)>();
+        var matched = new List<FeedbackEntry>();
+        foreach (var entry in feedback)
+        {
+            if (FeedbackValueComparer.InsideInterval(entry.Interval, entry.ActualValue) is { } inside)
+                judged.Add((entry, inside));
+            else
+                matched.Add(entry);
+        }
+
         // Each prediction counts by its weight: a sample reviewed with unequal probabilities misstates
         // accuracy when its rows are counted alike. Without weights every row counts 1 — plain accuracy.
         var weighted = feedback.Any(e => e.Weight is not null);
         double total = 0, correct = 0, squares = 0;
-        foreach (var entry in feedback)
+        foreach (var entry in matched)
         {
             total += entry.EffectiveWeight;
             squares += entry.EffectiveWeight * entry.EffectiveWeight;
@@ -245,8 +260,36 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
             Weighted: weighted,
             EffectiveSampleSize: effectiveSize,
             ExperimentId: experimentId,
-            UnattributedFeedback: unattributed);
+            UnattributedFeedback: unattributed,
+            IntervalCoverage: CoverageOf(judged, unjudged: matched.Count));
     }
+
+    /// <summary>
+    /// How often the actual values fell inside the intervals the predictions stated, by weight — null when nothing was
+    /// judged. The stated level is the weighted mean of the levels stated.
+    /// </summary>
+    private static IntervalCoverage? CoverageOf(IReadOnlyList<(FeedbackEntry Entry, bool Inside)> judged, int unjudged)
+    {
+        if (judged.Count == 0)
+            return null;
+
+        double total = 0, inside = 0, squares = 0, level = 0;
+        foreach (var (entry, isInside) in judged)
+        {
+            var weight = entry.EffectiveWeight;
+            total += weight;
+            squares += weight * weight;
+            level += weight * entry.Interval!.Confidence;
+            if (isInside)
+                inside += weight;
+        }
+
+        // Every weight zero: the rows count for nothing, so there is no share to state.
+        return total > 0
+            ? new IntervalCoverage(Math.Round(level / total, 12), inside / total, judged.Count, total * total / squares, unjudged)
+            : null;
+    }
+
 
     private async Task WriteEntryAsync(SerializableFeedbackEntry entry, CancellationToken cancellationToken)
     {
@@ -317,7 +360,7 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
             .SelectMany(modelDir => Directory.GetFiles(modelDir, "*.jsonl").Select(file => (ModelName: Path.GetFileName(modelDir), File: file)))
             .OrderByDescending(f => Path.GetFileName(f.File), StringComparer.Ordinal);
 
-    private static (string? ExperimentId, object Output) PredictionOf(JsonElement root)
+    private static (string? ExperimentId, object Output, PredictionInterval? Interval) PredictionOf(JsonElement root)
     {
         var output = root.TryGetProperty("output", out var outputElement)
             ? GetObjectFromJsonElement(outputElement)
@@ -329,7 +372,20 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
             ? answered
             : null;
 
-        return (experimentId, output);
+        return (experimentId, output, IntervalOf(root));
+    }
+
+    /// <summary>The interval a log line states — null for a line without one (written before intervals were kept) or whose
+    /// interval is not the three numbers it is written as.</summary>
+    private static PredictionInterval? IntervalOf(JsonElement root)
+    {
+        if (!root.TryGetProperty("interval", out var interval) || interval.ValueKind != JsonValueKind.Object)
+            return null;
+        return interval.TryGetProperty("lower", out var lower) && lower.TryGetDouble(out var lo)
+            && interval.TryGetProperty("upper", out var upper) && upper.TryGetDouble(out var up)
+            && interval.TryGetProperty("confidence", out var confidence) && confidence.TryGetDouble(out var level)
+            ? new PredictionInterval(lo, up, level)
+            : null;
     }
 
     /// <summary>
@@ -352,10 +408,10 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
     /// The logged answers to <paramref name="wanted"/>, in one pass over the logs, newest day first as the one-id search is — the
     /// first line that carries an id is the one that counts. Stops as soon as every id is found.
     /// </summary>
-    private async Task<Dictionary<string, (string ModelName, string? ExperimentId, object Output)>> FindPredictionsAsync(
+    private async Task<Dictionary<string, (string ModelName, string? ExperimentId, object Output, PredictionInterval? Interval)>> FindPredictionsAsync(
         HashSet<string> wanted, CancellationToken cancellationToken)
     {
-        var found = new Dictionary<string, (string ModelName, string? ExperimentId, object Output)>(StringComparer.Ordinal);
+        var found = new Dictionary<string, (string ModelName, string? ExperimentId, object Output, PredictionInterval? Interval)>(StringComparer.Ordinal);
         if (wanted.Count == 0 || !Directory.Exists(_logsDirectory))
             return found;
 
@@ -375,8 +431,8 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
                     if (root.TryGetProperty("id", out var idElement) && idElement.ValueKind == JsonValueKind.String
                         && idElement.GetString() is { } id && wanted.Contains(id) && !found.ContainsKey(id))
                     {
-                        var (experimentId, output) = PredictionOf(root);
-                        found[id] = (modelName, experimentId, output);
+                        var (experimentId, output, interval) = PredictionOf(root);
+                        found[id] = (modelName, experimentId, output, interval);
                     }
                 }
                 catch (JsonException)
@@ -392,7 +448,7 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
         return found;
     }
 
-    private async Task<(string ModelName, string? ExperimentId, object Output)?> FindPredictionByIdAsync(
+    private async Task<(string ModelName, string? ExperimentId, object Output, PredictionInterval? Interval)?> FindPredictionByIdAsync(
         string predictionId,
         CancellationToken cancellationToken)
     {
@@ -429,8 +485,8 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
                     if (root.TryGetProperty("id", out var idElement) &&
                         idElement.GetString() == predictionId)
                     {
-                        var (experimentId, output) = PredictionOf(root);
-                        return (modelName, experimentId, output);
+                        var (experimentId, output, interval) = PredictionOf(root);
+                        return (modelName, experimentId, output, interval);
                     }
                 }
                 catch (JsonException)
@@ -472,7 +528,8 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
                 serializable.Source,
                 serializable.Timestamp,
                 serializable.Weight,
-                serializable.ExperimentId);
+                serializable.ExperimentId,
+                serializable.Interval);
 
             if (entry.Timestamp >= from && entry.Timestamp <= to)
                 yield return entry;
@@ -531,5 +588,6 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
         public string? Source { get; set; }
         public double? Weight { get; set; }
         public DateTimeOffset Timestamp { get; set; }
+        public PredictionInterval? Interval { get; set; }
     }
 }

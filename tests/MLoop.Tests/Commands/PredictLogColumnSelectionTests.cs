@@ -91,4 +91,51 @@ public class PredictLogColumnSelectionTests
         Assert.Null(PredictCommand.SelectConfidence(Row(("PredictedLabel", "yes"), ("Confidence", cell))));
         Assert.Null(PredictCommand.SelectConfidence(Row(("PredictedLabel", "yes"))));
     }
+
+    [Fact]
+    public void BandedRegression_LogsTheBandItStatedAtTheLevelTheModelIsFittedTo()
+    {
+        // The CSV carries the bounds, not the level; the level is the model's own (a band fitted to 90 %).
+        var row = Row(("Score", "26.47"), ("ScoreLowerBound", "24.97"), ("ScoreUpperBound", "27.97"), ("Confidence", "0.13"));
+
+        var interval = PredictCommand.SelectInterval(row, level: 0.9);
+
+        Assert.Equal(new MLoop.DataStore.Interfaces.PredictionInterval(24.97, 27.97, 0.9), interval);
+    }
+
+    [Theory]
+    [InlineData("Score", "6.0", null, null, 0.9)]          // no band columns — a plain regression or a class
+    [InlineData("ScoreLowerBound", "1", "ScoreUpperBound", "2", null)] // a band the model states no level for
+    public void AnAnswerWithoutABandOrWithoutALevelLogsNoInterval(string a, string av, string? b, string? bv, double? level)
+    {
+        var row = b is null ? Row((a, av)) : Row((a, av), (b, bv!));
+
+        Assert.Null(PredictCommand.SelectInterval(row, level));
+    }
+
+    [Theory]
+    [InlineData("NaN", "2")]       // cannot be written to a log line at all
+    [InlineData("5", "2")]         // bounds the wrong way round judge nothing
+    [InlineData("1", "Infinity")]
+    [InlineData("n/a", "2")]
+    public void ABandThatCannotBeJudgedIsNotLogged(string lower, string upper)
+    {
+        var row = Row(("Score", "1.5"), ("ScoreLowerBound", lower), ("ScoreUpperBound", upper));
+
+        Assert.Null(PredictCommand.SelectInterval(row, 0.9));
+    }
+
+    [Fact]
+    public void TheServedAndTheFileLogsRecordTheSameIntervalForTheSameAnswer()
+    {
+        // POST /predict logs the interval the row states (ScoreLowerBound · ScoreUpperBound · IntervalConfidence);
+        // predict --log reads the same bounds from the CSV it wrote. One reader, so one answer.
+        var served = MLoop.CLI.Infrastructure.ML.ServedPredictionLog.StatedInterval(24.97, 27.97, 0.9);
+        var fromFile = PredictCommand.SelectInterval(
+            Row(("Score", "26.47"), ("ScoreLowerBound", "24.97"), ("ScoreUpperBound", "27.97")), 0.9);
+
+        Assert.Equal(served, fromFile);
+        Assert.Null(MLoop.CLI.Infrastructure.ML.ServedPredictionLog.StatedInterval(null, 27.97, 0.9));
+        Assert.Null(MLoop.CLI.Infrastructure.ML.ServedPredictionLog.StatedInterval(24.97, 27.97, null));
+    }
 }
