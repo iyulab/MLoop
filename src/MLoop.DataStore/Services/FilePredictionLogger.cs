@@ -110,6 +110,20 @@ public sealed class FilePredictionLogger : IPredictionLogger
         return newest.LargestFirst();
     }
 
+    /// <summary>
+    /// When <paramref name="modelName"/>'s most recent prediction was logged — the last write of its newest day file, so a status
+    /// view reads it without parsing the log — or <see langword="null"/> when nothing was logged for it. Day files are only ever
+    /// appended to (and dropped whole by the retention prune), so the write time is the time of the last line.
+    /// </summary>
+    public DateTime? LastLoggedAtUtc(string modelName)
+    {
+        var dir = Path.Combine(_baseDirectory, SanitizeFileName(modelName));
+        if (!Directory.Exists(dir))
+            return null;
+        var files = Directory.GetFiles(dir, "*.jsonl");
+        return files.Length == 0 ? null : files.Max(File.GetLastWriteTimeUtc);
+    }
+
     private async Task WriteEntryAsync(PredictionLogEntry entry, CancellationToken cancellationToken)
     {
         var serializable = ToSerializable(entry);

@@ -270,4 +270,22 @@ public class FilePredictionLoggerTests : IDisposable
                 timestamp = e.At,
             })));
     }
+
+    [Fact]
+    public async Task LastLoggedAtUtc_IsWhenTheModelsMostRecentPredictionWasLogged_AndNullWhenNothingWas()
+    {
+        var logger = new FilePredictionLogger(_testDir);
+        Assert.Null(logger.LastLoggedAtUtc("never"));
+
+        await logger.LogPredictionAsync("m", "exp-001", new Dictionary<string, object> { ["x"] = 1 }, "a");
+        var file = Directory.GetFiles(Path.Combine(_testDir, ".mloop", "logs", "m"), "*.jsonl").Single();
+        File.SetLastWriteTimeUtc(file, DateTime.UtcNow.AddHours(-5));
+        await logger.LogPredictionAsync("m", "exp-001", new Dictionary<string, object> { ["x"] = 2 }, "b");
+
+        var last = logger.LastLoggedAtUtc("m");
+
+        Assert.NotNull(last);
+        Assert.True(DateTime.UtcNow - last.Value < TimeSpan.FromMinutes(1), "the newest append, not the aged earlier one");
+        Assert.Null(logger.LastLoggedAtUtc("other"));
+    }
 }

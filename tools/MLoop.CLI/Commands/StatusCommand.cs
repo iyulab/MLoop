@@ -111,6 +111,7 @@ public static class StatusCommand
             modelsTable.AddColumn(new TableColumn("[bold]Last Prediction[/]").RightAligned());
 
             var predictionsDir = ctx.FileSystem.CombinePath(ctx.ProjectRoot, ProjectLayout.PredictionsDirectory);
+            var predictionLogger = new MLoop.DataStore.Services.FilePredictionLogger(ctx.ProjectRoot);
 
             // Collect model rows first so the same data feeds both the human table and --json —
             // one computation path, no separate JSON re-derivation.
@@ -131,8 +132,9 @@ public static class StatusCommand
                 // one weighting) — the newest experiment's measurement is the model's current one.
                 var bestPick = ExperimentRanking.SelectBest(modelExperiments);
 
-                var lastPredictionDisplay = GetLatestPrediction(predictionsDir, modelName);
-                var lastPredictionAtUtc = GetLatestPredictionTimestampUtc(predictionsDir, modelName);
+                var lastLoggedUtc = predictionLogger.LastLoggedAtUtc(modelName);
+                var lastPredictionDisplay = GetLatestPrediction(predictionsDir, modelName, lastLoggedUtc);
+                var lastPredictionAtUtc = GetLatestPredictionTimestampUtc(predictionsDir, modelName, lastLoggedUtc);
 
                 modelRows.Add(new ModelStatusRow(
                     modelName, total, completed, hasProduction,
@@ -377,9 +379,9 @@ public static class StatusCommand
         }
     }
 
-    internal static string GetLatestPrediction(string predictionsDir, string modelName)
+    internal static string GetLatestPrediction(string predictionsDir, string modelName, DateTime? lastLoggedUtc = null)
     {
-        var lastWrite = GetLatestPredictionTimestampUtc(predictionsDir, modelName);
+        var lastWrite = GetLatestPredictionTimestampUtc(predictionsDir, modelName, lastLoggedUtc);
         if (lastWrite == null)
             return "[grey]-[/]";
 
@@ -398,7 +400,16 @@ public static class StatusCommand
 
     /// <summary>Raw fact behind <see cref="GetLatestPrediction"/>'s markup — the <c>--json</c> shape
     /// wants the timestamp itself, not a "15m ago" display string.</summary>
-    internal static DateTime? GetLatestPredictionTimestampUtc(string predictionsDir, string modelName)
+    internal static DateTime? GetLatestPredictionTimestampUtc(string predictionsDir, string modelName, DateTime? lastLoggedUtc = null)
+    {
+        // A served model answers over HTTP and writes no output file: its predictions are in the prediction logs
+        // (`mloop serve` logs every row), so the latest of the two is the model's last prediction. Reading the files alone
+        // reported «no predictions» for the production path of a model that had answered thousands.
+        var fromFiles = LatestOutputFileUtc(predictionsDir, modelName);
+        return fromFiles is { } files && lastLoggedUtc is { } logged ? (files > logged ? files : logged) : fromFiles ?? lastLoggedUtc;
+    }
+
+    private static DateTime? LatestOutputFileUtc(string predictionsDir, string modelName)
     {
         if (!Directory.Exists(predictionsDir))
             return null;

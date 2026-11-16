@@ -21,6 +21,27 @@ public class StatusCommandTests : IDisposable
     #region GetLatestPrediction
 
     [Fact]
+    public void GetLatestPrediction_AServedModelHasNoOutputFile_ReadsItsLastLoggedPrediction()
+    {
+        // `mloop serve` answers over HTTP and writes no predictions/ file: the model's last prediction is the last logged one.
+        var result = StatusCommand.GetLatestPrediction(Path.Combine(_tempDir, "nope"), "default", DateTime.UtcNow.AddMinutes(-7));
+
+        Assert.Contains("7m ago", result);
+        Assert.NotNull(StatusCommand.GetLatestPredictionTimestampUtc(Path.Combine(_tempDir, "nope"), "default", DateTime.UtcNow.AddMinutes(-7)));
+    }
+
+    [Fact]
+    public void GetLatestPrediction_FileAndLog_TheLaterOneCounts()
+    {
+        var filePath = Path.Combine(_tempDir, "default-predictions-001.csv");
+        File.WriteAllText(filePath, "data");
+        File.SetLastWriteTimeUtc(filePath, DateTime.UtcNow.AddMinutes(-15));
+
+        Assert.Contains("3m ago", StatusCommand.GetLatestPrediction(_tempDir, "default", DateTime.UtcNow.AddMinutes(-3)));
+        Assert.Contains("15m ago", StatusCommand.GetLatestPrediction(_tempDir, "default", DateTime.UtcNow.AddHours(-2)));
+    }
+
+    [Fact]
     public void GetLatestPrediction_NoDirectory_ReturnsDash()
     {
         var nonExistent = Path.Combine(_tempDir, "nope");
