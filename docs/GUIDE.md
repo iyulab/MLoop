@@ -1861,6 +1861,8 @@ Answers (default's own predictions): PSI 0.205 moderate — yes: 24% → 45%
 PSI under 0.1 is stable, 0.1–0.25 moderate, 0.25+ significant.
 ```
 
+**A column that only counts up is not drift.** A row counter, an id or a time rises through the training file, so every later window lies past its training range and its PSI is large however ordinary the window is. Training notes a numeric column that rose through the whole file in file order (at least 20 steps up over at least 100 rows) as a `trend` in `drift-profile.json`; `mloop drift` still lists it, with `trend` in the level cell and its PSI, but leaves it out of the overall level, the largest PSI, the past-the-range count and the retraining trigger (`--json`: `trend: true` on that column). The file's order is what shows it, so a shuffled training file shows no trend, and a model trained before this keeps the profile it had — retrain to get the marking.
+
 Those thresholds are the reading for large samples, so the level is also read against what chance alone gives. A window of 300
 rows against a profile of thousands, with nothing changed, has a PSI of about 0.03 in each column, and a bin that expects a handful of
 rows (the missing values') can read 0.1 alone when a window holds none of them; across fifty columns that put one such window in five over

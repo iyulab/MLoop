@@ -83,4 +83,24 @@ public class InputMovedTests
 
         Enumerable.Range(0, 30).Count(_ => CompositeRetrainingTrigger.InputMoved(Compare(profile, rng, 1.0), 0.25)).Should().Be(30);
     }
+
+    [Fact]
+    public void ASerialNumberThatKeepsCounting_DoesNotAskForARetraining()
+    {
+        // 'id' rose through the whole training file; every later window is past its range, which is time passing, not drift.
+        var rng = new Random(61);
+        var rows = Enumerable.Range(1, 1000)
+            .Select(i => new string?[] { i.ToString(CultureInfo.InvariantCulture), rng.NextDouble().ToString("R", CultureInfo.InvariantCulture) }).ToList();
+        var profile = DriftProfile.Build(rows, [("id", true), ("x", true)], new HashSet<string> { "id" });
+        var window = Enumerable.Range(0, 400)
+            .Select(i => (IReadOnlyDictionary<string, object?>)new Dictionary<string, object?> { ["id"] = 1001.0 + i, ["x"] = rng.NextDouble() }).ToList();
+
+        var report = DriftMeasure.Compare(profile, window);
+
+        report.Features.Single(f => f.Column == "id").Psi.Should().BeGreaterThan(1);
+        CompositeRetrainingTrigger.InputMoved(report, 0.25).Should().BeFalse();
+        DriftEvaluator.DescribeTrend(report).Should().Contain("'id'").And.Contain("retraining trigger");
+        DriftEvaluator.Signal(report).Features.Single(f => f.Column == "id").Trend.Should().BeTrue();
+        DriftEvaluator.Signal(report).Level.Should().Be("None");
+    }
 }

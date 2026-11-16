@@ -97,12 +97,14 @@ public static class DriftCommand
             .AddColumn(new TableColumn("[grey]Level[/]").Centered())
             .AddColumn("[grey]Most moved[/]");
         foreach (var f in report.Features)
-            table.AddRow(Markup.Escape(f.Column), $"{f.Psi:0.000}", LevelMarkup(f.Level),
+            table.AddRow(Markup.Escape(f.Column), $"{f.Psi:0.000}", f.Trend ? "[grey]trend[/]" : LevelMarkup(f.Level),
                 $"{Markup.Escape(f.MostChangedBin)}: {f.ReferenceShare:P0} → {f.CurrentShare:P0}");
         AnsiConsole.Write(table);
 
         if (DriftEvaluator.DescribeRange(report) is { } outside)
             AnsiConsole.MarkupLine($"[yellow]{Markup.Escape(outside)}[/]");
+        if (DriftEvaluator.DescribeTrend(report) is { } trendNote)
+            AnsiConsole.MarkupLine($"[grey]{Markup.Escape(trendNote)}[/]");
 
         if (report.Prediction is { } answers)
             AnsiConsole.MarkupLine($"Answers ({Markup.Escape(name)}'s own predictions): PSI {answers.Psi:0.000} {LevelMarkup(answers.Level)} — "
@@ -121,7 +123,7 @@ public static class DriftCommand
                 .AddColumn("[grey]Most moved column[/]");
             foreach (var s in slices)
                 bySlice.AddRow(Markup.Escape(s.Value), $"{s.Report.Rows:N0}", $"{s.Report.MaxPsi:0.000}",
-                    LevelMarkup(s.Report.Level), Markup.Escape(s.Report.Features.FirstOrDefault()?.Column ?? "-"));
+                    LevelMarkup(s.Report.Level), Markup.Escape(s.Report.Judged.FirstOrDefault()?.Column ?? "-"));
             AnsiConsole.Write(bySlice);
         }
         else if (sliceBy is not null)
