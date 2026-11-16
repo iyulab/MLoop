@@ -41,7 +41,7 @@ public static class ControlCharacterGuard
         if (Offender(context.Request) is { } where)
         {
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
-            await context.Response.WriteAsJsonAsync(new { error = $"{where} holds a control character, which names nothing." });
+            await context.Response.WriteAsJsonAsync(new ErrorResponse($"{where} holds a control character, which names nothing."));
             return;
         }
         await next();

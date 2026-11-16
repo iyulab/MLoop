@@ -72,8 +72,8 @@ public static class ImageInputs
     /// <summary>Why <paramref name="images"/> cannot be taken — none, or more than <see cref="Max"/> (413) — or nothing.</summary>
     public static IResult? Refusal(List<byte[]> images) => images.Count switch
     {
-        0 => Results.BadRequest(new { error = $"No image given: {Expected}." }),
-        > Max => Results.Json(new { error = $"{images.Count} images in one request; at most {Max}." },
+        0 => Results.BadRequest(new ErrorResponse($"No image given: {Expected}.")),
+        > Max => Results.Json(new ErrorResponse($"{images.Count} images in one request; at most {Max}."),
             statusCode: StatusCodes.Status413PayloadTooLarge),
         _ => null,
     };

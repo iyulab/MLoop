@@ -112,7 +112,8 @@ public static class ExperimentEndpoints
                     experiment.Result != null
                         ? new ExperimentResultView(experiment.Result.BestTrainer, experiment.Result.TrainingTimeSeconds)
                         : null,
-                    experiment.Metrics));
+                    experiment.Metrics,
+                    experiment.Result?.Validated));
             }
             catch (Exception ex)
             {

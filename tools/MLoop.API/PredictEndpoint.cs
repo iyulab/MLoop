@@ -68,13 +68,13 @@ public static class PredictEndpoint
                     }
                     catch (JsonException ex)
                     {
-                        return Results.BadRequest(new { error = $"The body is not JSON: {ex.Message}" });
+                        return Results.BadRequest(new ErrorResponse($"The body is not JSON: {ex.Message}"));
                     }
                     if (ImageInputs.TryGetImages(input, out var encoded))
                     {
                         var (decoded, unreadable) = ImageInputs.FromJson(encoded);
                         if (decoded is null)
-                            return Results.BadRequest(new { error = unreadable });
+                            return Results.BadRequest(new ErrorResponse(unreadable));
                         images = decoded;
                     }
                 }
@@ -91,7 +91,7 @@ public static class PredictEndpoint
                     }
                     catch (MLoop.Core.Embedding.UnreadableImageException ex)
                     {
-                        return Results.BadRequest(new { error = ex.Message, index = ex.Index });
+                        return Results.BadRequest(new ImageErrorResponse(ex.Message, ex.Index));
                     }
                 }
             }
@@ -114,7 +114,7 @@ public static class PredictEndpoint
                     answeringId = experiment.Trim();
                     var (candidatePath, refusal) = ExperimentModels.Find(experimentStore, modelName, answeringId);
                     if (candidatePath is null)
-                        return Results.NotFound(new { error = refusal });
+                        return Results.NotFound(new ErrorResponse(refusal));
                     modelPath = candidatePath;
                     taskOfModel = (await experimentStore.LoadAsync(modelName, answeringId, ct))?.Task;
                 }
@@ -125,7 +125,7 @@ public static class PredictEndpoint
                     if (productionModel == null)
                     {
                         logger.LogWarning("Prediction failed: No production model found for '{ModelName}'", modelName);
-                        return Results.NotFound(new { error = $"No production model found for '{modelName}'. Train and promote a model first, or predict with a candidate: ?experiment=<exp-id>." });
+                        return Results.NotFound(new ErrorResponse($"No production model found for '{modelName}'. Train and promote a model first, or predict with a candidate: ?experiment=<exp-id>."));
                     }
 
                     answeringId = productionModel.ExperimentId;
@@ -136,7 +136,7 @@ public static class PredictEndpoint
                 if (!File.Exists(modelPath))
                 {
                     logger.LogError("Model file not found at {ModelPath}", modelPath);
-                    return Results.NotFound(new { error = $"Model file not found: {modelPath}" });
+                    return Results.NotFound(new ErrorResponse($"Model file not found: {modelPath}"));
                 }
 
                 var taskType = taskOfModel ?? "regression";
@@ -172,17 +172,14 @@ public static class PredictEndpoint
                     logger.LogInformation("Forecast completed for '{ModelName}': {Count} steps in {ElapsedMs}ms",
                         modelName, forecastRows.Count, stopwatch.ElapsedMilliseconds);
 
-                    return Results.Ok(new
-                    {
+                    return Results.Ok(PredictResponse.Create(
                         modelName,
-                        experimentId = answeringId,
-                        modelSha256 = ModelFingerprint.Sha256(modelPath),
-                        predictedAt = DateTime.UtcNow,
-                        task = "forecasting",
-                        count = forecastRows.Count,
-                        predictions = forecastRows,
-                        warnings = ForecastRequestNotes.Of(input)
-                    });
+                        answeringId,
+                        ModelFingerprint.Sha256(modelPath),
+                        DateTime.UtcNow,
+                        "forecasting",
+                        forecastRows,
+                        ForecastRequestNotes.Of(input)));
                 }
 
                 // Object detection answers each image with a list of boxes, not one row's value: its own branch,
@@ -190,10 +187,10 @@ public static class PredictEndpoint
                 if (MLoop.Core.Models.TaskTypes.Canonical(taskType) == "object-detection")
                 {
                     if (images is null)
-                        return Results.BadRequest(new { error = $"'{modelName}' is an object-detection model: send images by content — {{\"images\": [base64…]}} or a multipart form." });
+                        return Results.BadRequest(new ErrorResponse($"'{modelName}' is an object-detection model: send images by content — {{\"images\": [base64…]}} or a multipart form."));
                     var (scoreThreshold, thresholdError) = ObjectDetectionPredictions.ReadScoreThreshold(request, input);
                     if (thresholdError is not null)
-                        return Results.BadRequest(new { error = thresholdError });
+                        return Results.BadRequest(new ErrorResponse(thresholdError));
                     return await ObjectDetectionPredictions.RespondAsync(
                         images, imageFiles, modelName, answeringId, modelPath, mlContext, modelCache, experimentStore,
                         predictionLogger, configuration, logger, stopwatch, ct, scoreThreshold);
@@ -204,7 +201,7 @@ public static class PredictEndpoint
                 if (MLoop.Core.Models.TaskTypes.Canonical(taskType) == "image-anomaly")
                 {
                     if (images is null)
-                        return Results.BadRequest(new { error = $"'{modelName}' is an image-anomaly model: send images by content — {{\"images\": [base64…]}} or a multipart form." });
+                        return Results.BadRequest(new ErrorResponse($"'{modelName}' is an image-anomaly model: send images by content — {{\"images\": [base64…]}} or a multipart form."));
                     return await ImageAnomalyPredictions.RespondAsync(
                         images, modelName, answeringId, modelPath, embedderPool, logger, stopwatch, ct);
                 }
@@ -233,7 +230,7 @@ public static class PredictEndpoint
                 if (images is not null)
                 {
                     if (MLoop.Core.Models.TaskTypes.Canonical(taskType) != "image-classification")
-                        return Results.BadRequest(new { error = $"Images are predicted by an image-classification or object-detection model; '{modelName}' answers {taskType}. Send its rows as JSON." });
+                        return Results.BadRequest(new ErrorResponse($"Images are predicted by an image-classification or object-detection model; '{modelName}' answers {taskType}. Send its rows as JSON."));
                     foreach (var image in images)
                     {
                         var file = MLoop.Core.Data.ScratchFiles.New("mloop_predict_image_", ".img");
@@ -299,17 +296,14 @@ public static class PredictEndpoint
                     }
                 }
 
-                return Results.Ok(new
-                {
+                return Results.Ok(PredictResponse.Create(
                     modelName,
-                    experimentId = answeringId,
-                    modelSha256 = ModelFingerprint.Sha256(modelPath),
-                    predictedAt = DateTime.UtcNow,
-                    task = result.TaskType,
-                    count = predictions.Count,
+                    answeringId,
+                    ModelFingerprint.Sha256(modelPath),
+                    DateTime.UtcNow,
+                    result.TaskType,
                     predictions,
-                    warnings
-                });
+                    warnings));
             }
             catch (MLoop.Core.Models.ChangedModelException ex)
             {
@@ -351,10 +345,10 @@ public static class PredictEndpoint
         .WithName("Predict")
         .WithTags("Prediction")
         .Accepts<JsonElement>("application/json", "multipart/form-data")
-        .Produces<object>(StatusCodes.Status200OK)
-        .Produces<object>(StatusCodes.Status400BadRequest)
-        .Produces<object>(StatusCodes.Status404NotFound)
-        .Produces<object>(StatusCodes.Status413PayloadTooLarge)
+        .Produces<PredictResponse<PredictionRow>>(StatusCodes.Status200OK)
+        .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
+        .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
+        .Produces<ErrorResponse>(StatusCodes.Status413PayloadTooLarge)
         .Produces<ProblemDetails>(StatusCodes.Status409Conflict)
         .Produces<ProblemDetails>(StatusCodes.Status500InternalServerError)
         .RequireAuthorization();

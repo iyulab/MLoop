@@ -49,6 +49,7 @@ public class WireShapeContractTests : IClassFixture<TestWebApplicationFactory>
         ["POST /evaluate"] = ("needs a trained model and a labeled file", typeof(EvaluateApiTests)),
         ["POST /train"] = ("starts a training job", typeof(TrainDefinitionApiTests)),
         ["POST /embed"] = ("needs an installed image encoder", typeof(EmbedApiTests)),
+        ["POST /datasets"] = ("takes the file as its body (a table or a zip)", typeof(DatasetUploadApiTests)),
         ["HEAD /health"] = ("the probe's HEAD form: the same endpoint without a body", typeof(ApiIntegrationTests)),
     };
 
@@ -77,6 +78,8 @@ public class WireShapeContractTests : IClassFixture<TestWebApplicationFactory>
         new("trigger", "GET", "/trigger", "/trigger?name=shape"),
         new("drift", "GET", "/drift", "/drift?name=shape"),
         new("drift-window", "GET", "/drift", "/drift?name=shape&rows=1"),
+        new("drift-measured", "GET", "/drift", "/drift?name=drifted"),
+        new("drift-sliced", "GET", "/drift", "/drift?name=drifted&sliceBy=site"),
         new("logs", "GET", "/logs", "/logs?name=shape"),
         new("logs-bad-date", "GET", "/logs", "/logs?name=shape&from=not-a-date"),
         new("feedback-add", "POST", "/feedback", "/feedback", new { predictionId = "{prediction}", actualValue = 3.5, source = "contract" }),
@@ -85,7 +88,10 @@ public class WireShapeContractTests : IClassFixture<TestWebApplicationFactory>
         new("samples", "POST", "/samples", "/samples", new { name = "shape", rows = 5 }),
         new("samples-bad-rows", "POST", "/samples", "/samples", new { name = "shape", rows = 0 }),
         new("jobs", "GET", "/jobs", "/jobs"),
+        new("job", "GET", "/jobs/{id}", "/jobs/{job}"),
         new("job-missing", "GET", "/jobs/{id}", "/jobs/no-such-job"),
+        new("datasets", "GET", "/datasets", "/datasets"),
+        new("dataset-delete-missing", "DELETE", "/datasets/{id}", "/datasets/ds-20260101-000000-00000000"),
         new("rollback", "POST", "/rollback", "/rollback", new { name = "shape" }),
         new("rollback-none", "POST", "/rollback", "/rollback", new { name = "nomodel" }),
     ];
@@ -96,10 +102,26 @@ public class WireShapeContractTests : IClassFixture<TestWebApplicationFactory>
         await SeedAsync();
         var predictionId = (await _factory.Services.GetRequiredService<IPredictionLogger>().GetLogsAsync("shape")).First().Id!;
 
+        // A finished job with every field a job can carry, so the answer for one has its whole shape here — and, with the
+        // list, its rows.
+        var jobs = _factory.Services.GetRequiredService<TrainingJobStore>();
+        var jobId = jobs.CreateJob(new TrainingJobRequest("datasets/train.csv", "y", "binary-classification", Name: "shape",
+            AdditionalDataFiles: ["datasets/more.csv"], Weight: "w", Balance: "undersample", MaxTrials: 5));
+        var job = jobs.GetJob(jobId)!;
+        job.Status = JobStatus.Completed;
+        job.StatusMessage = "Completed";
+        job.CompletedAt = new DateTime(2026, 11, 12, 9, 5, 0, DateTimeKind.Utc);
+        job.ExperimentId = "exp-001";
+        job.Metrics = new() { ["accuracy"] = 0.91 };
+        job.BestTrainer = "FastTree";
+        job.Promoted = false;
+        job.KeptInStagingReason = "kept";
+        job.Warnings = ["a warning"];
+
         var observed = new List<(string Id, string Header, SortedDictionary<string, string> Shape)>();
         foreach (var scenario in Scenarios())
         {
-            using var request = new HttpRequestMessage(new HttpMethod(scenario.Method), scenario.Url);
+            using var request = new HttpRequestMessage(new HttpMethod(scenario.Method), scenario.Url.Replace("{job}", jobId));
             if (scenario.Body is not null)
             {
                 var json = JsonSerializer.Serialize(scenario.Body).Replace("{prediction}", predictionId);
@@ -267,5 +289,32 @@ public class WireShapeContractTests : IClassFixture<TestWebApplicationFactory>
 
         await _factory.Services.GetRequiredService<IPredictionLogger>().LogPredictionAsync(
             "shape", "exp-001", new Dictionary<string, object> { ["x"] = 1.0, ["kind"] = "a" }, true, 0.9);
+
+        await SeedDriftAsync();
+    }
+
+    /// <summary>
+    /// A production model with a training profile and a logged window that moved away from it, in two slices, so the answers of
+    /// <c>GET /drift</c> that carry values (the signal, its columns and the per-slice signals) have their shape here. The window
+    /// is the smallest that is measured (<c>DriftEvaluator.MinimumRows</c> per slice value).
+    /// </summary>
+    private async Task SeedDriftAsync()
+    {
+        const string model = "drifted";
+        var production = Path.Combine(_factory.TestProjectRoot, MLoop.Core.Storage.ExperimentLayout.ModelsDirectory, model, MLoop.Core.Storage.ExperimentLayout.ProductionDirectory);
+        Directory.CreateDirectory(production);
+        var camel = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
+        await File.WriteAllTextAsync(Path.Combine(production, MLoop.Core.Storage.ExperimentLayout.MetadataFileName),
+            JsonSerializer.Serialize(new { experimentId = "exp-001", task = "regression" }, camel));
+        var profile = MLoop.Core.Monitoring.DriftProfile.Build(
+            Enumerable.Range(0, 1000).Select(i => new[] { (i % 100).ToString(System.Globalization.CultureInfo.InvariantCulture) }).ToArray(),
+            [("x", true)]);
+        await File.WriteAllTextAsync(Path.Combine(production, MLoop.Core.Storage.ExperimentLayout.DriftProfileFileName),
+            JsonSerializer.Serialize(profile, camel));
+
+        var logger = _factory.Services.GetRequiredService<IPredictionLogger>();
+        for (var i = 0; i < 2 * MLoop.Ops.Services.DriftEvaluator.MinimumRows; i++)
+            await logger.LogPredictionAsync(model, "exp-001",
+                new Dictionary<string, object> { ["x"] = 60 + i % 40, ["site"] = i % 2 == 0 ? "a" : "b" }, "1");
     }
 }

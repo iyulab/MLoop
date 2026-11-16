@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.ML;
@@ -31,7 +32,7 @@ public static class TrainingEndpoints
     public static void MapTrainingEndpoints(this WebApplication app)
     {
         // Start training job (async, secured)
-        app.MapPost("/train", async (
+        app.MapPost("/train", async Task<Results<Accepted<TrainStartResponse>, BadRequest<ErrorResponse>>> (
             [FromBody] TrainingJobRequest request,
             HttpContext http,
             TrainingJobStore jobStore,
@@ -49,14 +50,14 @@ public static class TrainingEndpoints
                     ModelName: request.ResolveModelName(), Task: request.Task, Label: request.LabelColumn, TimeLimitSeconds: request.TimeLimitSeconds, Metric: request.Metric,
                     TestSplit: request.TestSplit, Weight: request.Weight, MaxTrials: request.MaxTrials, Epochs: request.Epochs, Ensemble: request.Ensemble));
             if (definitionError != null)
-                return Results.BadRequest(new { error = definitionError });
+                return TypedResults.BadRequest(new ErrorResponse(definitionError));
             if (TrainingInput.BalanceConflict(trainDefinition!, request.Balance) is { } balanceError)
-                return Results.BadRequest(new { error = balanceError });
+                return TypedResults.BadRequest(new ErrorResponse(balanceError));
             // Refuse a metric the task cannot optimize now, not minutes later inside the job — the job
             // would otherwise fail (or, before this, quietly optimize the task default).
             var metricRejection = MLoop.Core.Evaluation.MetricNames.Rejection(trainDefinition!.Task, request.Metric);
             if (metricRejection != null)
-                return Results.BadRequest(new { error = metricRejection });
+                return TypedResults.BadRequest(new ErrorResponse(metricRejection));
 
             // Validate every data file exists and is within project root. A relative path is the project's — the
             // form POST /samples answers with — not the server process's working directory.
@@ -70,7 +71,7 @@ public static class TrainingEndpoints
                 if (request.AdditionalDataFiles is { Count: > 0 }) tableOnly.Add("additionalDataFiles");
                 if (request.MaxRows is not null) tableOnly.Add("maxRows");
                 if (TrainingInput.TableOnlyOptionsRefusal(trainDefinition.Task, tableOnly) is { } tableOnlyRefusal)
-                    return Results.BadRequest(new { error = tableOnlyRefusal });
+                    return TypedResults.BadRequest(new ErrorResponse(tableOnlyRefusal));
                 var directory = TrainingInput.ResolveDirectoryDataset(trainDefinition.Task, request.DataFile, null, projectRootPath.Value);
                 if (directory is null)
                 {
@@ -80,27 +81,27 @@ public static class TrainingEndpoints
                         : File.Exists(InProject(request.DataFile))
                             ? $" '{request.DataFile}' is a file; {trainDefinition.Task} trains on a directory (not its annotations file)."
                             : $" Not a directory: {request.DataFile}.";
-                    return Results.BadRequest(new { error = $"{missing.Message}{named} {missing.Hint}" });
+                    return TypedResults.BadRequest(new ErrorResponse($"{missing.Message}{named} {missing.Hint}"));
                 }
                 if (!ProjectPaths.IsWithinReal(directory, projectRootPath.Value))
-                    return Results.BadRequest(new { error = $"Data directory must be within the project directory: {request.DataFile}" });
+                    return TypedResults.BadRequest(new ErrorResponse($"Data directory must be within the project directory: {request.DataFile}"));
                 if (TrainingInput.DirectoryDatasetRefusal(trainDefinition.Task, directory) is { } wrongLayout)
-                    return Results.BadRequest(new { error = $"{ProjectRelativeText.In(wrongLayout.Message, projectRootPath.Value)} {wrongLayout.Hint}" });
+                    return TypedResults.BadRequest(new ErrorResponse($"{ProjectRelativeText.In(wrongLayout.Message, projectRootPath.Value)} {wrongLayout.Hint}"));
                 dataFile = directory;
             }
             else
             {
                 if (string.IsNullOrWhiteSpace(request.DataFile))
-                    return Results.BadRequest(new { error = "dataFile is required: the training data, within the project." });
+                    return TypedResults.BadRequest(new ErrorResponse("dataFile is required: the training data, within the project."));
                 foreach (var file in new[] { request.DataFile }.Concat(request.AdditionalDataFiles ?? []))
                 {
                     var resolvedDataFile = InProject(file);
                     if (!ProjectPaths.IsWithinReal(resolvedDataFile, projectRootPath.Value))
-                        return Results.BadRequest(new { error = $"Data file must be within the project directory: {file}" });
+                        return TypedResults.BadRequest(new ErrorResponse($"Data file must be within the project directory: {file}"));
                     if (Directory.Exists(resolvedDataFile))
-                        return Results.BadRequest(new { error = $"Data file is a directory: {file}. '{trainDefinition.Task}' trains on a table (a file)." });
+                        return TypedResults.BadRequest(new ErrorResponse($"Data file is a directory: {file}. '{trainDefinition.Task}' trains on a table (a file)."));
                     if (!File.Exists(resolvedDataFile))
-                        return Results.BadRequest(new { error = $"Data file not found: {file}" });
+                        return TypedResults.BadRequest(new ErrorResponse($"Data file not found: {file}"));
                 }
                 dataFile = InProject(request.DataFile);
             }
@@ -120,53 +121,44 @@ public static class TrainingEndpoints
             logger.LogInformation("Training job '{JobId}' enqueued for model '{ModelName}' with task '{Task}'",
                 jobId, request.ResolveModelName(), request.Task);
 
-            return Results.Accepted($"/jobs/{jobId}", new
-            {
+            return TypedResults.Accepted($"/jobs/{jobId}", new TrainStartResponse(
                 jobId,
-                modelName = request.ResolveModelName(),
-                status = "Queued",
-                message = "Training job created. Poll /jobs/{jobId} for status."
-            });
+                request.ResolveModelName(),
+                "Queued",
+                "Training job created. Poll /jobs/{jobId} for status."));
         })
         .WithName("StartTraining")
         .WithTags("Training")
-        .Produces<object>(StatusCodes.Status202Accepted)
-        .Produces<object>(StatusCodes.Status400BadRequest)
         .RequireAuthorization("Admin");
 
         // List all jobs
-        app.MapGet("/jobs", (
+        app.MapGet("/jobs", Ok<JobListResponse> (
             TrainingJobStore jobStore,
             ProjectRootPath projectRootPath,
             ILogger<Program> logger) =>
         {
             var jobs = jobStore.GetAllJobs();
 
-            return Results.Ok(new
-            {
-                count = jobs.Count,
-                jobs = jobs.Select(j => new
-                {
-                    jobId = j.JobId,
-                    modelName = j.ModelName,
-                    task = j.Task,
-                    status = j.Status.ToString(),
-                    statusMessage = ProjectRelativeText.In(j.StatusMessage, projectRootPath.Value),
-                    createdAt = j.CreatedAt,
-                    completedAt = j.CompletedAt,
-                    experimentId = j.ExperimentId,
-                    bestTrainer = j.BestTrainer,
-                    promoted = j.Promoted
-                })
-            });
+            return TypedResults.Ok(new JobListResponse(
+                jobs.Count,
+                jobs.Select(j => new JobSummary(
+                    j.JobId,
+                    j.ModelName,
+                    j.Task,
+                    j.Status.ToString(),
+                    ProjectRelativeText.In(j.StatusMessage, projectRootPath.Value),
+                    j.CreatedAt,
+                    j.CompletedAt,
+                    j.ExperimentId,
+                    j.BestTrainer,
+                    j.Promoted)).ToList()));
         })
         .WithName("ListJobs")
         .WithTags("Training")
-        .Produces<object>(StatusCodes.Status200OK)
         .RequireAuthorization();
 
         // Get job status
-        app.MapGet("/jobs/{id}", (
+        app.MapGet("/jobs/{id}", Results<Ok<JobDetailResponse>, NotFound<ErrorResponse>> (
             string id,
             TrainingJobStore jobStore,
             ProjectRootPath projectRootPath,
@@ -174,43 +166,40 @@ public static class TrainingEndpoints
         {
             var job = jobStore.GetJob(id);
             if (job == null)
-                return Results.NotFound(new { error = $"Job '{id}' not found." });
+                return TypedResults.NotFound(new ErrorResponse($"Job '{id}' not found."));
 
-            return Results.Ok(new
-            {
-                jobId = job.JobId,
-                modelName = job.ModelName,
+            return TypedResults.Ok(new JobDetailResponse(
+                job.JobId,
+                job.ModelName,
                 // The project's paths, as the request wrote them — not the host's directory layout.
-                dataFile = ProjectRelativeText.In(job.DataFile, projectRootPath.Value),
-                additionalDataFiles = ProjectRelativeText.In(job.AdditionalDataFiles, projectRootPath.Value),
-                labelColumn = job.LabelColumn,
-                task = job.Task,
-                timeLimitSeconds = job.TimeLimitSeconds,
-                maxTrials = job.MaxTrials,
-                epochs = job.Epochs,
-                ensemble = job.Ensemble,
-                metric = job.Metric,
-                testSplit = job.TestSplit,
-                maxRows = job.MaxRows,
-                weight = job.Weight,
-                balance = job.Balance,
-                promote = job.Promote,
-                status = job.Status.ToString(),
-                statusMessage = ProjectRelativeText.In(job.StatusMessage, projectRootPath.Value),
-                createdAt = job.CreatedAt,
-                completedAt = job.CompletedAt,
-                experimentId = job.ExperimentId,
-                metrics = job.Metrics,
-                bestTrainer = job.BestTrainer,
-                promoted = job.Promoted,
-                keptInStagingReason = ProjectRelativeText.In(job.KeptInStagingReason, projectRootPath.Value),
-                warnings = ProjectRelativeText.In(job.Warnings, projectRootPath.Value)
-            });
+                ProjectRelativeText.In(job.DataFile, projectRootPath.Value),
+                ProjectRelativeText.In(job.AdditionalDataFiles, projectRootPath.Value),
+                job.LabelColumn,
+                job.Task,
+                job.TimeLimitSeconds,
+                job.MaxTrials,
+                job.Epochs,
+                job.Ensemble,
+                job.Metric,
+                job.TestSplit,
+                job.MaxRows,
+                job.Weight,
+                job.Balance,
+                job.Promote,
+                job.Status.ToString(),
+                ProjectRelativeText.In(job.StatusMessage, projectRootPath.Value),
+                job.CreatedAt,
+                job.CompletedAt,
+                job.ExperimentId,
+                job.Metrics,
+                job.Validated,
+                job.BestTrainer,
+                job.Promoted,
+                ProjectRelativeText.In(job.KeptInStagingReason, projectRootPath.Value),
+                ProjectRelativeText.In(job.Warnings, projectRootPath.Value)));
         })
         .WithName("GetJobStatus")
         .WithTags("Training")
-        .Produces<object>(StatusCodes.Status200OK)
-        .Produces<object>(StatusCodes.Status404NotFound)
         .RequireAuthorization();
     }
 }

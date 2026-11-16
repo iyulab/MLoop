@@ -24,7 +24,7 @@ public static class ImageAnomalyPredictions
     {
         var (scorer, refusal) = ImageAnomalyScorer.Open(modelPath, pool);
         if (scorer is null)
-            return Results.Conflict(new { error = refusal });
+            return Results.Conflict(new ErrorResponse(refusal));
 
         IReadOnlyList<ImageScore> scores;
         try
@@ -33,28 +33,21 @@ public static class ImageAnomalyPredictions
         }
         catch (UnreadableImageException ex)
         {
-            return Results.BadRequest(new { error = ex.Message, index = ex.Index });
+            return Results.BadRequest(new ImageErrorResponse(ex.Message, ex.Index));
         }
 
         var model = scorer.Model;
         logger.LogInformation("Image anomaly for '{ModelName}': {Images} image(s) in {ElapsedMs}ms", modelName, scores.Count, stopwatch.ElapsedMilliseconds);
-        return Results.Ok(new
-        {
+        return Results.Ok(new ImageAnomalyResponse(
             modelName,
             experimentId,
-            task = "image-anomaly",
-            predictedAt = DateTime.UtcNow,
-            count = scores.Count,
-            encoder = new { model.Encoder.Id, model.Encoder.Sha256, model.Encoder.Preprocessor },
-            grid = new { model.Grid.Rows, model.Grid.Columns, model.Grid.PatchSize, model.Grid.CropSize },
-            baseline = model.Baseline,
-            images = scores.Select(s => new
-            {
-                score = s.Score,
-                crop = new { s.Crop.X0, s.Crop.Y0, s.Crop.X1, s.Crop.Y1 },
-                distances = s.Distances,
-            }),
-            warnings = new List<string>(),
-        });
+            "image-anomaly",
+            DateTime.UtcNow,
+            scores.Count,
+            new EncoderRef(model.Encoder.Id, model.Encoder.Sha256, model.Encoder.Preprocessor),
+            new GridView(model.Grid.Rows, model.Grid.Columns, model.Grid.PatchSize, model.Grid.CropSize),
+            model.Baseline,
+            scores.Select(s => new ImageScoreView(s.Score, new CropView(s.Crop.X0, s.Crop.Y0, s.Crop.X1, s.Crop.Y1), s.Distances)).ToList(),
+            new List<string>()));
     }
 }

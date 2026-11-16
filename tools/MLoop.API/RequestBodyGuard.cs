@@ -21,7 +21,7 @@ public static class RequestBodyGuard
         {
             context.Response.Clear();
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
-            await context.Response.WriteAsJsonAsync(new { error = Describe(json) });
+            await context.Response.WriteAsJsonAsync(new ErrorResponse(Describe(json)));
         }
     });
 

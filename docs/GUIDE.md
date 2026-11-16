@@ -1492,6 +1492,8 @@ mloop serve --detach
 #                              An image-classification model takes the images themselves, as /embed does:
 #                              {"images": ["<base64>", …]} or files as multipart form data (at most 64)
 # POST /embed               - Images to vectors with a pretrained encoder (see `mloop embed`)
+# POST /datasets            - Upload training data (admin): a table file, or a .zip of a directory dataset
+# GET  /datasets            - The stored uploads;  DELETE /datasets/{id} removes one (admin)
 
 # Authentication: every endpoint except /health requires a JWT bearer token. Mint one with the
 # CLI (it signs with the same dev defaults the server validates out of the box), then attach it:
@@ -1536,6 +1538,19 @@ curl -X POST http://localhost:5000/predict \
   `Serve:RateLimit:PermitsPerMinute` in `appsettings.json` or the environment (`Serve__RateLimit__PermitsPerMinute=3000`),
   `0` for no limit. (Before 0.46 the limit was per address — `IpRateLimiting`, 60 predictions a minute; that
   setting is no longer read and the server says so at startup.)
+- **Training data over HTTP** (`POST /datasets`, admin): a client that trains through the server does not have to share its
+  disk. The request body is the file itself — `curl -X POST --data-binary @train.csv -H "Authorization: Bearer $MLOOP_TOKEN"
+  "http://localhost:5000/datasets?fileName=train.csv"` for a table (csv, tsv, xlsx, parquet, jsonl …), a `.zip` for a
+  directory dataset (class subfolders of images, or a COCO annotations file with its images). It is kept under the
+  project's `datasets/uploads/<id>/` and the answer's `dataFile` is the path `POST /train` takes as `dataFile` and `POST /evaluate` as `testDataPath` (`201`, and `Location`). The
+  upload and the training request are two calls on purpose: the same data trains several experiments, and a retry repeats
+  only the call that failed. Add `&task=image-classification` (any task) and the layout is checked on arrival, with the
+  reason `POST /train` would give. What the server will not put on its disk is refused with nothing left behind (`400`): an
+  entry that leaves the folder (absolute path, drive, `..`, backslash), a link, a file no dataset holds (images, `.json`,
+  `.txt`, `.names`, `.yaml`, `.csv`, `.tsv`), a name that is not a plain file name. Limits (`413`), in `appsettings.json`
+  or the environment: `Serve:Datasets:MaxUploadBytes` (2 GiB), `MaxExpandedBytes` (8 GiB, counted as a zip unpacks —
+  its declared sizes are the sender's word), `MaxEntries` (100,000), and `MaxTotalBytes` (32 GiB — what the stored uploads add up to; an upload that would pass it is refused with the room that is left, and `DELETE /datasets/{id}` or the retention below frees some; it is a ceiling judged as each upload begins, not a quota between uploads in flight at once). `DELETE /datasets/{id}` refuses (`409`) while a queued or
+  running job trains on the upload. Uploads are kept until deleted, unless `Serve:Datasets:RetentionDays` is set: then the server removes, once a day, the uploads older than that many days (by the time in their id; never one a queued or running job reads).
 - Swagger/OpenAPI documentation at `/swagger`
 - Single and batch predictions
 - JSON request/response format

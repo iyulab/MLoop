@@ -21,7 +21,7 @@ public static class InvalidModelNameGuard
         {
             context.Response.Clear();
             context.Response.StatusCode = StatusCodes.Status400BadRequest;
-            await context.Response.WriteAsJsonAsync(new { error = ex.Message });
+            await context.Response.WriteAsJsonAsync(new ErrorResponse(ex.Message));
         }
     });
 }

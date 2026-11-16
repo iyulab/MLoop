@@ -105,16 +105,13 @@ public static class ObjectDetectionPredictions
             }
         }
 
-        return Results.Ok(new
-        {
+        return Results.Ok(PredictResponse.Create(
             modelName,
             experimentId,
-            modelSha256 = MLoop.Core.Models.ModelFingerprint.Sha256(modelPath),
-            predictedAt = DateTime.UtcNow,
-            task = "object-detection",
-            count = predictions.Count,
+            MLoop.Core.Models.ModelFingerprint.Sha256(modelPath),
+            DateTime.UtcNow,
+            "object-detection",
             predictions,
-            warnings
-        });
+            warnings));
     }
 }

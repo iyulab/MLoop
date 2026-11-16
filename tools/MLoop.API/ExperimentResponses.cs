@@ -12,6 +12,12 @@ namespace MLoop.API;
 /// <summary>The body of an error answer that has one message: <c>{ "error": "…" }</c>.</summary>
 public sealed record ErrorResponse(string? Error);
 
+/// <summary>An error with a hint at what to do (the 401 and 403 the authentication middleware answers): <c>{ "error": "…", "hint": "…" }</c>.</summary>
+public sealed record ErrorHintResponse(string Error, string Hint);
+
+/// <summary><c>GET /health</c> (and HEAD): the server is up, since when it answers, and the build it runs.</summary>
+public sealed record HealthResponse(string Status, DateTime Timestamp, string Version);
+
 /// <summary><c>GET /experiments</c>: the rows of <c>mloop list --json --all</c> and each model's production experiment.</summary>
 public sealed record ExperimentListResponse(
     int Count,
@@ -28,7 +34,8 @@ public sealed record ExperimentDetailResponse(
     string Task,
     ExperimentConfigView Config,
     ExperimentResultView? Result,
-    Dictionary<string, double>? Metrics);
+    Dictionary<string, double>? Metrics,
+    MLoop.Core.Models.ValidatedScore? Validated = null);
 
 /// <summary>What an experiment was trained with.</summary>
 public sealed record ExperimentConfigView(
