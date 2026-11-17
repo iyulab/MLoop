@@ -37,6 +37,13 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 TASK_FLAG = {'binary': 'binary-classification', 'multiclass': 'multiclass-classification', 'regression': 'regression'}
 # metric -> direction (+1: higher is better)
 PRIMARY = {'binary': ('auc', +1), 'multiclass': ('log_loss', -1), 'regression': ('rmse', -1)}
+
+
+def within_one_se(mean, se):
+    """The «equal» test of every pair reading: the mean paired difference lies within one standard error of zero. A table where exactly one of five split
+    seeds differs and the other four are identical sits on the boundary exactly (|mean| = se, the ratio is 1 for any such pattern), so the comparison
+    carries a relative tolerance: without it floating-point rounding decided whether that table read «equal» or «behind»."""
+    return abs(mean) <= se * (1 + 1e-9)
 SYSTEMS = ['mloop', 'mloop-defaults', 'flaml', 'flaml-nogbm', 'lightgbm', 'xgboost', 'automl-legacy']
 # run only when named in --systems: the blend is for binary classification and regression, and costs an extra search's worth of time;
 # the single-family FLAML arms attribute a gap to a learner family
@@ -449,7 +456,7 @@ def summarize(paths):
             return 'n/a'
         diffs = np.array([(a[s] - b[s]) * direction for s in seeds])  # > 0: the first is better
         se = diffs.std(ddof=1) / math.sqrt(len(diffs))
-        return 'equal' if abs(diffs.mean()) <= se else ('ahead' if diffs.mean() > 0 else 'behind')
+        return 'equal' if within_one_se(diffs.mean(), se) else ('ahead' if diffs.mean() > 0 else 'behind')
 
     tallies = {'flaml': collections.Counter(), 'flaml-nogbm': collections.Counter()}
     if any('automl-legacy' in by[name] for name in by):
@@ -565,7 +572,7 @@ def pair_verdict(a, b, direction):
     diffs = np.array([(a[s] - b[s]) * direction for s in seeds])
     se = diffs.std(ddof=1) / math.sqrt(len(diffs))
     mean = float(diffs.mean())
-    return ('equal' if abs(mean) <= se else ('ahead' if mean > 0 else 'behind')), mean, float(se)
+    return ('equal' if within_one_se(mean, se) else ('ahead' if mean > 0 else 'behind')), mean, float(se)
 
 
 def regress(base_paths, candidate_paths, system='mloop', reference='flaml', margin=2.0, count_rise=3):
@@ -662,7 +669,7 @@ def pair(base_paths, variant_paths, system='mloop'):
         b = np.array([variant[name][s]['test'][metric] for s in seeds])
         diffs = (b - a) * direction   # > 0: the variant is better
         se = diffs.std(ddof=1) / math.sqrt(len(diffs)) if len(diffs) > 1 else float('nan')
-        v = 'n/a' if len(diffs) < 2 else ('equal' if abs(diffs.mean()) <= se else ('better' if diffs.mean() > 0 else 'worse'))
+        v = 'n/a' if len(diffs) < 2 else ('equal' if within_one_se(diffs.mean(), se) else ('better' if diffs.mean() > 0 else 'worse'))
         tally[v] += 1
         signs = ' '.join('=' if x == 0 else ('+' if x > 0 else '-') for x in diffs)
         over = lambda runs: sum(over_budget(r.get('wall_s'), r.get('budget')) for r in runs if r.get('wall_s') is not None)

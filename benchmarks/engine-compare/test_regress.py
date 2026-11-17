@@ -71,5 +71,20 @@ class RegressRule(unittest.TestCase):
         self.assertEqual('OK', judge(base, cand))
 
 
+class TheEqualBoundary(unittest.TestCase):
+    """A table where exactly one of five seeds differs has |mean| = standard error exactly; it must read «equal» on every platform."""
+
+    def test_one_differing_seed_of_five_reads_equal(self):
+        for step in (0.003, 0.037, 0.0041, 12345.678):
+            diffs = [0.0, 0.0, 0.0, 0.0, step]
+            mean = sum(diffs) / 5
+            sd = (sum((x - mean) ** 2 for x in diffs) / 4) ** 0.5
+            self.assertTrue(run.within_one_se(mean, sd / 5 ** 0.5), step)
+
+    def test_a_clear_gap_is_not_equal(self):
+        self.assertFalse(run.within_one_se(0.011, 0.01))
+        self.assertTrue(run.within_one_se(0.01, 0.01))
+
+
 if __name__ == '__main__':
     unittest.main()
