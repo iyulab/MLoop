@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`POST /train` refusals for a missing task or label name the request's fields.** A body that named a new model without `task`, or a tabular model without `labelColumn`, was refused with «Use --task» / «Use the <label> argument» — words for the command line. The message now also says `task` / `labelColumn` in a POST /train body.
 - **A forecasting or time-series anomaly run that cannot load its native library no longer prints the loader's list of paths.** Since 0.51.0 the failure text of a run carries the innermost exception's message, and for a missing OpenMP runtime that message is the loader's own: a dozen `.so` paths it probed and advice to use `strace`. The screen is the sentence written for the machine (the runtime, the install step, or the platform that cannot run it) and nothing under it.
 - **`mloop detect` names a gap by its data row, counted from the first row below the header.** The message said "data row 151" for the empty cell in the 150th row of the file (it counted the header line), where `mloop train` says "data row 150" for the same file.
 - **`mloop status` shows the last prediction of a model that is served.** The «Last Prediction» column (and `lastPredictionAt` in `--json`) read the `predictions/` output files only, so a model answering over `mloop serve` — which writes no file, only the prediction logs — read `-` however many rows it had answered. The later of the newest output file and the newest prediction log write counts now.

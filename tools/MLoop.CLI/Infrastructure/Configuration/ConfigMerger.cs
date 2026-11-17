@@ -34,7 +34,7 @@ public class ConfigMerger
         // Determine final values with CLI override priority
         var task = cliTask
             ?? baseDefinition?.Task
-            ?? throw new InvalidOperationException($"Task not specified for model '{modelName}'. Use --task or define in mloop.yaml");
+            ?? throw new InvalidOperationException($"Task not specified for model '{modelName}'. Use --task (`task` in a POST /train body) or define in mloop.yaml");
 
         // Canonicalize once, here — the same reason the metric sentinel is resolved below: this is
         // the one place in the merge chain where the task is known, and everything downstream used
@@ -47,7 +47,7 @@ public class ConfigMerger
             ?? baseDefinition?.Label
             ?? (TrainingRunner.LabelColumnMustBeNamed(task)
                 ? throw new InvalidOperationException(
-                    $"Label not specified for model '{modelName}'. Use <label> argument or define in mloop.yaml")
+                    $"Label not specified for model '{modelName}'. Use the <label> argument (`labelColumn` in a POST /train body) or define in mloop.yaml")
                 // A directory of images has its loader make the label column; the name it makes is this one.
                 : DataLoaderFactory.IsDirectoryBased(task) ? CocoDataLoader.DefaultLabelColumn : "");
 

@@ -72,6 +72,32 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task ANewModelWithNoTask_IsRefusedInTheWordsOfTheRequest_NotOfTheCommandLine()
+    {
+        var data = WriteData();
+
+        var response = await _client.PostAsJsonAsync("/train", new { dataFile = data, labelColumn = "y", name = "notask" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var error = await response.Content.ReadAsStringAsync();
+        error.Should().Contain("Task not specified for model 'notask'");
+        error.Should().Contain("`task` in a POST /train body", "a client of the HTTP surface has no --task");
+    }
+
+    [Fact]
+    public async Task ATabularModelWithNoLabel_IsRefusedInTheWordsOfTheRequest_NotOfTheCommandLine()
+    {
+        var data = WriteData();
+
+        var response = await _client.PostAsJsonAsync("/train", new { dataFile = data, task = "binary-classification", name = "nolabel" });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        var error = await response.Content.ReadAsStringAsync();
+        error.Should().Contain("Label not specified for model 'nolabel'");
+        error.Should().Contain("`labelColumn` in a POST /train body", "a client of the HTTP surface has no <label> argument");
+    }
+
+    [Fact]
     public async Task AMaxTrialsOnATaskThatRunsNoSearch_IsRefusedBeforeAJobExists()
     {
         var data = WriteData();
