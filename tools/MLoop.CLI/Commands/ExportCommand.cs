@@ -21,13 +21,6 @@ namespace MLoop.CLI.Commands;
 /// </summary>
 public static class ExportCommand
 {
-    /// <summary>Tasks whose models the export has been verified for.</summary>
-    internal static readonly IReadOnlySet<string> SupportedTasks =
-        new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "binary-classification", "multiclass-classification", "regression",
-        };
-
     public static Command Create()
     {
         var command = new Command("export", "Export a trained model to a portable format");
@@ -91,8 +84,6 @@ public static class ExportCommand
         string? experimentId, string? modelName, string? dataFile, string? outputDir, bool jsonOutput, bool verify = false)
     {
         using var machineOutput = jsonOutput ? new JsonOutputScope() : null;
-        var tempFiles = new List<string>();
-
         try
         {
             var fileSystem = new FileSystemManager();
@@ -126,129 +117,17 @@ public static class ExportCommand
             }
             experimentId = experimentId.Trim();
 
-            var (modelPath, refusal) = ExperimentModels.Find(experimentStore, resolvedModelName, experimentId);
-            if (modelPath is null)
+            var outcome = await new OnnxExporter(experimentStore).ExportAsync(
+                new OnnxExportRequest(projectRoot, resolvedModelName, experimentId, dataFile, outputDir, verify),
+                CancellationToken.None);
+            if (outcome.Refusal is { } refused)
             {
-                ErrorConsole.Error(Markup.Escape($"{refusal} Run 'mloop list --name {resolvedModelName}' to see all experiments."));
+                ErrorConsole.Error(Markup.Escape(Refusal(refused, resolvedModelName)));
                 return 1;
             }
 
-            // Checked before any work: a verification that cannot run is a refusal, not a skipped step.
-            if (verify && OnnxRuntimeNative.Unavailable() is { } unavailable)
-            {
-                ErrorConsole.Error(Markup.Escape($"--verify needs ONNX Runtime. {unavailable}"));
-                return 1;
-            }
-
-            var experiment = await experimentStore.LoadAsync(resolvedModelName, experimentId, CancellationToken.None);
-            var task = TaskTypes.Canonical(experiment.Task) ?? experiment.Task ?? "unknown";
-            if (!SupportedTasks.Contains(task))
-            {
-                ErrorConsole.Error(Markup.Escape($"ONNX export supports {string.Join(", ", SupportedTasks.Order(StringComparer.Ordinal))} models; '{experimentId}' is {task}."));
-                return 1;
-            }
-
-            var experimentPath = experimentStore.GetExperimentPath(resolvedModelName, experimentId);
-            if (TextEncodings.ReadBeside(modelPath) is { Columns.Count: > 0 } encodings)
-            {
-                // The graph reads the columns' sentence vectors; the encoders that make them are not in it.
-                ErrorConsole.Error(Markup.Escape(
-                    $"'{experimentId}' reads {string.Join(", ", encodings.Columns.Select(c => $"'{c.Column}'"))} through a text encoder, " +
-                    "which an ONNX graph of the model does not carry; it cannot be exported."));
-                return 1;
-            }
-
-            // The input schema comes from data, because the model was saved without one; the
-            // training file is the natural default — it has exactly the columns the model was fit on.
-            var dataPath = dataFile is { Length: > 0 }
-                ? ProjectPaths.Resolve(dataFile, projectRoot)
-                : experiment.Config?.DataFile is { Length: > 0 } recorded
-                    ? ProjectPaths.Resolve(recorded, projectRoot)
-                    : null;
-            if (dataPath is null || !TabularDataFile.Exists(dataPath))
-            {
-                ErrorConsole.Error(Markup.Escape(dataPath is null
-                    ? "No data file to read the model's input columns from. Pass one: --data <file>"
-                    : $"Data file not found: {dataPath}. Pass one with the model's input columns: --data <file>"));
-                return 1;
-            }
-            dataPath = await TabularDataFile.AsCsvAsync(dataPath);
-
-            var labelColumn = string.IsNullOrEmpty(experiment.Config?.LabelColumn) ? null : experiment.Config.LabelColumn;
-            var engine = new PredictionEngine();
-            var input = engine.LoadInferenceInput(
-                modelPath, dataPath, experiment.Config?.InputSchema, labelColumn,
-                PreserveColumns(experiment.Config), tempFiles, layers: ScoringLayers.None);
-
-            var outputDirectory = outputDir is { Length: > 0 }
-                ? ProjectPaths.Resolve(outputDir, projectRoot)
-                : experimentPath;
-            Directory.CreateDirectory(outputDirectory);
-            var onnxPath = Path.Combine(outputDirectory, ExperimentLayout.OnnxModelFileName);
-            var manifestPath = Path.Combine(outputDirectory, ExperimentLayout.OnnxManifestFileName);
-
-            OnnxExportResult result;
-            var partial = onnxPath + ".partial";
-            try
-            {
-                using (var stream = File.Create(partial))
-                {
-                    result = OnnxExport.Write(new MLContext(seed: 42), input.Model, input.Data,
-                        input.LoaderOptions, input.Header, input.LabelColumn, stream);
-                }
-                File.Move(partial, onnxPath, overwrite: true);
-            }
-            finally
-            {
-                if (File.Exists(partial))
-                    File.Delete(partial);
-            }
-
-            var recipe = OnnxDecisionRecipe.Beside(task, modelPath);
-            OnnxVerificationResult? verification = null;
-            if (verify)
-            {
-                // The rule is checked too: replayed on the graph's outputs, it has to give what
-                // mloop predict gives — the model with the layers beside it.
-                var layered = recipe.HasLayers ? ScoringModel.Load(new MLContext(seed: 42), modelPath, task) : null;
-                verification = OnnxVerification.Compare(input.Model, input.Data, result, onnxPath, recipe: recipe, layered: layered);
-                if (!verification.Passed)
-                {
-                    // A graph that answers differently from the model is not left where a consumer
-                    // would pick it up; the manifest stays, recording why.
-                    File.Delete(onnxPath);
-                }
-            }
-
-            var manifest = new OnnxManifest
-            {
-                OnnxFile = Path.GetFileName(onnxPath),
-                OnnxSha256 = File.Exists(onnxPath) ? OnnxManifest.Sha256Of(onnxPath) : "",
-                SourceModelSha256 = OnnxManifest.Sha256Of(modelPath),
-                ModelName = resolvedModelName,
-                ExperimentId = experimentId,
-                Task = task,
-                MloopVersion = ErrorSuggestions.GetVersion(),
-                ExportedAt = DateTimeOffset.UtcNow,
-                Inputs = result.Inputs,
-                UnusedInputs = result.UnusedInputs,
-                Outputs = result.Outputs,
-                Label = LabelInfo(task, labelColumn, experiment, input, result, recipe),
-                DecisionThreshold = recipe.Threshold,
-                Calibration = recipe.Calibration,
-                Metrics = experiment.Metrics,
-                WeightColumn = experiment.Config?.WeightColumn,
-                Portable = experiment.Config?.Portable == true,
-                Verification = verification,
-            };
-            await File.WriteAllTextAsync(manifestPath, manifest.ToJson());
-
-            if (verification is { Passed: false })
-            {
-                ErrorConsole.Error(Markup.Escape($"The exported graph disagrees with the model on {verification.Rows} rows checked "
-                    + $"({Describe(verification)}); it was not kept. The comparison is in {manifestPath}."));
-                return 1;
-            }
+            var export = outcome.Output!;
+            var (task, result, verification, onnxPath, manifestPath) = (export.Task, export.Result, export.Verification, export.OnnxPath, export.ManifestPath);
 
             if (jsonOutput)
             {
@@ -258,7 +137,7 @@ public static class ExportCommand
                     ExperimentId = experimentId,
                     OnnxPath = onnxPath,
                     ManifestPath = manifestPath,
-                    manifest.OnnxSha256,
+                    export.Manifest.OnnxSha256,
                     Inputs = result.Inputs,
                     Outputs = result.Outputs,
                     Verification = verification,
@@ -277,7 +156,7 @@ public static class ExportCommand
                     AnsiConsole.MarkupLineInterpolated($"  output [cyan]{tensor.Name}[/] {tensor.ElementType}[[{tensor.Width}]]");
                 if (verification is not null)
                     AnsiConsole.MarkupLineInterpolated(
-                        $"[green]>[/] Verified on {verification.Rows} rows with {verification.Runtime ?? "ONNX Runtime"}: {Describe(verification)}");
+                        $"[green]>[/] Verified on {verification.Rows} rows with {verification.Runtime ?? "ONNX Runtime"}: {OnnxExporter.Describe(verification)}");
                 foreach (var tensor in result.UnusedInputs)
                     AnsiConsole.MarkupLineInterpolated(
                         $"  [grey]input  {tensor.Name} {tensor.ElementType}[[{tensor.Width}]] is not used by any output; feed any value[/]");
@@ -296,86 +175,17 @@ public static class ExportCommand
             ErrorSuggestions.DisplayError(ex, "export");
             return 1;
         }
-        finally
-        {
-            foreach (var file in tempFiles)
-            {
-                try { if (File.Exists(file)) File.Delete(file); } catch { /* best effort */ }
-            }
-        }
     }
 
-    private static OnnxLabelInfo LabelInfo(
-        string task, string? labelColumn, ExperimentData experiment, PredictionEngine.InferenceInput input, OnnxExportResult result,
-        OnnxDecisionRecipe recipe)
+    /// <summary>The refusal in this command's words: what went wrong, then the option or command that changes it.</summary>
+    private static string Refusal(OnnxExportRefusal refusal, string modelName) => refusal.Kind switch
     {
-        switch (task)
-        {
-            case "binary-classification":
-                {
-                    var vocabulary = BinaryLabelVocabulary.Of(experiment.Config?.InputSchema);
-                    return new OnnxLabelInfo
-                    {
-                        Column = labelColumn,
-                        Classes = vocabulary is { } v ? [v.Negative, v.Positive] : null,
-                        Decision = recipe.Describe(),
-                    };
-                }
-            case "multiclass-classification":
-                {
-                    IReadOnlyList<string>? classes = null;
-                    try
-                    {
-                        var scored = input.Model.GetOutputSchema(input.Data.Schema);
-                        if (scored.GetColumnOrNull("Score") is { } score && score.Type is Microsoft.ML.Data.VectorDataViewType vector)
-                            classes = MulticlassScoreVocabulary.Of(score, vector.Size);
-                    }
-                    catch (Exception)
-                    {
-                        // No names is an honest answer; the manifest says so by leaving them out.
-                    }
-                    // The pipeline usually maps the key back to the class name; say what the graph gives.
-                    var predicted = result.Outputs.FirstOrDefault(o => o.Column == "PredictedLabel");
-                    var predictedReads = predicted?.ElementType == "string"
-                        ? "PredictedLabel is the name of the highest-scoring class"
-                        : "PredictedLabel is the 1-based index of the highest-scoring class in Classes (0 = none)";
-                    return new OnnxLabelInfo
-                    {
-                        Column = labelColumn,
-                        Classes = classes,
-                        Decision = recipe.Describe(predictedReads),
-                    };
-                }
-            default:
-                return new OnnxLabelInfo { Column = labelColumn, Decision = recipe.Describe() };
-        }
-    }
-
-    private static string Describe(OnnxVerificationResult verification)
-    {
-        var parts = verification.MaxAbsDifference
-            .Select(kv => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{kv.Key} max |difference| {kv.Value:G3}"))
-            .ToList();
-        parts.Add($"{verification.LabelMismatches} label mismatch(es)");
-        if (verification.Layered is { } layered)
-        {
-            // The manifest's decision rule (calibration, threshold) on the graph's outputs, against mloop predict.
-            var rule = layered.MaxAbsDifference
-                .Select(kv => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{kv.Key} max |difference| {kv.Value:G3}"))
-                .Append($"{layered.LabelMismatches} answer mismatch(es)");
-            parts.Add($"decision rule vs mloop predict: {string.Join(", ", rule)}");
-        }
-        return string.Join(", ", parts);
-    }
-
-    private static List<string>? PreserveColumns(ExperimentConfig? config)
-    {
-        if (config == null) return null;
-        var columns = new[] { config.GroupColumn, config.UserColumn, config.ItemColumn }
-            .Where(c => !string.IsNullOrWhiteSpace(c))
-            .Select(c => c!)
-            .ToList();
-        return columns.Count > 0 ? columns : null;
-    }
-
+        OnnxExportRefusalKind.ExperimentNotFound => $"{refusal.Message} Run 'mloop list --name {modelName}' to see all experiments.",
+        OnnxExportRefusalKind.VerifyUnavailable => $"--verify needs ONNX Runtime. {refusal.Message}",
+        OnnxExportRefusalKind.NoDataFile when refusal.Message.StartsWith("Data file not found", StringComparison.Ordinal)
+            => $"{refusal.Message} Pass one with the model's input columns: --data <file>",
+        OnnxExportRefusalKind.NoDataFile => $"{refusal.Message} Pass one: --data <file>",
+        OnnxExportRefusalKind.GraphDisagrees => $"{refusal.Message} The comparison is in {refusal.ManifestPath}.",
+        _ => refusal.Message,
+    };
 }
