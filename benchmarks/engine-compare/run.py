@@ -358,7 +358,7 @@ def result_row(entry, rows, seed, system, budget, result, stamp):
 
 def run_all(args):
     mloop = shlex.split(args.mloop)
-    entries = json.load(open(os.path.join(HERE, 'datasets.json')))
+    entries = json.load(open(os.path.join(HERE, args.table_list)))
     if args.datasets:
         wanted = set(args.datasets.split(','))
         entries = [e for e in entries if e['name'] in wanted]
@@ -740,7 +740,8 @@ def main():
     r.add_argument('--mloop', required=True, help='command that starts the mloop CLI, e.g. "dotnet path/to/mloop.dll"')
     r.add_argument('--seeds', default='0,1,2', help='split seeds')
     r.add_argument('--budget', type=int, default=60, help='time budget in seconds for the searching systems')
-    r.add_argument('--datasets', default='', help='comma-separated dataset names from datasets.json (default: all)')
+    r.add_argument('--table-list', default='datasets.json', help='JSON list of tables beside run.py (datasets.json, or datasets-heldout.json: tables no search decision was made on)')
+    r.add_argument('--datasets', default='', help='comma-separated dataset names from the table list (default: all)')
     r.add_argument('--systems', default=','.join(SYSTEMS), help='comma-separated; ' + ', '.join(OPTIONAL_SYSTEMS) + ' runs only when named')
     r.add_argument('--automl-legacy', default='dotnet ' + os.path.join(HERE, 'automl-legacy', 'bin', 'Release', 'net10.0', 'AutomlLegacy.dll'),
                    help='command that starts the legacy AutoML runner (system automl-legacy)')

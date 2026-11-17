@@ -1,0 +1,177 @@
+[
+{
+"id": 46905,
+"name": "Amazon_employee_access",
+"task": "binary",
+"target": "ResourceApproved",
+"openml_licence": "Public Domain"
+},
+{
+"id": 46907,
+"name": "Another-Dataset-on-used-Fiat-500",
+"task": "regression",
+"target": "price",
+"openml_licence": "CC0 1.0"
+},
+{
+"id": 46911,
+"name": "Bank_Customer_Churn",
+"task": "binary",
+"target": "churn",
+"openml_licence": "Public"
+},
+{
+"id": 46913,
+"name": "blood-transfusion-service-center",
+"task": "binary",
+"target": "DonatedBloodInMarch2007",
+"openml_licence": "CC BY 4.0"
+},
+{
+"id": 46916,
+"name": "coil2000_insurance_policies",
+"task": "binary",
+"target": "MobileHomePolicy",
+"openml_licence": "CC BY 4.0"
+},
+{
+"id": 46919,
+"name": "credit_card_clients_default",
+"task": "binary",
+"target": "DefaultOnPaymentNextMonth",
+"openml_licence": "CC BY 4.0"
+},
+{
+"id": 46921,
+"name": "diabetes",
+"task": "binary",
+"target": "TestedPositiveForDiabetes",
+"openml_licence": "CC0 1.0"
+},
+{
+"id": 46924,
+"name": "E-CommereShippingData",
+"task": "binary",
+"target": "ArrivedLate",
+"openml_licence": "Public Domain"
+},
+{
+"id": 46927,
+"name": "Fitness_Club",
+"task": "binary",
+"target": "attended",
+"openml_licence": "Public Domain"
+},
+{
+"id": 46928,
+"name": "Food_Delivery_Time",
+"task": "regression",
+"target": "Time_taken(min)",
+"openml_licence": "Database Contents License (DbCL) v1.0"
+},
+{
+"id": 46930,
+"name": "hazelnut-spread-contaminant-detection",
+"task": "binary",
+"target": "Contaminated",
+"openml_licence": "CC BY-SA"
+},
+{
+"id": 46931,
+"name": "healthcare_insurance_expenses",
+"task": "regression",
+"target": "charges",
+"openml_licence": "Database Contents License (DbCL) v1.0"
+},
+{
+"id": 46932,
+"name": "heloc",
+"task": "binary",
+"target": "RiskPerformance",
+"openml_licence": "Public"
+},
+{
+"id": 46935,
+"name": "HR_Analytics_Job_Change_of_Data_Scientists",
+"task": "binary",
+"target": "LookingForJobChange",
+"openml_licence": "CC0 1.0"
+},
+{
+"id": 46937,
+"name": "in_vehicle_coupon_recommendation",
+"task": "binary",
+"target": "AcceptCoupon",
+"openml_licence": "CC BY 4.0"
+},
+{
+"id": 46938,
+"name": "Is-this-a-good-customer",
+"task": "binary",
+"target": "bad_client_target",
+"openml_licence": "CC0 1.0"
+},
+{
+"id": 46940,
+"name": "Marketing_Campaign",
+"task": "binary",
+"target": "Response",
+"openml_licence": "Public"
+},
+{
+"id": 46941,
+"name": "maternal_health_risk",
+"task": "multiclass",
+"target": "RiskLevel",
+"openml_licence": "CC BY 4.0"
+},
+{
+"id": 46949,
+"name": "physiochemical_protein",
+"task": "regression",
+"target": "ResidualSize",
+"openml_licence": "CC BY 4.0"
+},
+{
+"id": 46954,
+"name": "QSAR_fish_toxicity",
+"task": "regression",
+"target": "LC50",
+"openml_licence": "CC BY 4.0"
+},
+{
+"id": 46956,
+"name": "seismic-bumps",
+"task": "binary",
+"target": "HighEnergySeismicBump",
+"openml_licence": "CC BY 4.0"
+},
+{
+"id": 46961,
+"name": "superconductivity",
+"task": "regression",
+"target": "critical_temp",
+"openml_licence": "CC BY 4.0"
+},
+{
+"id": 46963,
+"name": "website_phishing",
+"task": "multiclass",
+"target": "WebsiteType",
+"openml_licence": "CC BY 4.0"
+},
+{
+"id": 46969,
+"name": "NATICUSdroid",
+"task": "binary",
+"target": "Malware",
+"openml_licence": "CC BY 4.0"
+},
+{
+"id": 46980,
+"name": "MIC",
+"task": "multiclass",
+"target": "LET_IS",
+"openml_licence": "CC BY 4.0"
+}
+]

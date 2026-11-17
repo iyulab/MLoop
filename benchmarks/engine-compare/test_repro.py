@@ -103,6 +103,13 @@ class ARowCarriesWhatMadeIt(unittest.TestCase):
         self.assertGreaterEqual(len(entries), 16)
         self.assertEqual([], [e['name'] for e in entries if not e.get('openml_licence')])
 
+    def test_the_held_out_list_shares_no_table_with_the_main_list_and_names_its_licences(self):
+        main = json.load(open(os.path.join(HERE, 'datasets.json'), encoding='utf-8'))
+        held = json.load(open(os.path.join(HERE, 'datasets-heldout.json'), encoding='utf-8'))
+        self.assertEqual(set(), {e['id'] for e in main} & {e['id'] for e in held})
+        self.assertEqual([], [e['name'] for e in held if not e.get('openml_licence')])
+        self.assertEqual([], [e['name'] for e in held if e['task'] not in ('binary', 'multiclass', 'regression')])
+
     def test_provenance_names_the_versions_the_interpreter_and_the_ci_run(self):
         env = {'GITHUB_SHA': 'abc123', 'GITHUB_RUN_ID': '42', 'GITHUB_RUN_ATTEMPT': '2'}
         with mock.patch.dict(os.environ, env):

@@ -5,6 +5,8 @@ the search (or a claim about it) has numbers behind it.
 
 - **Data**: 16 tables from the TabArena suite (OpenML suite 457; 8 binary, 3 multiclass, 5 regression; 898 to 53,940
   rows), fetched by OpenML data id — see `datasets.json`. Nothing is stored in this repository.
+  `datasets-heldout.json` lists 25 other tables of the same suite (at most 50,000 rows and 200 features, no non-commercial licence)
+  that no change to the search was judged on; `run.py run --table-list datasets-heldout.json` (or the workflow's `table_list` input) sweeps them.
 - **Protocol**: per (dataset, split seed) one stratified 80/20 split; every system gets the same train and test files.
   MLoop trains on the train file (`--time <budget> --no-promote`) and is scored with `mloop evaluate` on the held-out
   file; the other systems are scored on the same rows. Metrics: ROC AUC (binary), log-loss (multiclass), RMSE

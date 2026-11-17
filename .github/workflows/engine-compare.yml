@@ -12,6 +12,9 @@ on:
       datasets:
         description: 'Comma-separated dataset names from benchmarks/engine-compare/datasets.json (empty = all)'
         default: ''
+      table_list:
+        description: 'Table list beside run.py: datasets.json (the 16 tables) or datasets-heldout.json'
+        default: 'datasets.json'
       systems:
         description: 'Comma-separated systems to run (mloop, mloop-defaults, mloop-ensemble, mloop-refit, flaml, flaml-nogbm, flaml-lgbm, flaml-forest, autogluon, lightgbm, xgboost, automl-legacy, ensemble)'
         default: 'mloop,mloop-defaults,flaml,flaml-nogbm,lightgbm,xgboost,automl-legacy'
@@ -93,7 +96,7 @@ jobs:
         python benchmarks/engine-compare/run.py run
         --mloop "dotnet $PWD/tools/MLoop.CLI/bin/Release/net10.0/mloop.dll"
         --seeds ${{ matrix.seed }} --budget ${{ inputs.budget }}
-        --datasets "${{ inputs.datasets }}" --systems "${{ inputs.systems }}" --out results-${{ matrix.seed }}.jsonl
+        --table-list "${{ inputs.table_list }}" --datasets "${{ inputs.datasets }}" --systems "${{ inputs.systems }}" --out results-${{ matrix.seed }}.jsonl
 
     - name: Keep the results
       if: always()
