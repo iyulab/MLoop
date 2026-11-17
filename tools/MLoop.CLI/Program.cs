@@ -19,6 +19,9 @@ internal class Program
         // part of the output contract.
         MLoop.Core.Globalization.OutputCulture.Pin();
 
+        // A Windows console writes its OEM code page (949 on Korean Windows), where «—» and «✓» are «?»: write UTF-8 for the run.
+        using var consoleEncoding = MLoop.Core.Globalization.ConsoleEncoding.Utf8OnWindows();
+
         // Register the DeepLearning module for object-detection etc. tasks.
         // Production wiring: only apps that reference + register MLoop.Core.DeepLearning
         // get DL support; tabular-only consumers never pull it in.
