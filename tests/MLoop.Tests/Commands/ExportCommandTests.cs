@@ -36,6 +36,46 @@ public sealed class ExportCommandTests : IDisposable
         Directory.SetCurrentDirectory(Path.Combine(_workspace, "p"));
     }
 
+    [Theory]
+    [InlineData("noequals", "is not key=value")]
+    [InlineData("=value", "is not key=value")]
+    public async Task Export_AnAnnotationThatIsNotKeyValue_IsRefusedBeforeAnythingIsRead(string annotation, string expected)
+    {
+        await InitAsync();
+
+        var (exit, output, error) = await CliRunner.RunAsync("export", "onnx", "--annotation", annotation);
+
+        Assert.Equal(1, exit);
+        Assert.Contains(expected, output + error);
+    }
+
+    [Fact]
+    public async Task Export_Annotations_AreWrittenIntoTheManifestInKeyOrder_AndTheValueMayHoldAnEquals()
+    {
+        await InitAsync();
+        var csv = new StringBuilder("x,z,y\n");
+        var rng = new Random(4);
+        for (var i = 0; i < 120; i++)
+        {
+            var x = rng.NextDouble();
+            csv.Append(CultureInfo.InvariantCulture, $"{x:F4},{rng.NextDouble():F4},{(x + rng.NextDouble() * 0.4 > 0.7 ? "yes" : "no")}\n");
+        }
+        await File.WriteAllTextAsync("datasets/train.csv", csv.ToString());
+        var (trainExit, trainOutput, _) = await CliRunner.RunAsync("train", "datasets/train.csv", "--label", "y", "--time", "30", "--max-trials", "6");
+        Assert.True(trainExit == 0, trainOutput);
+
+        var (exit, output, error) = await CliRunner.RunAsync(
+            "export", "onnx", "--json", "--annotation", "prep=v2", "--annotation", "build=a=b");
+
+        Assert.True(exit == 0, output + error);
+        using var doc = JsonDocument.Parse(output);
+        var manifestText = await File.ReadAllTextAsync(doc.RootElement.GetProperty("manifestPath").GetString()!);
+        var manifest = OnnxManifest.FromJson(manifestText);
+        Assert.Equal(new[] { "build", "prep" }, manifest.Annotations!.Keys.ToArray());
+        Assert.Equal("a=b", manifest.Annotations["build"]);
+        Assert.Contains("\"annotations\"", manifestText);
+    }
+
     [Fact]
     public async Task Export_WritesTheGraphAndAManifestOfTheColumnsTheModelReads()
     {

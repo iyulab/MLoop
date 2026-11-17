@@ -124,6 +124,31 @@ public class ExportApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task Annotations_AreInTheManifestTheShaCovers_AndTooManyAreRefused()
+    {
+        var (id, _) = await TrainAsync();
+        var plain = JsonDocument.Parse(await (await _client.PostAsync($"/experiments/{id}/export/onnx?name={Model}", null)).Content.ReadAsStringAsync()).RootElement;
+
+        var response = await _client.PostAsJsonAsync($"/experiments/{id}/export/onnx?name={Model}",
+            new { annotations = new Dictionary<string, string> { ["prep"] = "v2", ["build"] = "7" } });
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        var answer = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+        var manifestBytes = await _client.GetByteArrayAsync(answer.GetProperty("manifestUrl").GetString());
+        var manifest = OnnxManifest.FromJson(Encoding.UTF8.GetString(manifestBytes));
+        manifest.Annotations.Should().Equal(new SortedDictionary<string, string> { ["build"] = "7", ["prep"] = "v2" });
+        Sha256(manifestBytes).Should().Be(answer.GetProperty("manifestSha256").GetString());
+        answer.GetProperty("manifestSha256").GetString().Should().NotBe(plain.GetProperty("manifestSha256").GetString(),
+            "what is signed over the manifest covers the annotations");
+        answer.GetProperty("onnxSha256").GetString().Should().Be(plain.GetProperty("onnxSha256").GetString(), "the graph is the model's, whatever is written beside it");
+
+        var tooMany = Enumerable.Range(0, OnnxAnnotations.MaxPairs + 1).ToDictionary(i => $"k{i}", _ => "v");
+        var refused = await _client.PostAsJsonAsync($"/experiments/{id}/export/onnx?name={Model}", new { annotations = tooMany });
+        refused.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await refused.Content.ReadAsStringAsync()).Should().Contain("at most");
+    }
+
+    [Fact]
     public async Task TheDefaultModelsUrls_NeedNoNameQuery_AndOthersCarryIt()
     {
         var (id, _) = await TrainAsync();

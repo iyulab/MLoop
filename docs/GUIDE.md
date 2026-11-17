@@ -1987,6 +1987,7 @@ mloop export onnx exp-004 --name churn # a named experiment
 mloop export onnx --data sample.csv    # read the input columns from another file
 mloop export onnx -o ./edge --json     # write elsewhere; machine-readable result
 mloop export onnx --verify             # run the graph and compare it with the model
+mloop export onnx --annotation prep=v2 # write opaque key=value text into the manifest (repeatable)
 ```
 
 Two files land in the experiment's directory (or `--output`):
@@ -1997,7 +1998,10 @@ Two files land in the experiment's directory (or `--output`):
   `Score.output`, `Probability.output`).
 - `model.onnx.json` — the manifest: for each input, the data columns that fill it in slot order;
   the outputs; the classes and how to read the answer (`label.decision`); the experiment's metrics and
-  weight column; SHA-256 of the graph and of the `model.zip` it came from.
+  weight column; SHA-256 of the graph and of the `model.zip` it came from; and, when you gave any with
+  `--annotation key=value`, an `annotations` object of them — opaque text mloop does not read (for
+  instance the version of the preprocessing that feeds the graph), at most 32 pairs, keys to 64 and values to 1,024
+  characters, written in key order. They are in the file, so a hash or signature over the manifest covers them.
 
 The graph is the trained model. A calibration (`mloop calibrate`) and a decision threshold
 (`mloop threshold`) beside it are not in the graph: the manifest carries them (`calibration`,
@@ -2034,7 +2038,7 @@ retrain; otherwise retrain with `--portable`.
 **Over HTTP.** A service that trains and promotes through `mloop serve` has no command line beside it, so the same export is a
 call: `POST /train` takes `"portable": true` (as `--portable`), and `POST /experiments/{id}/export/onnx?name=<model>` (admin)
 writes `model.onnx` and `model.onnx.json` into that experiment's directory — the one exporter `mloop export onnx` uses, so the
-files are the same. The body may be left out; `{"data": "datasets/sample.csv", "verify": true}` names a file within the project to read
+files are the same. The body may be left out; `{"data": "datasets/sample.csv", "verify": true, "annotations": {"prep": "v2"}}` names a file within the project to read
 the input columns from (default: the file the experiment trained on — an upload stays until it is deleted, so an experiment
 whose file is gone is refused with `"data"` named as the field to pass) and runs `--verify`'s comparison, which needs ONNX Runtime
 on the server (`409` without it). The answer carries the SHA-256 of both files' bytes, the model's, and two URLs:

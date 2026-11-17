@@ -34,7 +34,7 @@ public static class ExportEndpoints
             {
                 // Written beside the experiment and nowhere else: a caller names an experiment, not a place on the server.
                 var outcome = await new OnnxExporter(experimentStore).ExportAsync(
-                    new OnnxExportRequest(root, modelName, id, body?.Data, OutputDirectory: null, body?.Verify ?? false, DataWithinProject: true), ct);
+                    new OnnxExportRequest(root, modelName, id, body?.Data, OutputDirectory: null, body?.Verify ?? false, DataWithinProject: true, Annotations: body?.Annotations), ct);
 
                 if (outcome.Refusal is { } refusal)
                 {
@@ -46,7 +46,8 @@ public static class ExportEndpoints
                             $"{message} GET /experiments lists the experiments of '{modelName}'.")),
                         OnnxExportRefusalKind.NoDataFile => TypedResults.BadRequest(new ErrorResponse(
                             $"{message} Pass \"data\": a file within the project with the model's input columns.")),
-                        OnnxExportRefusalKind.DataOutsideProject => TypedResults.BadRequest(new ErrorResponse(message)),
+                        OnnxExportRefusalKind.DataOutsideProject or OnnxExportRefusalKind.InvalidAnnotations
+                            => TypedResults.BadRequest(new ErrorResponse(message)),
                         OnnxExportRefusalKind.VerifyUnavailable => TypedResults.Conflict(new ErrorResponse(
                             $"\"verify\" needs ONNX Runtime on this server. {message}")),
                         OnnxExportRefusalKind.GraphDisagrees => TypedResults.UnprocessableEntity(new ErrorResponse(

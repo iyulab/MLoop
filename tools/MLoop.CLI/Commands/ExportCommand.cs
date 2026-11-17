@@ -61,6 +61,12 @@ public static class ExportCommand
             Description = $"Run the graph in ONNX Runtime on up to {OnnxVerification.DefaultRows} rows of the data and compare it with the model — and the manifest's decision rule (calibration, threshold) with mloop predict's answer; a graph that disagrees is not kept (needs: mloop runtime install onnxruntime)"
         };
 
+        var annotationOption = new Option<string[]>("--annotation")
+        {
+            Description = $"Write key=value into the manifest's annotations (repeatable; up to {OnnxAnnotations.MaxPairs} pairs) — opaque text mloop does not read, such as the version of the preprocessing that feeds the graph. The manifest's SHA-256 covers them",
+            AllowMultipleArgumentsPerToken = false,
+        };
+
         var command = new Command("onnx", "Export a model as ONNX, with a manifest describing its inputs, outputs and classes");
         command.Arguments.Add(experimentIdArg);
         command.Options.Add(nameOption);
@@ -68,6 +74,7 @@ public static class ExportCommand
         command.Options.Add(outputOption);
         command.Options.Add(jsonOption);
         command.Options.Add(verifyOption);
+        command.Options.Add(annotationOption);
 
         command.SetAction(parseResult => ExecuteAsync(
             parseResult.GetValue(experimentIdArg),
@@ -75,13 +82,14 @@ public static class ExportCommand
             parseResult.GetValue(dataOption),
             parseResult.GetValue(outputOption),
             parseResult.GetValue(jsonOption),
-            parseResult.GetValue(verifyOption)));
+            parseResult.GetValue(verifyOption),
+            parseResult.GetValue(annotationOption)));
 
         return command;
     }
 
     private static async Task<int> ExecuteAsync(
-        string? experimentId, string? modelName, string? dataFile, string? outputDir, bool jsonOutput, bool verify = false)
+        string? experimentId, string? modelName, string? dataFile, string? outputDir, bool jsonOutput, bool verify = false, string[]? annotation = null)
     {
         using var machineOutput = jsonOutput ? new JsonOutputScope() : null;
         try
@@ -97,6 +105,13 @@ public static class ExportCommand
             catch (InvalidOperationException)
             {
                 ErrorConsole.Error(Markup.Escape("Not inside a MLoop project. Run 'mloop init' to create a new project."));
+                return 1;
+            }
+
+            var (annotations, annotationError) = ParseAnnotations(annotation);
+            if (annotationError is not null)
+            {
+                ErrorConsole.Error(Markup.Escape(annotationError));
                 return 1;
             }
 
@@ -118,7 +133,7 @@ public static class ExportCommand
             experimentId = experimentId.Trim();
 
             var outcome = await new OnnxExporter(experimentStore).ExportAsync(
-                new OnnxExportRequest(projectRoot, resolvedModelName, experimentId, dataFile, outputDir, verify),
+                new OnnxExportRequest(projectRoot, resolvedModelName, experimentId, dataFile, outputDir, verify, Annotations: annotations),
                 CancellationToken.None);
             if (outcome.Refusal is { } refused)
             {
@@ -175,6 +190,24 @@ public static class ExportCommand
             ErrorSuggestions.DisplayError(ex, "export");
             return 1;
         }
+    }
+
+    /// <summary>The <c>--annotation key=value</c> pairs, or what is wrong with one: the key is up to the first '=', the value is the rest.</summary>
+    private static (Dictionary<string, string>? Pairs, string? Error) ParseAnnotations(string[]? given)
+    {
+        if (given is not { Length: > 0 })
+            return (null, null);
+        var pairs = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var item in given)
+        {
+            var at = item.IndexOf('=');
+            if (at <= 0)
+                return (null, $"--annotation '{item}' is not key=value.");
+            var key = item[..at];
+            if (!pairs.TryAdd(key, item[(at + 1)..]))
+                return (null, $"--annotation names '{key}' twice.");
+        }
+        return (pairs, null);
     }
 
     /// <summary>The refusal in this command's words: what went wrong, then the option or command that changes it.</summary>

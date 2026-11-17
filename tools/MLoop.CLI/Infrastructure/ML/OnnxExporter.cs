@@ -17,6 +17,7 @@ namespace MLoop.CLI.Infrastructure.ML;
 /// <param name="DataFile">A data file with the model's input columns (read for the input schema); null: the file the experiment trained on.</param>
 /// <param name="OutputDirectory">Where <c>model.onnx</c> and its manifest are written; null: the experiment's own directory.</param>
 /// <param name="Verify">Run the graph in ONNX Runtime and compare it with the model; a graph that disagrees is not kept.</param>
+/// <param name="Annotations">Opaque pairs written into the manifest (see <see cref="OnnxAnnotations"/>); null: none.</param>
 /// <param name="DataWithinProject">
 /// Both data files — the named one and the one the experiment recorded — must lie inside the project (a server reads
 /// what its caller names; the command line reads what its user can already read).
@@ -28,13 +29,16 @@ public sealed record OnnxExportRequest(
     string? DataFile = null,
     string? OutputDirectory = null,
     bool Verify = false,
-    bool DataWithinProject = false);
+    bool DataWithinProject = false,
+    IReadOnlyDictionary<string, string>? Annotations = null);
 
 /// <summary>Why an export was refused. A refusal writes no graph (<see cref="GraphDisagrees"/> keeps a manifest recording why).</summary>
 public enum OnnxExportRefusalKind
 {
     /// <summary>The experiment does not exist or has no model.</summary>
     ExperimentNotFound,
+    /// <summary>The pairs to write into the manifest are not acceptable (too many, too long, an empty key).</summary>
+    InvalidAnnotations,
     /// <summary>The experiment's task has no verified export.</summary>
     UnsupportedTask,
     /// <summary>The model reads a column through a text encoder, which a graph does not carry.</summary>
@@ -98,6 +102,9 @@ public sealed class OnnxExporter
         ArgumentNullException.ThrowIfNull(request);
         var modelName = request.ModelName;
         var experimentId = request.ExperimentId.Trim();
+
+        if (OnnxAnnotations.Refusal(request.Annotations) is { } annotationRefusal)
+            return Refused(OnnxExportRefusalKind.InvalidAnnotations, annotationRefusal);
 
         var (modelPath, notFound) = ExperimentModels.Find(_experiments, modelName, experimentId);
         if (modelPath is null)
@@ -229,6 +236,7 @@ public sealed class OnnxExporter
                 WeightColumn = experiment.Config?.WeightColumn,
                 Portable = experiment.Config?.Portable == true,
                 Verification = verification,
+                Annotations = OnnxAnnotations.Normalize(request.Annotations),
             };
             await File.WriteAllTextAsync(manifestPath, manifest.ToJson(), cancellationToken);
 

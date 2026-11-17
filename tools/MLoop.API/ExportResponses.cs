@@ -15,8 +15,13 @@ namespace MLoop.API;
 /// Run the graph in ONNX Runtime on up to <see cref="OnnxVerification.DefaultRows"/> rows of the data and compare it with the model
 /// (and the manifest's decision rule with what <c>/predict</c> answers); a graph that disagrees is not kept. Needs ONNX Runtime on the server.
 /// </param>
+/// <param name="Annotations">
+/// Opaque text pairs written into the manifest as <c>annotations</c> — a consumer's own identifiers, such as the version of the
+/// preprocessing that feeds the graph. At most <see cref="OnnxAnnotations.MaxPairs"/> pairs, keys to <see cref="OnnxAnnotations.MaxKeyLength"/> and
+/// values to <see cref="OnnxAnnotations.MaxValueLength"/> characters. They are in the manifest file, so its SHA-256 covers them.
+/// </param>
 [System.Text.Json.Serialization.JsonUnmappedMemberHandling(System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow)]
-public sealed record OnnxExportBody(string? Data = null, bool Verify = false);
+public sealed record OnnxExportBody(string? Data = null, bool Verify = false, Dictionary<string, string>? Annotations = null);
 
 /// <summary>
 /// <c>POST /experiments/{id}/export/onnx</c>: the graph and its manifest are written beside the experiment. The two

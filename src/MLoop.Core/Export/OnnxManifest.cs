@@ -76,6 +76,13 @@ public sealed record OnnxManifest
     /// <summary>How the graph compared with the model on data rows (<c>--verify</c>); null when not checked.</summary>
     public OnnxVerificationResult? Verification { get; init; }
 
+    /// <summary>
+    /// What the caller asked to have written into the manifest (<c>--annotation</c>, the request's <c>annotations</c>):
+    /// opaque text pairs mloop does not read — a consumer's own identifiers, for instance the version of the preprocessing
+    /// that feeds the graph. They are part of this file, so whatever signs or hashes the manifest covers them. Null when none.
+    /// </summary>
+    public IReadOnlyDictionary<string, string>? Annotations { get; init; }
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
