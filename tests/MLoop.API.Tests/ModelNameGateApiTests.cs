@@ -43,6 +43,7 @@ public class ModelNameGateApiTests : IClassFixture<TestWebApplicationFactory>
         "GET /info?name={0}", "GET /models?name={0}", "GET /experiments?name={0}", "GET /experiments/exp-001?name={0}",
         "GET /logs?name={0}", "GET /feedback?name={0}", "GET /drift?name={0}", "GET /trigger?name={0}",
         "GET /promotions?name={0}", "GET /compare?candidate=exp-001&baseline=exp-002&name={0}", "POST /predict?name={0}",
+        "POST /experiments/exp-001/export/onnx?name={0}", "GET /experiments/exp-001/export/onnx/model.onnx?name={0}",
     ];
 
     /// <summary>Every endpoint that takes it in the JSON body, with a body that is otherwise acceptable.</summary>
@@ -133,7 +134,7 @@ public class ModelNameGateApiTests : IClassFixture<TestWebApplicationFactory>
         found.Should().NotBeEmpty("the scan must see the endpoints it polices");
         found.Should().Contain("GET /info").And.Contain("POST /train", "known doors the scan has to find");
         // {id} in a route is written out in the sweep above.
-        swept = swept.Select(s => s.Replace("/exp-001", "/{id}")).ToHashSet();
+        swept = swept.Select(s => s.Replace("/exp-001", "/{id}").Replace("/model.onnx", "/{file}")).ToHashSet();
         found.Except(swept).Should().BeEmpty("these endpoints take a model name but the sweep does not send them one");
     }
 

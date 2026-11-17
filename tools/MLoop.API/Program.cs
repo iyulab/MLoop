@@ -169,7 +169,7 @@ try
                     context.Response.ContentType = "application/json";
                     await context.Response.WriteAsJsonAsync(new ErrorHintResponse(
                         "Forbidden",
-                        "This endpoint needs the admin role (/promote, /rollback, /train, /evaluate, /samples, /cache/*). " +
+                        "This endpoint needs the admin role (/promote, /rollback, /train, /evaluate, /samples, /experiments/{id}/export/onnx, /cache/*). " +
                         "Issue a token with `mloop token --role admin` and send it as the `Authorization: Bearer <token>` header."));
                 }
             };
@@ -347,6 +347,7 @@ try
     app.MapModelEndpoints();
     app.MapPredict();
     app.MapExperimentEndpoints();
+    app.MapExportEndpoints();
     app.MapMonitoringEndpoints();
     app.MapTrainingEndpoints();
     app.MapDatasetEndpoints();

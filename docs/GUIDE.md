@@ -2031,6 +2031,18 @@ that is not is refused with its string columns named, and nothing partial is wri
 actually holds codes or categories, declare it `type: categorical` under the model's `columns:` and
 retrain; otherwise retrain with `--portable`.
 
+**Over HTTP.** A service that trains and promotes through `mloop serve` has no command line beside it, so the same export is a
+call: `POST /train` takes `"portable": true` (as `--portable`), and `POST /experiments/{id}/export/onnx?name=<model>` (admin)
+writes `model.onnx` and `model.onnx.json` into that experiment's directory — the one exporter `mloop export onnx` uses, so the
+files are the same. The body may be left out; `{"data": "datasets/sample.csv", "verify": true}` names a file within the project to read
+the input columns from (default: the file the experiment trained on — an upload stays until it is deleted, so an experiment
+whose file is gone is refused with `"data"` named as the field to pass) and runs `--verify`'s comparison, which needs ONNX Runtime
+on the server (`409` without it). The answer carries the SHA-256 of both files' bytes, the model's, and two URLs:
+`GET /experiments/{id}/export/onnx/model.onnx` and `…/model.onnx.json` return the bytes. A model that cannot be exported
+(a task without an ONNX form, a text encoder, a step ONNX cannot express) is `422` with the reason, and nothing is written; a graph
+that disagrees with the model under `verify` is `422` too, and the manifest keeps the comparison. A call writes beside the experiment and
+nowhere else, and two calls at once for one experiment run one after the other.
+
 ---
 
 ### `mloop docker` (v0.4.0+)

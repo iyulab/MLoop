@@ -50,6 +50,8 @@ public class WireShapeContractTests : IClassFixture<TestWebApplicationFactory>
         ["POST /train"] = ("starts a training job", typeof(TrainDefinitionApiTests)),
         ["POST /embed"] = ("needs an installed image encoder", typeof(EmbedApiTests)),
         ["POST /datasets"] = ("takes the file as its body (a table or a zip)", typeof(DatasetUploadApiTests)),
+        ["POST /experiments/{id}/export/onnx"] = ("needs a trained portable model; the answer's field names are pinned there", typeof(ExportApiTests)),
+        ["GET /experiments/{id}/export/onnx/{file}"] = ("serves the bytes of a file, not a JSON shape", typeof(ExportApiTests)),
         ["HEAD /health"] = ("the probe's HEAD form: the same endpoint without a body", typeof(ApiIntegrationTests)),
     };
 
