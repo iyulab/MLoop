@@ -130,6 +130,10 @@ RUN dotnet tool install --global mloop
 ENV PATH="$PATH:/root/.dotnet/tools"
 ```
 
+Global tools live in `~/.dotnet/tools` (`%USERPROFILE%\.dotnet\tools` on Windows). If a new terminal still says
+`mloop` is not found — a .NET SDK installed from a zip, for one, does not put that folder on the `PATH` — add it
+to your `PATH` (on Windows: *Edit environment variables for your account* → `Path` → New), then open another terminal.
+
 **Standalone Binary**:
 
 Download from [GitHub Releases](https://github.com/iyulab/MLoop/releases) and place in your PATH.
