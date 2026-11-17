@@ -167,9 +167,14 @@ try
                 {
                     context.Response.StatusCode = StatusCodes.Status403Forbidden;
                     context.Response.ContentType = "application/json";
+                    // The route the caller reached names itself: which endpoints want the role is what each declares
+                    // (RequireAuthorization("Admin")), and a list written here was already missing some when it was a list.
+                    var reached = context.HttpContext.GetEndpoint() is RouteEndpoint { RoutePattern.RawText: { } pattern }
+                        ? $"{context.Request.Method} {pattern}"
+                        : "This endpoint";
                     await context.Response.WriteAsJsonAsync(new ErrorHintResponse(
                         "Forbidden",
-                        "This endpoint needs the admin role (/promote, /rollback, /train, /evaluate, /samples, /experiments/{id}/export/onnx, /cache/*). " +
+                        $"{reached} needs the admin role. " +
                         "Issue a token with `mloop token --role admin` and send it as the `Authorization: Bearer <token>` header."));
                 }
             };

@@ -48,6 +48,30 @@ public class UnauthorizedChallengeTests : IClassFixture<UnauthorizedChallengeTes
         var json = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync());
         json.GetProperty("error").GetString().Should().Be("Forbidden");
         json.GetProperty("hint").GetString().Should().Contain("admin").And.Contain("mloop token --role admin");
+        json.GetProperty("hint").GetString().Should().StartWith("POST /promote needs the admin role", "the answer names the route the caller reached");
+    }
+
+    /// <summary>
+    /// Every route that wants the admin role says so in its own 403, so no list of them is kept anywhere to fall behind — the
+    /// previous one named six and was already missing the dataset and feedback writes.
+    /// </summary>
+    [Theory]
+    [InlineData("POST", "/datasets")]
+    [InlineData("DELETE", "/datasets/ds-20260101-000000-00000000")]
+    [InlineData("POST", "/experiments/exp-001/export/onnx")]
+    [InlineData("POST", "/train")]
+    public async Task AnyAdminRoute_Returns403_NamingItself(string method, string url)
+    {
+        var token = MLoop.CLI.Commands.TokenCommand.IssueToken(
+            MLoop.Core.Security.DevJwtDefaults.Key, "reader", role: null, TimeSpan.FromHours(1));
+        using var request = new HttpRequestMessage(new HttpMethod(method), url) { Content = JsonContent.Create(new { }) };
+        request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+
+        var response = await _client.SendAsync(request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        var hint = JsonSerializer.Deserialize<JsonElement>(await response.Content.ReadAsStringAsync()).GetProperty("hint").GetString();
+        hint.Should().StartWith($"{method} {url.Replace("/ds-20260101-000000-00000000", "/{id}").Replace("/exp-001/", "/{id}/")} needs the admin role");
     }
 
     [Fact]
