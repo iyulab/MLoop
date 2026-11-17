@@ -57,6 +57,7 @@ public class TrainingJobStore
             MaxTrials = request.MaxTrials,
             Epochs = request.Epochs,
             Ensemble = request.Ensemble,
+            Portable = request.Portable,
             Metric = request.Metric,
             TestSplit = request.TestSplit,
             MaxRows = request.MaxRows,
@@ -202,6 +203,7 @@ public class TrainingJob
     public int? MaxTrials { get; set; }
     public int? Epochs { get; set; }
     public bool Ensemble { get; set; }
+    public bool Portable { get; set; }
     public string Metric { get; set; } = "auto";
     public double? TestSplit { get; set; }
     public int? MaxRows { get; set; }
@@ -247,6 +249,7 @@ public class TrainingJob
 /// <param name="MaxTrials">At most this many trials of the trainer search, as <c>--max-trials</c>; null leaves it to mloop.yaml, then the time budget alone.</param>
 /// <param name="Epochs">Epochs a deep-learning task trains for, as <c>--epochs</c>; null leaves it to mloop.yaml, then 10.</param>
 /// <param name="Ensemble"><c>true</c> asks for a blend of the search's best trials, as <c>--ensemble</c> (binary classification and regression); absent or <c>false</c> leaves it to mloop.yaml's <c>ensemble:</c>.</param>
+/// <param name="Portable"><c>true</c> trains with ONNX-expressible steps only, as <c>--portable</c> (binary and multiclass classification, regression), so the experiment can be exported with <c>POST /experiments/{id}/export/onnx</c>; absent or <c>false</c> leaves it to mloop.yaml's <c>portable:</c>.</param>
 /// <param name="TestSplit">The held-out share; null leaves it to mloop.yaml, then the default.</param>
 /// <param name="Weight">The column that weights the rows, as <c>--weight</c> — the <c>weightColumn</c> <c>POST /samples</c> answers with.</param>
 /// <param name="AdditionalDataFiles">
@@ -278,7 +281,8 @@ public record TrainingJobRequest(
     bool Promote = true,
     int? MaxTrials = null,
     int? Epochs = null,
-    bool Ensemble = false)
+    bool Ensemble = false,
+    bool Portable = false)
 {
     /// <summary>The model the job trains into — a method, not a property: a property would be a field of the request body
     /// (the schema listed <c>modelName</c> as an input the binder then ignored): the name through the model-name gate - it becomes a directory, and a name with

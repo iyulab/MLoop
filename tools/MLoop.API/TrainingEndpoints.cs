@@ -48,7 +48,7 @@ public static class TrainingEndpoints
             var (trainDefinition, definitionError) = await TrainingDefinition.ResolveAsync(configLoader,
                 new TrainingDefinition.Request(
                     ModelName: request.ResolveModelName(), Task: request.Task, Label: request.LabelColumn, TimeLimitSeconds: request.TimeLimitSeconds, Metric: request.Metric,
-                    TestSplit: request.TestSplit, Weight: request.Weight, MaxTrials: request.MaxTrials, Epochs: request.Epochs, Ensemble: request.Ensemble));
+                    TestSplit: request.TestSplit, Weight: request.Weight, MaxTrials: request.MaxTrials, Epochs: request.Epochs, Ensemble: request.Ensemble, Portable: request.Portable));
             if (definitionError != null)
                 return TypedResults.BadRequest(new ErrorResponse(definitionError));
             if (TrainingInput.BalanceConflict(trainDefinition!, request.Balance) is { } balanceError)
@@ -180,6 +180,7 @@ public static class TrainingEndpoints
                 job.MaxTrials,
                 job.Epochs,
                 job.Ensemble,
+                job.Portable,
                 job.Metric,
                 job.TestSplit,
                 job.MaxRows,

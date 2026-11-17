@@ -102,7 +102,7 @@ public class TrainingJobRunner : BackgroundService
                 scope.ServiceProvider.GetRequiredService<ConfigLoader>(),
                 new TrainingDefinition.Request(
                     ModelName: job.ModelName, Task: job.Task, Label: job.LabelColumn, TimeLimitSeconds: job.TimeLimitSeconds, Metric: job.Metric,
-                    TestSplit: job.TestSplit, Weight: job.Weight, MaxTrials: job.MaxTrials, Epochs: job.Epochs, Ensemble: job.Ensemble),
+                    TestSplit: job.TestSplit, Weight: job.Weight, MaxTrials: job.MaxTrials, Epochs: job.Epochs, Ensemble: job.Ensemble, Portable: job.Portable),
                 stoppingToken);
             if (definition is null)
                 throw new InvalidOperationException(refusal);

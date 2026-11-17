@@ -24,6 +24,7 @@ public static class TrainingDefinition
     /// <param name="MaxTrials">At most this many trials (<c>--max-trials</c>).</param>
     /// <param name="Epochs">Epochs of a deep-learning task (<c>--epochs</c>).</param>
     /// <param name="Ensemble"><c>true</c> asks for a blend (<c>--ensemble</c>); false leaves it to mloop.yaml.</param>
+    /// <param name="Portable"><c>true</c> asks for ONNX-expressible steps only (<c>--portable</c>); false leaves it to mloop.yaml.</param>
     public sealed record Request(
         string ModelName,
         string? Task,
@@ -34,13 +35,14 @@ public static class TrainingDefinition
         string? Weight = null,
         int? MaxTrials = null,
         int? Epochs = null,
-        bool Ensemble = false);
+        bool Ensemble = false,
+        bool Portable = false);
 
     /// <summary>The definition, or why the request cannot be trained as asked.</summary>
     public static async Task<(ModelDefinition? Definition, string? Error)> ResolveAsync(
         ConfigLoader configLoader, Request request, CancellationToken cancellationToken = default)
     {
-        var (modelName, task, label, timeLimitSeconds, metric, testSplit, weight, maxTrials, epochs, ensemble) = request;
+        var (modelName, task, label, timeLimitSeconds, metric, testSplit, weight, maxTrials, epochs, ensemble, portable) = request;
         var config = await configLoader.LoadUserConfigAsync(cancellationToken);
         ModelDefinition definition;
         try
@@ -71,6 +73,9 @@ public static class TrainingDefinition
         // The request's ensemble in --ensemble's place: it asks for a blend; leaving it out leaves the choice to mloop.yaml.
         if (ensemble)
             definition.Ensemble = true;
+        // The request's portable in --portable's place; refused, like the definition's, where the task has no ONNX form.
+        if (portable)
+            definition.Portable = true;
         if ((ModelTrainingConfig.MaxTrialsConflict(definition) ?? ModelTrainingConfig.TestSplitConflict(definition) ?? ModelTrainingConfig.EpochsConflict(definition) ?? ModelTrainingConfig.AnomalyThresholdConflict(definition) ?? ModelTrainingConfig.ContaminationConflict(definition)) is { } maxTrialsError)
             return (null, maxTrialsError);
         if (ModelTrainingConfig.WeightConflict(definition) is { } weightError)

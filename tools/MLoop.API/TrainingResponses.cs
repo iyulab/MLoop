@@ -35,6 +35,7 @@ public sealed record JobDetailResponse(
     int? MaxTrials,
     int? Epochs,
     bool Ensemble,
+    bool Portable,
     string Metric,
     double? TestSplit,
     int? MaxRows,

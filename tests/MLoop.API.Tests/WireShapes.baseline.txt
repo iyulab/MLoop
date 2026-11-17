@@ -424,6 +424,7 @@ $.metric: string
 $.metrics: object
 $.metrics.accuracy: number
 $.modelName: string
+$.portable: boolean
 $.promote: boolean
 $.promoted: boolean
 $.status: string

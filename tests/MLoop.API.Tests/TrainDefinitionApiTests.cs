@@ -184,6 +184,45 @@ public class TrainDefinitionApiTests : IClassFixture<TestWebApplicationFactory>
     }
 
     [Fact]
+    public async Task PortableOnATaskWithNoOnnxForm_IsRefusedBeforeAJobExists()
+    {
+        var data = WriteData();
+
+        var response = await _client.PostAsJsonAsync("/train", new { dataFile = data, labelColumn = "y", task = "clustering", name = "tport", portable = true });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("a portable model is trained for binary-classification");
+    }
+
+    [Fact]
+    public async Task AJobAskedForAPortableModel_RecordsItOnTheExperiment_AndEchoesItBack()
+    {
+        var data = WriteData();
+
+        var response = await _client.PostAsJsonAsync("/train",
+            new { dataFile = data, labelColumn = "y", task = "binary-classification", name = "wport", timeLimitSeconds = 60, maxTrials = 10, portable = true });
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        var jobId = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement.GetProperty("jobId").GetString();
+
+        string? status = null;
+        JsonElement job = default;
+        for (var i = 0; i < 240 && status is not ("Completed" or "Failed"); i++)
+        {
+            await Task.Delay(500);
+            job = JsonDocument.Parse(await _client.GetStringAsync($"/jobs/{jobId}")).RootElement;
+            status = job.GetProperty("status").GetString();
+        }
+        status.Should().Be("Completed");
+        job.GetProperty("portable").GetBoolean().Should().BeTrue("the job states what it was asked for");
+
+        // The runner resolves the definition again from the job: a request field that stops there trains an
+        // ordinary model and still answers 202.
+        var store = _factory.Services.GetRequiredService<MLoop.CLI.Infrastructure.FileSystem.IExperimentStore>();
+        var experiment = await store.LoadAsync("wport", "exp-001", CancellationToken.None);
+        experiment.Config.Portable.Should().BeTrue("the request asked for ONNX-expressible steps, as --portable does");
+    }
+
+    [Fact]
     public async Task PrepTheApiDoesNotRun_IsRefused_NotSkipped()
     {
         var data = WriteData();
