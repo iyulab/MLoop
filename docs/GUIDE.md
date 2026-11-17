@@ -497,6 +497,24 @@ sentence columns, each with the encoder, learns from their cosine. The warnings 
 similarity say so. It gives one vector per text; NER and question answering, which answer per word, are not served
 by it.
 
+### Measured quality of the text tasks
+
+What the four text tasks scored on public corpora, so a reader can weigh the warnings above against numbers. Every row is **one local run** — a fixed ten epochs where a transformer trains, the stated number of training rows and a sample of the corpus's held-out split — and **none of it is a claim about the quality of a model you should expect**: a larger sample, more epochs or another seed moves each figure.
+
+| Task · corpus | Path | Held-out result |
+|---|---|---|
+| NER · Few-NERD (8 coarse types, BIO tags) | transformer, 800 training sentences | 200 sentences: `entity_f1` 0.007 → 0.433 and `micro_accuracy` 0.724 → 0.888 once the model's tags are read on the words they belong to (see below) |
+| Question answering · SQuAD 1.1 | transformer, 1,000 training questions | 200 questions: `exact_match` 0.0067 → 0.135 and `char_f1` 0.337 → 0.450 once the whole answer is read |
+| Sentence similarity · KLUE-STS | regression over the two sentence columns with the `multilingual-minilm` encoder, 2,000 pairs, 120 s budget | 3-fold validation R² 0.796 ± 0.012; 500 held-out pairs R² 0.490, RMSE 1.058, MAE 0.824 (training R² 0.815 — the run is flagged as possibly overfit) |
+| Text classification · KLUE-YNAT (7 news topics) | multiclass over the title column with the encoder, 2,000 titles, 120 s budget | 500 held-out titles: macro accuracy 0.747, micro accuracy 0.670, log loss 0.994, ECE 0.066 (per topic 26–211 held-out titles; the largest topic is 42 %) |
+| Text classification · NSMC (Korean movie reviews, positive / negative) | `text-classification` (transformer) | 500 test reviews, 2,000 training: `micro_accuracy` 0.5025 — chance; the quality gate refused to promote it |
+| | `binary-classification` (text column through the tabular path) | same split: accuracy 0.665, AUC 0.756 |
+| NER · KLUE-NER (Korean, tags folded from characters to space-separated words) | transformer, 800 training sentences, about 18 minutes | 200 held-out sentences: `entity_f1` 0.135 (precision 0.256, recall 0.092), `micro_accuracy` 0.772 against 0.774 for answering `O` everywhere, `macro_accuracy` 0.131 — training warned that 91 % of the characters never reach the model |
+
+The rows say what the warnings above say: a Korean text reaches a transformer path as almost nothing, so NSMC at chance and KLUE-NER near the all-`O` baseline are what that path does, and the encoder or tabular routes are the supported ones for Korean classification and similarity. NER and question answering have no encoder route.
+
+Corpora, as their distributors state them: [Few-NERD](https://aclanthology.org/2021.acl-long.248/) (Ding et al., ACL 2021; CC BY-SA 4.0) · [SQuAD 1.1](https://arxiv.org/abs/1606.05250) (Rajpurkar et al., EMNLP 2016; CC BY-SA 4.0) · [KLUE](https://arxiv.org/abs/2105.09680) — STS, YNAT and NER (Park et al., 2021; CC BY-SA 4.0) · [NSMC](https://github.com/e9t/nsmc), the Naver sentiment movie corpus, which its repository releases under CC0 1.0 while a mirror's dataset card says cc-by-2.0 (credit is given on the stricter terms). Only the scores above are published here — no text, example or model trained on the corpora is.
+
 ### Named Entity Recognition (NER)
 
 NER tags every word of a sentence. The data is two columns: the sentence, and its tags — one per
