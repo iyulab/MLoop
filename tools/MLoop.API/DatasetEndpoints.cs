@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
 using MLoop.CLI.Infrastructure.ML;
 using MLoop.Core.Data;
+using MLoop.Core.Models;
 using MLoop.Core.Storage;
 
 namespace MLoop.API;
@@ -29,6 +30,11 @@ public static class DatasetEndpoints
             ILogger<Program> logger,
             CancellationToken ct) =>
         {
+            // A task that is not one: said now, as POST /train says it — left alone, the upload read as a table task's and the name
+            // checked nothing.
+            if (!string.IsNullOrWhiteSpace(task) && !TaskTypes.IsValid(task))
+                return TypedResults.BadRequest(new ErrorResponse($"Invalid task type '{task}'. Valid options: {TaskTypes.Listed}"));
+
             var limits = DatasetLimits.From(configuration);
             if (request.ContentLength > limits.MaxUploadBytes)
                 return TypedResults.Json(new ErrorResponse(TooLarge(limits)), statusCode: StatusCodes.Status413PayloadTooLarge);

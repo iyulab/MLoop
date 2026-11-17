@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`POST /datasets?task=` refuses a task that is not one.** A misspelled task name was taken for a table task and checked nothing, so the upload was kept and the mistake showed only when `POST /train` named the task again. It answers `400` with the valid options, as `POST /train` does.
 - **`POST /train` refusals for a missing task or label name the request's fields.** A body that named a new model without `task`, or a tabular model without `labelColumn`, was refused with «Use --task» / «Use the <label> argument» — words for the command line. The message now also says `task` / `labelColumn` in a POST /train body.
 - **A forecasting or time-series anomaly run that cannot load its native library no longer prints the loader's list of paths.** Since 0.51.0 the failure text of a run carries the innermost exception's message, and for a missing OpenMP runtime that message is the loader's own: a dozen `.so` paths it probed and advice to use `strace`. The screen is the sentence written for the machine (the runtime, the install step, or the platform that cannot run it) and nothing under it.
 - **`mloop detect` names a gap by its data row, counted from the first row below the header.** The message said "data row 151" for the empty cell in the 150th row of the file (it counted the header line), where `mloop train` says "data row 150" for the same file.

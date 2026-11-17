@@ -66,6 +66,18 @@ public class DatasetUploadApiTests : IClassFixture<TestWebApplicationFactory>
         Directory.Exists(Uploads) ? Directory.GetFileSystemEntries(Uploads).Select(Path.GetFileName).Where(n => n!.StartsWith(".incoming-")).Select(n => n!) : [];
 
     [Fact]
+    public async Task ATaskThatIsNotATask_IsRefused_NotTreatedAsATableTask_AndNothingIsStored()
+    {
+        var before = StoredIds().ToList();
+
+        var response = await UploadAsync("sales.csv", Csv(), task: "binary-clasification");
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await JsonOf(response)).GetProperty("error").GetString().Should().Contain("Invalid task type 'binary-clasification'").And.Contain("binary-classification");
+        StoredIds().Should().Equal(before, "a refused upload leaves nothing behind");
+    }
+
+    [Fact]
     public async Task ATableFile_IsKeptInTheProject_AndItsPathTrains()
     {
         var response = await UploadAsync("sales.csv", Csv());
