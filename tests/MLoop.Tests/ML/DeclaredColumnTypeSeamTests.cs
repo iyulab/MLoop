@@ -79,6 +79,32 @@ public class DeclaredColumnTypeSeamTests : IDisposable
         Assert.NotEmpty(served.Rows);
     }
 
+    // Every numeric feature was declared a category (nothing is left to fold into the numeric vector at all): the readers must still find
+    // each column under its own name.
+    [Fact]
+    public async Task A_table_whose_every_feature_is_declared_a_category_is_read_back_by_every_reader()
+    {
+        var path = Path.Combine(_tempDir, "all-declared.csv");
+        var rnd = new Random(5);
+        var lines = new List<string> { "dept,role,label" };
+        for (var i = 0; i < 600; i++)
+        {
+            var dept = 100 + rnd.Next(30);
+            var role = 500 + rnd.Next(12);
+            lines.Add($"{dept},{role},{((dept + role) % 3 == 0 ? "a" : "b")}");
+        }
+        File.WriteAllLines(path, lines);
+
+        var (modelPath, schema) = await TrainAsync(path, new Dictionary<string, string> { ["dept"] = "categorical", ["role"] = "categorical" });
+
+        var evaluation = await new EvaluationEngine().EvaluateAsync(modelPath, path, "label", "binary-classification", trainedSchema: schema);
+        Assert.True(evaluation.Metrics["auc"] > 0.5, $"evaluate auc {evaluation.Metrics["auc"]:F3}");
+
+        var rows = PredictionEngine.LoadCsvAsRows(path, schema, "label");
+        var served = new PredictionEngine().PredictWithService(rows, schema, modelPath, "binary-classification", "label");
+        Assert.NotEmpty(served.Rows);
+    }
+
     // The loader's half of it: a declared column inside the merged range comes out of it as a column of its own, read as text.
     [Fact]
     public void A_declared_column_leaves_the_merged_numeric_range_and_loads_as_text()

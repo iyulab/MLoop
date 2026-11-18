@@ -552,7 +552,13 @@ public class CsvDataLoader : DataProviderBase, Contracts.IDataProvider
             .ToArray();
 
         if (trainedNumericFeatures.Length == 0)
+        {
+            // Training read no numeric feature at all - every one was text, or a column the project declared a category. The vector
+            // inference built is one the model never reads, but the columns it does read are inside it: give each its own column.
+            if (merged != null)
+                GiveTextFeaturesTheirOwnColumns(options, trainedSchema, headers, inside: merged);
             return;
+        }
 
         var desired = ToRanges(trainedNumericFeatures);
 
@@ -584,6 +590,23 @@ public class CsvDataLoader : DataProviderBase, Contracts.IDataProvider
         // Narrowing the range can leave a column with nothing to read it: a feature training loaded
         // as text, arriving here as digits, is inside the range inference built and outside the one
         // training used. Give it its own column back, at the type the schema records.
+        GiveTextFeaturesTheirOwnColumns(options, trainedSchema, headers);
+    }
+
+    /// <summary>
+    /// Gives every feature training loaded as text its own column, at the type the schema records, where the file's own inference left it
+    /// inside a merged range (or nowhere).
+    /// </summary>
+    /// <param name="options">The loader options being repaired.</param>
+    /// <param name="trainedSchema">The schema training saved.</param>
+    /// <param name="headers">The file's header names.</param>
+    /// <param name="inside">When given, only the features this merged column's ranges cover (the ones inference swallowed).</param>
+    private static void GiveTextFeaturesTheirOwnColumns(TextLoader.Options options, InputSchemaInfo trainedSchema, string[] headers,
+        TextLoader.Column? inside = null)
+    {
+        if (options.Columns == null)
+            return;
+
         foreach (var column in trainedSchema.Columns.Where(c => c.Purpose == "Feature"))
         {
             var kind = SchemaDataTypes.FeatureLoadKind(column, DataKind.String);
@@ -593,6 +616,9 @@ public class CsvDataLoader : DataProviderBase, Contracts.IDataProvider
             var index = Array.FindIndex(headers,
                 h => h.Equals(column.Name, StringComparison.OrdinalIgnoreCase));
             if (index < 0)
+                continue;
+
+            if (inside != null && !(inside.Source ?? []).Any(r => r.Min <= index && index <= r.Max))
                 continue;
 
             if (options.Columns.Any(c => c.Source is { Length: 1 } own
