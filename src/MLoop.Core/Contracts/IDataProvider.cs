@@ -36,6 +36,22 @@ public interface IDataProvider
         DataKind? labelKind = null);
 
     /// <summary>
+    /// <see cref="LoadData"/>, with the types a
+    /// project declared for some columns (<c>columns:</c> of mloop.yaml: <c>categorical</c> and <c>text</c> are read as text).
+    /// </summary>
+    /// <remarks>
+    /// A model's roles are looked up by the name of a column of the loaded view, and inference merges every column that reads as a number
+    /// into one <c>Features</c> vector with no names in it: a declared type on an integer-coded column therefore reached nothing, and the
+    /// saved schema, which records the declaration, then described a layout the model was not trained on. A loader that reads a table
+    /// takes such a column out of the merged range and loads it as the declared kind; a loader with no table to read ignores the kinds
+    /// (the default).
+    /// </remarks>
+    IDataView LoadDataWithColumnKinds(string filePath, string? labelColumn, string? taskType,
+        IEnumerable<string>? preserveColumns, IReadOnlyCollection<string>? featureExclusions,
+        DataKind? labelKind, IReadOnlyDictionary<string, DataKind>? columnKinds)
+        => LoadData(filePath, labelColumn, taskType, preserveColumns, featureExclusions, labelKind);
+
+    /// <summary>
     /// Loads the second file of a pre-split run - the test file after the training file - laid out the way the most recent
     /// <see cref="LoadData"/> laid out its file: the same columns read as the same types, the same merged vectors. Inference from
     /// each file does not agree with the other's: a column of numbers with one word in it is numbers in the file without the word

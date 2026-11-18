@@ -8,7 +8,7 @@ namespace MLoop.Core.Data;
 /// <summary>
 /// CSV data loader implementation using ML.NET
 /// </summary>
-public class CsvDataLoader : DataProviderBase
+public class CsvDataLoader : DataProviderBase, Contracts.IDataProvider
 {
     /// <summary>
     /// Where a diagnostic goes when the caller supplied no sink: nowhere.
@@ -61,6 +61,12 @@ public class CsvDataLoader : DataProviderBase
     public override IDataView LoadData(string filePath, string? labelColumn = null, string? taskType = null,
         IEnumerable<string>? preserveColumns = null, IReadOnlyCollection<string>? featureExclusions = null,
         DataKind? labelKind = null)
+        => LoadDataWithColumnKinds(filePath, labelColumn, taskType, preserveColumns, featureExclusions, labelKind, columnKinds: null);
+
+    /// <inheritdoc cref="Contracts.IDataProvider.LoadDataWithColumnKinds"/>
+    public IDataView LoadDataWithColumnKinds(string filePath, string? labelColumn, string? taskType,
+        IEnumerable<string>? preserveColumns, IReadOnlyCollection<string>? featureExclusions,
+        DataKind? labelKind, IReadOnlyDictionary<string, DataKind>? columnKinds)
     {
         if (!File.Exists(filePath))
         {
@@ -257,6 +263,11 @@ public class CsvDataLoader : DataProviderBase
             preserveColumns = csvHeaders.Concat(preserveColumns ?? []);
         if (sharedLayout is null)
             ApplyColumnPreservation(loaderOptions, mlnetCompatiblePath, preserveColumns);
+        // A column the project declared as text or a category is read as text, as it is read after training: the saved schema records
+        // it so, and a reader loads it so. Inference reads a column of integers as numbers and folds it into the merged vector, where no
+        // role can name it. The test file reads with this layout (sharedLayout), so only the first load decides.
+        if (sharedLayout is null && columnKinds is { Count: > 0 })
+            ApplyDeclaredColumnKinds(loaderOptions, mlnetCompatiblePath, columnKinds);
         _lastLayout = (loaderOptions, csvHeaders);
 
         // Record which source columns each merged range spans — the loaded IDataView
@@ -764,9 +775,44 @@ public class CsvDataLoader : DataProviderBase
                 }
             }
 
+            // A merged column that is left with one column is that column, as inference reads a group of one: a scalar named by the member
+            // (ColumnLayoutInference.FoldedName). Left as a one-slot 'Features' vector, the model is saved to read a column no reader builds
+            // (every reader names the lone feature by its header and loads it as a scalar) and fails on "Could not find input column 'Features'".
+            for (var k = 0; k < newColumns.Count; k++)
+            {
+                var left = newColumns[k];
+                if (left.Source is { Length: 1 } one && one[0].Min == (one[0].Max ?? one[0].Min) && one[0].Min < headers.Length
+                    && (string.Equals(left.Name, ColumnLayoutInference.NumericVectorName, StringComparison.Ordinal)
+                        || string.Equals(left.Name, ColumnLayoutInference.BooleanVectorName, StringComparison.Ordinal)))
+                    newColumns[k] = new Microsoft.ML.Data.TextLoader.Column(headers[one[0].Min], left.DataKind, one[0].Min);
+            }
+
             // Add as individual column, inheriting the merged range's DataKind.
             newColumns.Add(new Microsoft.ML.Data.TextLoader.Column(colName, splitKind, headerIdx));
             options.Columns = newColumns.ToArray();
+        }
+    }
+
+    /// <summary>
+    /// Takes each declared column out of any merged range and loads it as the declared kind (see
+    /// <see cref="Contracts.IDataProvider.LoadDataWithColumnKinds"/>).
+    /// Names match as the declaration is looked up elsewhere: trimmed, ignoring case. A name the file does not have is left alone — training says so.
+    /// </summary>
+    public static void ApplyDeclaredColumnKinds(
+        TextLoader.Options options, string csvPath, IReadOnlyDictionary<string, DataKind> columnKinds)
+    {
+        if (options.Columns is null || columnKinds.Count == 0) return;
+        ApplyColumnPreservation(options, csvPath, columnKinds.Keys.Select(k => k.Trim()));
+        foreach (var (name, kind) in columnKinds)
+        {
+            var wanted = name.Trim();
+            foreach (var column in options.Columns)
+            {
+                if (column.Name is not null
+                    && column.Name.Trim().Equals(wanted, StringComparison.OrdinalIgnoreCase)
+                    && column.Source is { Length: 1 } own && own[0].Min == (own[0].Max ?? own[0].Min))
+                    column.DataKind = kind;
+            }
         }
     }
 

@@ -282,6 +282,8 @@ public partial class TrainingRunner
                 .Where(kv => string.Equals(kv.Value?.Trim(), "ignore", StringComparison.OrdinalIgnoreCase))
                 .Select(kv => kv.Key));
         var preserve = preserveColumns.Count > 0 ? preserveColumns : null;
+        // Columns declared `categorical` or `text` are read as text (IDataProvider.LoadData, columnKinds).
+        var declaredKinds = DeclaredTextKinds(config.ColumnOverrides);
 
         // Directory-based tasks (image classification) need a different loader than the
         // injected CSV loader. The factory keeps the tabular path byte-for-byte unchanged.
@@ -306,7 +308,7 @@ public partial class TrainingRunner
                     .Select(c => c.Name).ToList();
             }
 
-            trainSet = loader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve, featureExclusions, config.LabelKind);
+            trainSet = loader.LoadDataWithColumnKinds(config.DataFile, config.LabelColumn, config.Task, preserve, featureExclusions, config.LabelKind, declaredKinds);
             // Grab the training file's merge mapping before the test-file load overwrites it
             mergedColumnGroups = loader.GetMergedColumnGroups();
             // Read with the training file's layout: inferred from each file, a column of numbers with one word in it is numbers in one and text in the other.
@@ -316,7 +318,7 @@ public partial class TrainingRunner
         {
             // Time series: use full dataset (no random split — temporal order matters)
             // Forecasting/TS-Anomaly handle holdout internally
-            var dataView = loader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve, config.FeatureExclusions, config.LabelKind);
+            var dataView = loader.LoadDataWithColumnKinds(config.DataFile, config.LabelColumn, config.Task, preserve, config.FeatureExclusions, config.LabelKind, declaredKinds);
             trainSet = dataView;
             testSet = dataView; // same data — internal holdout handles evaluation
             mergedColumnGroups = loader.GetMergedColumnGroups();
@@ -326,7 +328,7 @@ public partial class TrainingRunner
             // Single file split in-memory: both partitions come from one load, so they share one
             // featurization by construction. The exclusion set still flows through so the saved
             // schema predict replays describes exactly what was fitted.
-            var dataView = loader.LoadData(config.DataFile, config.LabelColumn, config.Task, preserve, config.FeatureExclusions, config.LabelKind);
+            var dataView = loader.LoadDataWithColumnKinds(config.DataFile, config.LabelColumn, config.Task, preserve, config.FeatureExclusions, config.LabelKind, declaredKinds);
             // A ranking is judged per query, so a query is held out whole: a split by row leaves the held-out documents of a
             // query whose other documents were trained on, and the reported ranking score is for queries the model has seen.
             (trainSet, testSet) = GroupedSplit.Applies(config.Task, config.GroupColumn, dataView)
@@ -2524,6 +2526,16 @@ public partial class TrainingRunner
     /// any other string column is text, and numbers, booleans and numeric vectors are numeric.
     /// Columns of any other type get no role.
     /// </summary>
+    /// <summary>The columns a project declared as text or a category, each with the kind they load as.</summary>
+    public static IReadOnlyDictionary<string, DataKind>? DeclaredTextKinds(IReadOnlyDictionary<string, string>? overrides)
+    {
+        if (overrides is not { Count: > 0 }) return null;
+        var kinds = overrides
+            .Where(kv => kv.Value?.Trim().ToLowerInvariant() is "categorical" or "text")
+            .ToDictionary(kv => kv.Key, _ => DataKind.String, StringComparer.OrdinalIgnoreCase);
+        return kinds.Count > 0 ? kinds : null;
+    }
+
     public static ColumnRoles BuildColumnRoles(
         IDataView data, string labelColumn,
         Action<string>? log = null,

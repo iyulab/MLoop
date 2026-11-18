@@ -282,6 +282,41 @@ public class InfoCommandJsonTests : IDisposable
         return root;
     }
 
+    // A label that is a quantity is described by its statistics: a distribution with one entry per distinct value is as long as the file
+    // and says nothing a histogram would not (14,620 entries for a 36,584-row table, about 210,000 characters).
+    [Fact]
+    public async Task Info_Json_DescribesAContinuousLabelInsteadOfListingItsValues()
+    {
+        var rows = string.Concat(Enumerable.Range(1, 60).Select(i => $"{i},{(i * 1.37).ToString("F2", System.Globalization.CultureInfo.InvariantCulture)}\n"));
+        var path = WriteCsv("price.csv", "id,y\n" + rows);
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("info", path, "--label", "y", "--json");
+
+        Assert.Equal(0, exitCode);
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        Assert.False(doc.RootElement.TryGetProperty("labelDistribution", out _), "a continuous label has no per-value distribution");
+        var stats = doc.RootElement.GetProperty("labelStatistics");
+        Assert.Equal(60, stats.GetProperty("count").GetInt32());
+        Assert.Equal(60, stats.GetProperty("uniqueValues").GetInt32());
+        Assert.Equal(1.37, stats.GetProperty("min").GetDouble(), 2);
+        Assert.Equal(60 * 1.37, stats.GetProperty("max").GetDouble(), 2);
+    }
+
+    [Fact]
+    public async Task Info_Json_KeepsTheDistributionOfAClassLabelWrittenAsNumbers()
+    {
+        // Three classes written as 0/1/2: few values, so a list of classes, as the table of the same report calls it.
+        var rows = string.Concat(Enumerable.Range(0, 30).Select(i => $"{i},{i % 3}\n"));
+        var path = WriteCsv("classes.csv", "id,y\n" + rows);
+
+        var (exitCode, stdout, _) = await CliRunner.RunAsync("info", path, "--label", "y", "--json");
+
+        Assert.Equal(0, exitCode);
+        using var doc = System.Text.Json.JsonDocument.Parse(stdout);
+        Assert.Equal(10, doc.RootElement.GetProperty("labelDistribution").GetProperty("0").GetInt32());
+        Assert.False(doc.RootElement.TryGetProperty("labelStatistics", out _));
+    }
+
     [Fact]
     public async Task Info_ImageFolder_ReportsImagesPerClass()
     {

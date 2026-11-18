@@ -174,21 +174,46 @@ internal static class InfoPresenter
         AnsiConsole.WriteLine();
     }
 
+    /// <summary>
+    /// Whether a label reads as a quantity rather than a list of classes: more than 20 distinct values, every one of them a number. The
+    /// one rule the table below and the JSON answer by — a quantity is described by its statistics, never listed value by value.
+    /// </summary>
+    public static bool IsContinuousLabel(IReadOnlyDictionary<string, int> labelDistribution)
+    {
+        var distinct = labelDistribution.Keys.Where(k => k != "(empty)").ToList();
+        return distinct.Count > 20 && distinct.All(k => double.TryParse(k,
+            System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out _));
+    }
+
+    /// <summary>The statistics of a continuous label, from its value counts (the empty label is not a value).</summary>
+    public static LabelStatistics StatisticsOf(IReadOnlyDictionary<string, int> labelDistribution)
+    {
+        var counted = labelDistribution.Where(p => p.Key != "(empty)").ToList();
+        var values = counted
+            .SelectMany(p => Enumerable.Repeat(
+                double.Parse(p.Key, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture), p.Value))
+            .OrderBy(v => v)
+            .ToList();
+        var mean = values.Average();
+        // The sample standard deviation (n - 1), as the StdDev column of the same report says it — dividing by n made one
+        // column's two figures differ in the third digit.
+        var stdDev = values.Count > 1 ? Math.Sqrt(values.Sum(v => (v - mean) * (v - mean)) / (values.Count - 1)) : 0.0;
+        var median = values.Count % 2 == 0
+            ? (values[values.Count / 2 - 1] + values[values.Count / 2]) / 2.0
+            : values[values.Count / 2];
+        return new LabelStatistics(values.Count, counted.Count, values.First(), values.Last(), mean, median, stdDev);
+    }
+
     public static void DisplayLabelDistribution(
         Dictionary<string, int> labelDistribution,
         int lineCount)
     {
         if (labelDistribution.Count == 0) return;
 
-        // Detect regression target (many unique numeric values)
         var nonEmptyClasses = labelDistribution
             .Where(p => p.Key != "(empty)").ToList();
-        bool isLikelyRegression = nonEmptyClasses.Count > 20
-            && nonEmptyClasses.All(p => double.TryParse(p.Key,
-                System.Globalization.NumberStyles.Any,
-                System.Globalization.CultureInfo.InvariantCulture, out _));
 
-        if (isLikelyRegression)
+        if (IsContinuousLabel(labelDistribution))
         {
             DisplayRegressionLabelStats(labelDistribution, nonEmptyClasses);
         }
@@ -433,31 +458,19 @@ internal static class InfoPresenter
         AnsiConsole.Write(new Rule("[yellow]Label Statistics (Regression)[/]").LeftJustified());
         AnsiConsole.WriteLine();
 
-        var values = nonEmptyClasses
-            .SelectMany(p => Enumerable.Repeat(
-                double.Parse(p.Key, System.Globalization.CultureInfo.InvariantCulture), p.Value))
-            .OrderBy(v => v)
-            .ToList();
-
-        var mean = values.Average();
-        // The sample standard deviation (n - 1), as the StdDev column of the same report says it — dividing by n made one
-        // column's two figures differ in the third digit.
-        var stdDev = values.Count > 1 ? Math.Sqrt(values.Sum(v => (v - mean) * (v - mean)) / (values.Count - 1)) : 0.0;
-        var median = values.Count % 2 == 0
-            ? (values[values.Count / 2 - 1] + values[values.Count / 2]) / 2.0
-            : values[values.Count / 2];
+        var stats = StatisticsOf(labelDistribution);
 
         var table = new Table().Border(TableBorder.Rounded);
         table.AddColumn("Statistic");
         table.AddColumn("Value");
 
-        table.AddRow("Count", values.Count.ToString("N0"));
-        table.AddRow("Unique Values", nonEmptyClasses.Count.ToString("N0"));
-        table.AddRow("Min", values.First().ToString("F4"));
-        table.AddRow("Max", values.Last().ToString("F4"));
-        table.AddRow("Mean", mean.ToString("F4"));
-        table.AddRow("Median", median.ToString("F4"));
-        table.AddRow("Std Dev", stdDev.ToString("F4"));
+        table.AddRow("Count", stats.Count.ToString("N0"));
+        table.AddRow("Unique Values", stats.UniqueValues.ToString("N0"));
+        table.AddRow("Min", stats.Min.ToString("F4"));
+        table.AddRow("Max", stats.Max.ToString("F4"));
+        table.AddRow("Mean", stats.Mean.ToString("F4"));
+        table.AddRow("Median", stats.Median.ToString("F4"));
+        table.AddRow("Std Dev", stats.StdDev.ToString("F4"));
 
         AnsiConsole.Write(table);
         AnsiConsole.WriteLine();
@@ -569,3 +582,6 @@ internal static class InfoPresenter
 
     #endregion
 }
+
+/// <summary>What <c>info</c> says about a continuous label instead of listing its values.</summary>
+internal sealed record LabelStatistics(int Count, int UniqueValues, double Min, double Max, double Mean, double Median, double StdDev);

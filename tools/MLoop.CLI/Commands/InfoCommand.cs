@@ -818,7 +818,11 @@ public static class InfoCommand
             Analyze = analyze,
             FileInfo = fileInfo,
             Columns = columns,
-            LabelDistribution = labelDistribution,
+            // A label that is a quantity is described, not listed: one entry per distinct value of a continuous label made the answer
+            // as long as the file (14,620 entries for a 36,584-row table) and no longer a distribution of anything.
+            LabelDistribution = labelDistribution is { Count: > 0 } && InfoPresenter.IsContinuousLabel(labelDistribution) ? null : labelDistribution,
+            LabelStatistics = labelDistribution is { Count: > 0 } && InfoPresenter.IsContinuousLabel(labelDistribution)
+                ? InfoPresenter.StatisticsOf(labelDistribution) : null,
             Profile = profile,
             Analysis = analysis,
             Errors = errors,
