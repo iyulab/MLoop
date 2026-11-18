@@ -80,9 +80,7 @@ internal sealed class DataLensAnalyzer
         try
         {
             var result = await DataLensEngine.Analyze(csvPath, options);
-            foreach (var warning in result.Warnings)
-                if (AnalysisLimit(warning) is { } limit)
-                    WarningConsole.Warn(limit);
+            ReportLimits(result.Warnings);
             return result;
         }
         catch (Exception ex)
@@ -90,6 +88,18 @@ internal sealed class DataLensAnalyzer
             AnsiConsole.MarkupLine($"[yellow]DataLens analysis failed: {ex.GetType().Name}: {Markup.Escape(ex.Message)}[/]");
             return null;
         }
+    }
+
+    /// <summary>
+    /// Passes on what <see cref="AnalysisLimit"/> says about each warning. The text is DataLens's own words and names columns and values, so it goes
+    /// through as text, not markup: with a bracket in it (<c>features[4][0] is not a finite number</c>) the markup parser threw, and the
+    /// exception was caught as "DataLens analysis failed" - an analysis that had run read as one that had not, and its answer was dropped.
+    /// </summary>
+    internal static void ReportLimits(IEnumerable<AnalysisWarning> warnings)
+    {
+        foreach (var warning in warnings)
+            if (AnalysisLimit(warning) is { } limit)
+                WarningConsole.Warn($"{limit}");
     }
 
     /// <summary>

@@ -110,4 +110,14 @@ public class DataLensAnalysisLimitTests : IDisposable
     public void AFailedAnalysis_CarriesTheReasonItGave() =>
         Assert.EndsWith("engine said no",
             DataLensAnalyzer.AnalysisLimit(new AnalysisWarning("Features", WarningCategory.ComputationFailed, "engine said no")));
+
+    [Fact]
+    public void AWarningWithBracketsInIt_IsReportedAsText()
+    {
+        using var collected = WarningConsole.Collect();
+
+        DataLensAnalyzer.ReportLimits([new AnalysisWarning("FeatureImportance", WarningCategory.ComputationFailed, "features[4][0] is not a finite number")]);
+
+        Assert.Contains(collected.Warnings, w => w.EndsWith("features[4][0] is not a finite number", StringComparison.Ordinal));
+    }
 }
