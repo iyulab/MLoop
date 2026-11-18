@@ -357,7 +357,7 @@ def serve_steps(run, proj, base, task, budget, table, soak=0, bench=0):
         entries = (logs or {}).get('logs', []) if isinstance(logs, dict) else []
         run.check('serve_logs', code == 200 and len(entries) >= 5, f'code={code} entries={len(entries)}')
         if preds:
-            code, _ = http('POST', url + '/feedback', admin, {'predictionId': preds[0]['predictionId'], 'modelName': 'default',
+            code, _ = http('POST', url + '/feedback', admin, {'predictionId': preds[0]['predictionId'],
                                                              'actualValue': str(rows[0][table['label']]), 'source': 'lifecycle-check'})
         else:
             code = 0
@@ -595,9 +595,11 @@ def scenario(mloop, task, budget, keep, expected, serve, soak=0, trials=0, bench
         # column cut on only has to be flagged as significantly moved itself (the product's own threshold, PSI 0.25).
         by_column = {f.get('column'): f.get('psi', 0) for f in ranked}
         # a text column is profiled by descriptors, reported as 'review (unseen words)': the column cut on is the one named first
-        flagged = shift_col in by_column and by_column[shift_col] >= 0.25 if table['public'] else (moved or '').split(' (')[0] == shift_col
+        # (a text column reports one row per descriptor - 'review (length)', 'review (unseen words)' - and any of them may be the one that moved)
+        cut_psi = max([psi for col, psi in by_column.items() if (col or '').split(' (')[0] == shift_col], default=0)
+        flagged = cut_psi >= 0.25 if table['public'] else (moved or '').split(' (')[0] == shift_col
         run.check('drift_shifted', d.get('level') == 'Significant' and flagged,
-                  f'level={d.get("level")} most moved={moved} (cut on {shift_col}, psi {by_column.get(shift_col, 0):.2f})')
+                  f'level={d.get("level")} most moved={moved} (cut on {shift_col}, psi {cut_psi:.2f})')
 
         want = min(50, table['n_new_b'], len(preds_b))
         given = 0

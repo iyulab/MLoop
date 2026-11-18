@@ -19,6 +19,13 @@ new_b.csv (regime B), and manifest.json. Needs pandas and numpy.
   python lifecycle-tables.py --source <openml-benchmarks dir> --out <dir> [--datasets credit-g,houses] [--per-task 4] [--shape korean-export]
   python lifecycle-tables.py --synthetic wide,many-classes,spelling,duplicate-name,unique-label --out <dir>
 
+  python lifecycle-tables.py --text-corpus <file.tsv> --out <dir>      # a public review corpus (id, document, label 0/1), see text_corpus()
+
+--text-corpus cuts one tab-separated review corpus the same way: the reviews at or below the 60th percentile of their length are regime A,
+the longer ones are regime B (a part of the population the first model has barely seen) and there the label is flipped (concept shift
+injected, as for the tables). The table is written as `review`, `y` (`pos` / `neg`) so the walk reads it as a text-classification table.
+The corpus stays on the machine it is read on: the directory written holds rows of it, so it belongs in a scratch folder, never in a repository.
+
 --synthetic needs no source: it writes tables of the shapes real exports have and a small public table does not — a hundred and
 fifty columns, a label with a hundred classes, one class spelled two ways (3 and 3.00), two columns of one name, a label that is a measurement
 (every value its own). The last two are refused by training, and the manifest says so (expect: refused): the walk asserts the refusal and stops there.
@@ -287,11 +294,50 @@ def synthetic(kind, out):
     return f'synthetic-{kind}: {task} rows={manifest["rows"]} classes={k}'
 
 
+TEXT_SIZES = {'train_a': 1500, 'new_a': 300, 'train_b': 1500, 'test_b': 500, 'new_b': 300}   # text trains a fixed number of epochs: the walk's time follows the rows
+
+
+def text_corpus(path, out, name='text-corpus', task='binary'):
+    """One review corpus (tab-separated: id, document, label 0/1) cut into the walk's two regimes by the length of the review."""
+    df = pd.read_csv(path, sep='\t', quoting=3, dtype=str, keep_default_na=False)
+    df = df[(df['document'].str.strip() != '') & df['label'].isin(['0', '1'])].drop_duplicates('document').reset_index(drop=True)
+    df['review'] = df['document'].str.replace(r'\s+', ' ', regex=True).str.strip()
+    df['y'] = df['label'].map({'1': 'pos', '0': 'neg'})
+    length = df['review'].str.len()
+    at = float(length.quantile(SHIFT_QUANTILE))
+    a = df[length <= at].sample(frac=1.0, random_state=SEED)
+    b = df[length > at].sample(frac=1.0, random_state=SEED)
+    need_a = TEXT_SIZES['train_a'] + TEXT_SIZES['new_a']
+    need_b = TEXT_SIZES['train_b'] + TEXT_SIZES['test_b'] + TEXT_SIZES['new_b']
+    if len(a) < need_a or len(b) < need_b:
+        sys.exit(f'{name}: regimes of {len(a)} and {len(b)} rows; the walk needs {need_a} and {need_b}')
+    a, b = a.head(need_a), b.head(need_b)
+    b = b.assign(y=b['y'].map({'pos': 'neg', 'neg': 'pos'}))   # concept shift: the rule of regime A no longer holds in B
+    n = TEXT_SIZES
+    parts = {'new_a': a.iloc[:n['new_a']], 'train_a': a.iloc[n['new_a']:],
+             'new_b': b.iloc[:n['new_b']], 'test_b': b.iloc[n['new_b']:n['new_b'] + n['test_b']], 'train_b': b.iloc[n['new_b'] + n['test_b']:]}
+    d = os.path.join(out, name)
+    os.makedirs(d, exist_ok=True)
+    for key, part in parts.items():
+        write_part(part[['review', 'y']], os.path.join(d, key + '.csv'), 'plain')
+    learned = ['auc', 0.65] if task == 'binary' else ['macro_accuracy', 0.6]
+    manifest = {'name': name, 'task': task, 'label': 'y', 'shift_column': 'review', 'numeric_columns': [],
+                'n_new_a': n['new_a'], 'n_new_b': n['new_b'], 'learned': learned, 'shift_kind': 'length',
+                'regime_cut': at, 'rows': {key: len(part) for key, part in parts.items()}}
+    with open(os.path.join(d, 'manifest.json'), 'w') as f:
+        json.dump(manifest, f, indent=2)
+    return f'{name}: text label=y moves=review (length > {at:.0f} chars) rows={manifest["rows"]}'
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--source', default='')
     ap.add_argument('--synthetic', default='', help=f'comma-separated shapes made without a source: {", ".join(SYNTHETIC)}')
     ap.add_argument('--out', required=True)
+    ap.add_argument('--text-corpus', default='', help='a tab-separated review corpus (id, document, label 0/1) cut into regimes by review length')
+    ap.add_argument('--text-name', default='text-corpus', help='the directory (and table) name for --text-corpus')
+    ap.add_argument('--text-task', default='binary', choices=['binary', 'text'],
+                    help='binary: a tabular binary classifier whose text column is featurized by the trainer search (learns any language); text: the deep text-classification task (an English model - Korean reviews score at chance)')
     ap.add_argument('--datasets', default='')
     ap.add_argument('--per-task', type=int, default=4)
     ap.add_argument('--shape', choices=['plain', 'korean-export'], default='plain',
@@ -304,8 +350,12 @@ def main():
                 sys.exit(f'unknown shape {kind!r}: {", ".join(SYNTHETIC)}')
             print(synthetic(kind, args.out), flush=True)
         return
+    if args.text_corpus:
+        os.makedirs(args.out, exist_ok=True)
+        print(text_corpus(args.text_corpus, args.out, args.text_name, args.text_task), flush=True)
+        return
     if not args.source:
-        sys.exit('--source or --synthetic is required')
+        sys.exit('--source, --synthetic or --text-corpus is required')
     rows = load_manifest(args.source)
     if args.datasets:
         wanted = set(args.datasets.split(','))
