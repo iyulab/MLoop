@@ -644,6 +644,10 @@ mloop list --all
 # Metric is r_squared (↑ higher is better) — listed newest first, not ranked.
 ```
 
+The `Metric` column is the task's primary metric (accuracy for a classification task, `r_squared` for regression), the one `list`, `status` and the
+promotion comparison read. It is not always the metric the search maximized: `--metric auto` searches by AUC for a binary task, so a binary run's
+trial lines say `auc=…` while this column says accuracy. Both numbers are in the training output and the experiment's `report.md`.
+
 ### `mloop promote`
 
 Manually promote an experiment to production — the only promotion target; an unpromoted experiment

@@ -29,6 +29,7 @@ public class CsvDataLoader : DataProviderBase, Contracts.IDataProvider
     // The layout the last load read its file with, and the columns it read - what the next load shares when it is asked to.
     private (TextLoader.Options Options, string[] Headers)? _lastLayout;
     private bool _shareLayout;
+    private readonly HashSet<string> _announcedOnce = new(StringComparer.Ordinal);
 
     public CsvDataLoader(MLContext mlContext, Action<string>? log = null)
         : base(mlContext, log)
@@ -1461,7 +1462,9 @@ public class CsvDataLoader : DataProviderBase, Contracts.IDataProvider
             return dataView; // Not binary, return as-is
         }
 
-        _log($"[Info] Converting label: '{vocabulary.Negative}' → False, '{vocabulary.Positive}' → True");
+        // One loader reads both partitions of a run: the statement is about the file's label, so it is made once.
+        if (_announcedOnce.Add($"label|{vocabulary.Negative}|{vocabulary.Positive}"))
+            _log($"[Info] Converting label: '{vocabulary.Negative}' → False, '{vocabulary.Positive}' → True");
 
         // Build lookup IDataView for MapValue transform
         var lookupData = _mlContext.Data.LoadFromEnumerable(new[]
