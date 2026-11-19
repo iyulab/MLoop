@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.52.0] - 2026-11-19
+
 ### Changed
 
 - **A `403` names the route the caller reached.** The hint listed the endpoints that want the admin role, written by hand, and it had already fallen behind (the dataset uploads and deletes, among others, were not in it). It now starts with the method and route pattern — `POST /datasets needs the admin role` — taken from the route itself, so a new admin endpoint is right without anyone editing a list.
