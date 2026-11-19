@@ -136,7 +136,18 @@ to your `PATH` (on Windows: *Edit environment variables for your account* → `P
 
 **Standalone Binary**:
 
-Download from [GitHub Releases](https://github.com/iyulab/MLoop/releases) and place in your PATH.
+Download from [GitHub Releases](https://github.com/iyulab/MLoop/releases) and place in your PATH. Like the tool, the binary is one
+file that reuses the .NET runtime already installed on the machine (it does not carry its own). The latest release's file has a fixed address:
+
+```powershell
+# Windows (PowerShell) — into a folder of your choice, then run it by its path
+Invoke-WebRequest https://github.com/iyulab/MLoop/releases/latest/download/mloop-win-x64.exe -OutFile "$HOME\tools\mloop.exe"
+```
+
+```bash
+# Linux · macOS
+curl -fL https://github.com/iyulab/MLoop/releases/latest/download/mloop-linux-x64 -o mloop && chmod +x mloop
+```
 
 | Platform | Binary |
 |----------|--------|

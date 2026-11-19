@@ -1748,7 +1748,7 @@ metrics` and `mloop trigger check` measure the model with, and what a retraining
 ```bash
 mloop feedback add --prediction-id 2869808376524814 --actual-value no --source reviewer-llm -w 4   # the actual value, where it came from, its weight
 mloop feedback add --from-file labels.csv                                                           # many predictions at once, from a table
-mloop feedback list [--name <model>] [--json]
+mloop feedback list [--name <model>] [--limit N] [--json]            # 20 entries unless --limit says more
 mloop feedback metrics [--name <model>] [--json]
 ```
 
@@ -1776,6 +1776,7 @@ f530d218bd8447c7,no,reviewer-llm,4
 ```bash
 mloop predict datasets/new.csv --log --json > answers.json       # the answers, each with its predictionId
 jq -r '.predictions[].predictionId' answers.json                    # the ids, in the order of the rows of datasets/new.csv
+                                                                    # Windows PowerShell, without jq: (Get-Content answers.json -Raw | ConvertFrom-Json).predictions.predictionId
 mloop feedback add --from-file labels.csv                           # once the actual values are known
 ```
 

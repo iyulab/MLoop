@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Changed
+
+- **The README and GUIDE carry a Windows reader the whole way.** The standalone-binary section says the binary reuses the installed .NET runtime and gives the release file's fixed address (a PowerShell and a shell line); the feedback-from-a-file recipe has a PowerShell line for the ids where it used `jq`; `feedback list` shows its `--limit` (20 by default).
+
 ## [0.52.0] - 2026-11-19
 
 ### Changed

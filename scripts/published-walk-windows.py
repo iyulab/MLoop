@@ -21,8 +21,9 @@ command in Windows PowerShell with the command text carried as an encoded script
 
 The reader's own folders: `data` (the tables), `docs` (the README and guides), `work` (where a project is made), and with `--ko-folder` a
 folder with a Korean name that holds the CP949 spreadsheet tables, and `with space` (a folder whose name has a space, for the standalone
-binary). Everything a round creates sits under `%USERPROFILE%\\mloop-walk`; `down` removes that folder and runs
-`dotnet tool uninstall --global mloop` (a global tool installed by the round), and nothing else on the machine is changed.
+binary). Everything a round creates sits under `%USERPROFILE%\\mloop-walk`; `down` removes that folder and, when the round installed it,
+the global tool (`dotnet tool uninstall --global mloop`; a machine that had the tool before `up` keeps it, and the reader then installs into
+a `--tool-path` of its own under that folder and runs it by its path), and nothing else on the machine is changed.
 """
 import argparse
 import base64
@@ -121,7 +122,10 @@ def up(args):
                 z.write(os.path.join(folder, name), prefix + name)
     b64 = base64.b64encode(buffer.getvalue()).decode("ascii")
     m = args.machine
+    # A machine that already has the tool for its own use keeps it: `down` removes a global tool only when the round put it there.
+    had_tool = execute(m, "dotnet tool list --global | findstr /b /i mloop", 60).get("exit_code") == 0
     must(m, "rmdir /s /q \"%s\" 2>nul & mkdir \"%s\\work\" & mkdir \"%s\\with space\"" % (ROOT, ROOT, ROOT), "making the work folder")
+    must(m, "echo %s>\"%s\\global-tool-before.txt\"" % ("yes" if had_tool else "no", ROOT), "noting the tool already on the machine")
     chunk = 6000  # a cmd.exe command line holds 8191 characters
     for i in range(0, len(b64), chunk):
         must(m, "echo %s>>\"%s\\in.b64\"" % (b64[i:i + chunk], ROOT), "sending a part of the tables")
@@ -145,7 +149,12 @@ def git(args, binary=False):
 
 def down(args):
     m = args.machine
-    show(execute(m, "dotnet tool uninstall --global mloop 2>&1 & taskkill /f /im mloop.exe 2>nul & taskkill /f /im MLoop.API.exe 2>nul & cd /d %USERPROFILE% & rmdir /s /q mloop-walk & echo removed", 120))
+    # Only the processes started from the round's folder are stopped, and the global tool is removed only if the round installed it.
+    before = execute(m, "type \"%s\\global-tool-before.txt\"" % ROOT, 60)
+    keep_tool = "yes" in (before.get("stdout") or "")
+    stop = ("powershell -NoProfile -Command \"Get-Process | Where-Object { $_.Path -like '*\\mloop-walk\\*' } | Stop-Process -Force\"")
+    uninstall = "echo kept: the machine had the tool before the round" if keep_tool else "dotnet tool uninstall --global mloop 2>&1"
+    show(execute(m, "%s & %s & cd /d %%USERPROFILE%% & rmdir /s /q mloop-walk & echo removed" % (stop, uninstall), 120))
     shutil.rmtree(WORK, ignore_errors=True)
 
 
