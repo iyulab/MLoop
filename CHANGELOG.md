@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Changed
 
 - **The README and GUIDE carry a Windows reader the whole way.** The standalone-binary section says the binary reuses the installed .NET runtime and gives the release file's fixed address (a PowerShell and a shell line); the Installation text names the step for a .NET runtime the launcher cannot find (`DOTNET_ROOT`, as with a per-user install); the feedback-from-a-file recipe has a PowerShell line for the ids where it used `jq`; `feedback list` shows its `--limit` (20 by default).
+- **The GUIDE shows what the text tasks scored on public corpora.** A new section under «Text tasks and language» lists held-out scores for NER (Few-NERD, KLUE-NER), question answering (SQuAD 1.1), sentence similarity (KLUE-STS) and text classification (KLUE-YNAT, NSMC), each with its training size and the path it ran on, credits the corpora, and says that every figure is one local run — including the two that sit at chance or at the all-`O` baseline, which is what the warnings about Korean text on the transformer path predict.
 
 ## [0.52.0] - 2026-11-19
 
