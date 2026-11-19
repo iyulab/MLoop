@@ -97,6 +97,8 @@ public static class DriftEvaluator
         await using (var stream = File.OpenRead(profilePath))
             profile = await JsonSerializer.DeserializeAsync<DriftProfile>(stream, Options, cancellationToken).ConfigureAwait(false)
                       ?? throw new JsonException($"{profilePath} holds no profile.");
+        // A text model's profile written before text tasks left their tables' other columns out still lists them — read it as the model does.
+        profile = profile.ReadAs(metadata.Task);
 
         // Only what this model answered: another experiment's predictions describe another model's traffic.
         var entries = (await logs.GetLogsAsync(modelName, limit: Math.Max(windowRows, 1) * 2, cancellationToken: cancellationToken).ConfigureAwait(false))

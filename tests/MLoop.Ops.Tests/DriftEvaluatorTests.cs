@@ -57,6 +57,36 @@ public class DriftEvaluatorTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task ATextModelsProfileThatListsANumericColumnOfItsTrainingTable_DoesNotReadTheTrafficsAbsenceOfItAsDrift()
+    {
+        // A question-answering table's answer position, profiled before text tasks left such columns out: the traffic never carries it.
+        Promote("exp-001", task: "question-answering");
+        for (var i = 0; i < DriftEvaluator.MinimumRows; i++)
+            await _logs.LogPredictionAsync("m", "exp-001", new Dictionary<string, object> { ["context"] = "Bob works at Acme.", ["question"] = "Who?" }, "Bob");
+
+        var check = await DriftEvaluator.CheckAsync(_root, _logs, "m");
+
+        check.Status.Should().Be(DriftCheckStatus.Measured);
+        check.Report!.Judged.Should().BeEmpty("the only profiled column is not an input of a text model");
+        check.Message.Should().Contain("No profiled feature to compare");
+    }
+
+    [Fact]
+    public async Task ATableModelsMissingColumnInTheTraffic_StillReadsAsTheLargestDrift()
+    {
+        // The same profile and the same traffic for a model that does read feature columns: the column vanished, and that is drift.
+        Promote("exp-001", task: "binary-classification");
+        for (var i = 0; i < DriftEvaluator.MinimumRows; i++)
+            await _logs.LogPredictionAsync("m", "exp-001", new Dictionary<string, object> { ["context"] = "Bob works at Acme." }, "yes");
+
+        var check = await DriftEvaluator.CheckAsync(_root, _logs, "m");
+
+        check.Status.Should().Be(DriftCheckStatus.Measured);
+        check.Report!.Judged.Should().NotBeEmpty();
+        check.Report.Level.Should().Be(DriftLevel.Significant);
+    }
+
     [Theory]
     [InlineData(100, true)]
     [InlineData(150, false)]

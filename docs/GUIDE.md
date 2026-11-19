@@ -1885,7 +1885,7 @@ reported as two more columns: `<column> (length)` (characters, by decile) and `<
 (the share of each value's words that training never saw — none, up to 10 %, 25 %, 50 %, 75 %, more).
 The second is the one that moves when the text is about something new; it is measured against
 training rows the vocabulary was not built from, so ordinary new text reads as stable. In a simulation of 300-row windows against 5,000 training rows, a window in which one word in ten is new read as moderate drift or worse every time, and one in twenty most of the time (less when the vocabulary is far larger than the training text), while windows with nothing changed almost never did. Words are runs
-of letters and digits; Chinese, Japanese and Thai characters count one by one.
+of letters and digits; Chinese, Japanese and Thai characters count one by one. A text task (text classification, sentence similarity, NER, question answering) reads its text columns and nothing else, so only those are profiled — a number in its training table, such as a question-answering table's answer position, is not an input and is never compared.
 
 ```bash
 mloop drift                         # the most recent 5,000 logged predictions

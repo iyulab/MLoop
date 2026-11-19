@@ -1056,7 +1056,7 @@ public class TrainingEngine : ITrainingEngine
                 CapturedAt = inputSchema.CapturedAt,
                 Columns = [.. inputSchema.Columns.Where(c => !identifiers.Contains(c.Name, StringComparer.OrdinalIgnoreCase))],
             };
-            var profile = MLoop.Core.Monitoring.DriftProfile.Of(sample, profiled)
+            var profile = MLoop.Core.Monitoring.DriftProfile.Of(sample, profiled).ReadAs(config.Task)
                 with
             { Prediction = AnswerProfile(sample, inputSchema, config, modelPath) };
             if (profile.Features.Count == 0 && profile.Texts is not { Count: > 0 } && profile.Prediction is null)

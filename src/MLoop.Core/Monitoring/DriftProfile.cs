@@ -63,6 +63,17 @@ public sealed record DriftProfile
         => TaskTypes.Canonical(task) is "text-classification" or "sentence-similarity" or "ner" or "question-answering";
 
     /// <summary>
+    /// This profile as a model of <paramref name="task"/> reads its inputs. A text task reads its text columns and no other
+    /// (<see cref="ProfilesTableText"/>): a number in its training table — a question-answering table's answer position — is the
+    /// label's companion, not an input, and the traffic never carries it, so a profile that kept it read as the largest drift there
+    /// is on every window ("PSI 11.6, 0 % → 100 % missing") and the retraining trigger fired for good. Written by training (so a
+    /// new profile never holds such a column) and applied when a profile is read (so one written before this rule stops alarming
+    /// without a retraining).
+    /// </summary>
+    public DriftProfile ReadAs(string? task)
+        => ProfilesTableText(task) && Features.Count > 0 ? this with { Features = [] } : this;
+
+    /// <summary>
     /// Whether training records a drift profile for <paramref name="task"/> at all — the one place that says it: a model that reads
     /// feature columns, or the free text of a text task. A recommendation, series or object-detection model never has one, so
     /// "retrain to start measuring drift" is advice that starts nothing for it.
