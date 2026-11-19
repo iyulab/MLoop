@@ -1,3 +1,4 @@
+using MLoop.Core.Evaluation;
 using MLoop.DataStore.Interfaces;
 using MLoop.Ops.Interfaces;
 
@@ -11,16 +12,22 @@ public sealed class FeedbackBasedTrigger : IRetrainingTrigger
 {
     private readonly IFeedbackCollector _feedbackCollector;
     private readonly Func<string, CancellationToken, Task<string?>>? _productionExperiment;
+    private readonly Func<string, CancellationToken, Task<string?>>? _productionTask;
 
     /// <param name="feedbackCollector">Where feedback is read.</param>
     /// <param name="productionExperiment">The experiment in production for a model name, or null when none is —
     /// accuracy is then judged on that experiment's answers alone. Without it, on every answer under the name.</param>
+    /// <param name="productionTask">The task of the model in production (<c>similarity</c>, <c>regression</c>, …), or null when
+    /// unknown. A task whose answer is a value (<see cref="TaskMetadata.AnswersAreValues"/>) has no accuracy for an answer that
+    /// stated no interval — "the same value" is not a measure of it — and the condition says so instead of asking for retraining.</param>
     public FeedbackBasedTrigger(
         IFeedbackCollector feedbackCollector,
-        Func<string, CancellationToken, Task<string?>>? productionExperiment = null)
+        Func<string, CancellationToken, Task<string?>>? productionExperiment = null,
+        Func<string, CancellationToken, Task<string?>>? productionTask = null)
     {
         _feedbackCollector = feedbackCollector ?? throw new ArgumentNullException(nameof(feedbackCollector));
         _productionExperiment = productionExperiment;
+        _productionTask = productionTask;
     }
 
     /// <inheritdoc />
@@ -35,14 +42,18 @@ public sealed class FeedbackBasedTrigger : IRetrainingTrigger
         var experimentId = _productionExperiment is null
             ? null
             : await _productionExperiment(modelName, cancellationToken).ConfigureAwait(false);
+        var task = _productionTask is null
+            ? null
+            : await _productionTask(modelName, cancellationToken).ConfigureAwait(false);
+        var valueAnswers = TaskMetadata.AnswersAreValues(task);
         var metrics = await _feedbackCollector.CalculateMetricsAsync(
-            modelName, cancellationToken: cancellationToken, experimentId: experimentId).ConfigureAwait(false);
+            modelName, cancellationToken: cancellationToken, experimentId: experimentId, valueAnswers: valueAnswers).ConfigureAwait(false);
 
         foreach (var condition in conditions)
         {
             var result = condition.Type switch
             {
-                ConditionType.AccuracyDrop => EvaluateAccuracyDrop(condition, metrics),
+                ConditionType.AccuracyDrop => EvaluateAccuracyDrop(condition, metrics, valueAnswers ? task : null),
                 ConditionType.FeedbackVolume => EvaluateFeedbackVolume(condition, metrics),
                 ConditionType.IntervalCoverage => EvaluateIntervalCoverage(condition, metrics),
                 _ => CreateUnsupportedResult(condition)
@@ -79,10 +90,20 @@ public sealed class FeedbackBasedTrigger : IRetrainingTrigger
 
     private static ConditionResult EvaluateAccuracyDrop(
         RetrainingCondition condition,
-        FeedbackMetrics metrics)
+        FeedbackMetrics metrics,
+        string? valueTask)
     {
         if (!metrics.Accuracy.HasValue)
         {
+            // A value answer that stated no interval has no accuracy to drop — say why, so an empty reading is not taken for
+            // "no feedback" and the user is pointed at what does judge a value: an interval, or `evaluate` on labeled rows.
+            if (valueTask is not null && metrics.TotalFeedback > 0 && metrics.IntervalCoverage is null)
+                return new ConditionResult(
+                    condition,
+                    IsMet: false,
+                    CurrentValue: null,
+                    Details: $"Accuracy does not apply: this {valueTask} model answers a value and its predictions stated no interval, so \"the same value\" judges none of the {metrics.TotalFeedback} feedback entries" + Scope(metrics) +
+                             " — `mloop evaluate` on labeled rows is how to judge it");
             // Feedback that is all read as interval coverage has no accuracy to drop: say so, not that none was collected.
             return new ConditionResult(
                 condition,

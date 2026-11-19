@@ -1813,6 +1813,12 @@ of the same model that was answered without an interval — logged before interv
 "below the stated level" line appears only when the best case of the share is below it. The value-match `accuracy` is `null`
 for these predictions: two numbers are never equal, so it said `0 %` for every regression.
 
+A model whose task answers a value but states **no** interval — sentence similarity — has no accuracy either: `feedback metrics`
+prints `Accuracy: N/A (this model answers a value and its predictions stated no interval …)`, `accuracy` is `null`, `feedback list`
+shows `no interval` in the Match column, and `trigger check` reports `Accuracy does not apply` instead of asking for retraining.
+Its feedback is kept (it counts in `totalFeedback` and in the retraining sets); to judge the model on it, run `mloop evaluate` on rows
+whose true value you know.
+
 Coverage is a check on the model, not a gate: nothing is promoted or refused by it. `mloop trigger check` reads it as a
 retraining condition (`interval_coverage` — below the stated level less 5 points, established on at least 30 rows, as an
 accuracy drop is) and, for feedback that has no accuracy, says why its accuracy row shows `-`. When it stays well under the stated level

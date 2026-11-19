@@ -241,4 +241,39 @@ public class IntervalCoverageTests : IDisposable
         metrics.IntervalCoverage.Should().BeNull();
         metrics.Accuracy.Should().Be(1.0);
     }
+
+    [Fact]
+    public async Task AValueAnswerThatStatedNoIntervalHasNoAccuracyWhenTheModelAnswersValues()
+    {
+        // 40 answers each 0.1 from the truth — a good model; "the same value" reads every one wrong.
+        for (var i = 0; i < 40; i++)
+            await _collector.RecordFeedbackAsync(await Log(4.5, interval: null), 4.6);
+
+        var asValues = await _collector.CalculateMetricsAsync("m", valueAnswers: true);
+        var asClasses = await _collector.CalculateMetricsAsync("m");
+
+        Assert.Equal(40, asValues.TotalFeedback);
+        Assert.Null(asValues.Accuracy);
+        Assert.Null(asValues.EffectiveSampleSize);
+        Assert.Null(asValues.IntervalCoverage);
+        // The reading every other model keeps: a numeric class label is matched, not read near.
+        Assert.Equal(0.0, asClasses.Accuracy);
+    }
+
+    [Fact]
+    public async Task ValueAnswersThatStatedAnIntervalStillReadAsCoverageAndTheOnesThatDidNotAreCountedAsUnjudged()
+    {
+        for (var i = 0; i < 10; i++)
+            await _collector.RecordFeedbackAsync(await Log(15.0, Ten20), 15.0);   // inside [10, 20]
+        for (var i = 0; i < 5; i++)
+            await _collector.RecordFeedbackAsync(await Log(15.0, interval: null), 15.2);
+
+        var metrics = await _collector.CalculateMetricsAsync("m", valueAnswers: true);
+
+        Assert.Null(metrics.Accuracy);
+        Assert.NotNull(metrics.IntervalCoverage);
+        Assert.Equal(10, metrics.IntervalCoverage!.N);
+        Assert.Equal(5, metrics.IntervalCoverage.Unjudged);
+        Assert.Equal(15, metrics.TotalFeedback);
+    }
 }

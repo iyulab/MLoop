@@ -403,6 +403,50 @@ public class FeedbackBasedTriggerTests : IDisposable
         result.ConditionResults[0].Details.Should().NotContain("answers;");
     }
 
+    /// <summary>40 answers of a number, each 0.1 from the truth the feedback names — a good similarity model — none stating an interval.</summary>
+    private async Task NearMissValueScenario(string model)
+    {
+        for (var i = 0; i < 40; i++)
+        {
+            var id = PredictionIds.New();
+            await _logger.LogBatchAsync(model, "exp-001",
+            [
+                new PredictionLogEntry(model, "exp-001", new Dictionary<string, object> { ["a"] = i }, 4.5, null, DateTimeOffset.UtcNow, id),
+            ]);
+            await _feedbackCollector.RecordFeedbackAsync(id, 4.6);
+        }
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_AccuracyDrop_DoesNotAskForRetrainingBecauseAValueIsNeverTheSameValue()
+    {
+        await NearMissValueScenario("sim-model");
+        var trigger = new FeedbackBasedTrigger(_feedbackCollector,
+            (_, _) => Task.FromResult<string?>("exp-001"), (_, _) => Task.FromResult<string?>("sentence-similarity"));
+
+        var result = await trigger.EvaluateAsync("sim-model", [RetrainingDefaults.Accuracy()]);
+
+        result.ShouldRetrain.Should().BeFalse("answers 0.1 from the truth are not wrong because they differ from it in the fifth decimal");
+        result.ConditionResults[0].IsMet.Should().BeFalse();
+        result.ConditionResults[0].CurrentValue.Should().BeNull();
+        result.ConditionResults[0].Details.Should().Contain("Accuracy does not apply").And.Contain("sentence-similarity")
+            .And.Contain("40 feedback entries").And.Contain("mloop evaluate");
+    }
+
+    [Fact]
+    public async Task EvaluateAsync_AccuracyDrop_StillMatchesTheAnswersOfAnyOtherTask()
+    {
+        // The same numbers under a classification task are class labels: 0 % of 40 is an established drop, as it has always been.
+        await NearMissValueScenario("cls-model");
+        var trigger = new FeedbackBasedTrigger(_feedbackCollector,
+            (_, _) => Task.FromResult<string?>("exp-001"), (_, _) => Task.FromResult<string?>("multiclass-classification"));
+
+        var result = await trigger.EvaluateAsync("cls-model", [RetrainingDefaults.Accuracy()]);
+
+        result.ShouldRetrain.Should().BeTrue();
+        result.ConditionResults[0].CurrentValue.Should().Be(0.0);
+    }
+
     private async Task CreateFeedbackScenario(string modelName, int correctCount, int wrongCount, string experimentId = "exp-001")
     {
         var predictions = new List<string>();

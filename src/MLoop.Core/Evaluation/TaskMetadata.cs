@@ -80,6 +80,25 @@ public static class TaskMetadata
     public static string PrimaryMetricOrAuto(string? task) => PrimaryMetric(task) ?? "auto";
 
     /// <summary>
+    /// The tasks whose answer is a number on a scale — what a user's feedback can only be <i>near</i>, never <i>the same as</i>:
+    /// a regression target, a similarity score, a forecast, a predicted rating, a rank score. The classes, tags and answer
+    /// texts of the other tasks are matched; these are judged by an interval the answer states or by an error, and a
+    /// numeric <i>class</i> label (<c>1</c> / <c>2</c>) belongs to a classification task, not here.
+    /// </summary>
+    private static readonly HashSet<string> ValueTasks = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "regression", "sentence-similarity", "forecasting", "recommendation", "ranking",
+    };
+
+    /// <summary>
+    /// Whether <paramref name="task"/> answers with a value (see above) — the one place that says so. Feedback accuracy
+    /// reads "the same value" for everything else; for these it is not a measure (≈ 0 for every model, however good),
+    /// so a value answer that states no interval has no accuracy. Trimmed, case-insensitive; an unknown task or none is
+    /// <c>false</c>, which keeps the reading it has always had.
+    /// </summary>
+    public static bool AnswersAreValues(string? task) => task is not null && ValueTasks.Contains(task.Trim());
+
+    /// <summary>
     /// All distinct canonical primary metrics across tasks. Metric allowlists (e.g. validate)
     /// union this so adding a task can never again leave them out of sync.
     /// </summary>

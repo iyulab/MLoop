@@ -100,4 +100,61 @@ public sealed class FeedbackIntervalCoverageTests : IClassFixture<EveryCommandRu
         Assert.Contains(json.EnumerateArray(), e => e.GetProperty("interval").ValueKind == JsonValueKind.Object
             && e.GetProperty("interval").GetProperty("confidence").GetDouble() == 0.9);
     }
+
+    /// <summary>The logs a similarity model writes: a number answer and no interval on the line; a promoted model of the given task.</summary>
+    private string SeedValueLogWithoutInterval(string model, string? task, int count)
+    {
+        var dir = Path.Combine(_project.Root, ".mloop", "logs", model);
+        Directory.CreateDirectory(dir);
+        var lines = new List<string>();
+        var rows = new List<string>();
+        for (var i = 0; i < count; i++)
+        {
+            var id = $"val{i:D4}x{Guid.NewGuid():N}"[..16];
+            lines.Add(JsonSerializer.Serialize(new { id, modelName = model, experimentId = "exp-001", input = new { x = i }, output = 4.5, timestamp = "2026-11-01T00:00:00+00:00" }));
+            rows.Add($"{id},4.6");
+        }
+        File.WriteAllLines(Path.Combine(dir, "2026-11-01.jsonl"), lines);
+        if (task is not null)
+        {
+            var production = Path.Combine(_project.Root, "models", model, "production");
+            Directory.CreateDirectory(production);
+            File.WriteAllText(Path.Combine(production, "metadata.json"),
+                JsonSerializer.Serialize(new { modelName = model, experimentId = "exp-001", task }), new UTF8Encoding(false));
+        }
+        var file = $"val-{model}.csv";
+        File.WriteAllText(Path.Combine(_project.Root, file), "prediction_id,actual\n" + string.Join('\n', rows) + "\n", new UTF8Encoding(false));
+        return file;
+    }
+
+    [Fact]
+    public async Task AValueModelThatStatedNoIntervalHasNoAccuracyAndTheTableAndTheListSayWhy()
+    {
+        var file = SeedValueLogWithoutInterval("valmodel", "sentence-similarity", 40);
+        Assert.Equal(0, (await _project.RunAsync("feedback", "add", "--from-file", file, "--json")).Exit);
+
+        var json = (await _project.RunAsync("feedback", "metrics", "--name", "valmodel", "--json")).Json();
+        Assert.Equal(40, json.GetProperty("totalFeedback").GetInt32());
+        Assert.Equal(JsonValueKind.Null, json.GetProperty("accuracy").ValueKind);
+
+        var table = await _project.RunAsync("feedback", "metrics", "--name", "valmodel");
+        Assert.Contains("answers a value", table.Out, StringComparison.Ordinal);
+        Assert.Contains("mloop evaluate", table.Out, StringComparison.Ordinal);
+
+        var list = await _project.RunAsync("feedback", "list", "--name", "valmodel", "--limit", "5");
+        Assert.Contains("no interval", list.Out, StringComparison.Ordinal);
+        Assert.DoesNotContain("✗", list.Out, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheSameFeedbackWithoutAValueTaskIsMatchedAsItAlwaysWas()
+    {
+        // No promoted model, so no task to read: a numeric class label is matched, and 4.5 against 4.6 is wrong.
+        var file = SeedValueLogWithoutInterval("valnotask", null, 40);
+        Assert.Equal(0, (await _project.RunAsync("feedback", "add", "--from-file", file, "--json")).Exit);
+
+        var json = (await _project.RunAsync("feedback", "metrics", "--name", "valnotask", "--json")).Json();
+
+        Assert.Equal(0.0, json.GetProperty("accuracy").GetDouble());
+    }
 }

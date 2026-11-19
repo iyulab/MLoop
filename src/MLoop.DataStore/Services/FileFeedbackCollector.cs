@@ -195,7 +195,8 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
         DateTimeOffset? from = null,
         DateTimeOffset? to = null,
         CancellationToken cancellationToken = default,
-        string? experimentId = null)
+        string? experimentId = null,
+        bool valueAnswers = false)
     {
         var feedback = await GetFeedbackAsync(modelName, from, to, int.MaxValue, cancellationToken).ConfigureAwait(false);
         // One model's accuracy: the answers of the experiment named, not of whatever answered under the model name
@@ -229,12 +230,18 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
         // accuracy and read as coverage. Everything else is read as before.
         var judged = new List<(FeedbackEntry Entry, bool Inside)>();
         var matched = new List<FeedbackEntry>();
+        var leftOut = 0;
         foreach (var entry in feedback)
         {
             if (FeedbackValueComparer.InsideInterval(entry.Interval, entry.ActualValue) is { } inside)
                 judged.Add((entry, inside));
-            else
+            else if (!valueAnswers)
                 matched.Add(entry);
+            else
+                // A value answer that stated no interval: its feedback is kept (it counts in TotalFeedback and feeds the retraining
+                // sets) but there is nothing to read it by — "the same value" judged a similarity model with R² 0.94 at 0 %, and the
+                // retraining trigger asked for a new model for good.
+                leftOut++;
         }
 
         // Each prediction counts by its weight: a sample reviewed with unequal probabilities misstates
@@ -261,7 +268,7 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
             EffectiveSampleSize: effectiveSize,
             ExperimentId: experimentId,
             UnattributedFeedback: unattributed,
-            IntervalCoverage: CoverageOf(judged, unjudged: matched.Count));
+            IntervalCoverage: CoverageOf(judged, unjudged: matched.Count + leftOut));
     }
 
     /// <summary>

@@ -8,6 +8,7 @@ using MLoop.CLI.Infrastructure.Diagnostics;
 using MLoop.CLI.Infrastructure.Display;
 using MLoop.CLI.Infrastructure.FileSystem;
 using MLoop.Core.Data;
+using MLoop.Core.Evaluation;
 using MLoop.Core.Storage;
 using MLoop.DataStore.Interfaces;
 using MLoop.DataStore.Services;
@@ -557,7 +558,7 @@ public static class FeedbackCommand
             }
             else
             {
-                OutputListAsTable(feedback, modelName);
+                OutputListAsTable(feedback, modelName, await ProductionValueTaskAsync(projectRoot, modelName));
             }
 
             return 0;
@@ -589,10 +590,14 @@ public static class FeedbackCommand
 
             var (fromOffset, toOffset) = DateRangeFilter.ToFilterRange(from, to);
 
+            // A model that answers a value has no accuracy for an answer that stated no interval ("the same value" is not a
+            // measure of one) — the same reading `trigger check` has, from the same task (TaskMetadata.AnswersAreValues).
+            var valueTask = await ProductionValueTaskAsync(projectRoot, modelName);
             var metrics = await collector.CalculateMetricsAsync(
                 MLoop.Core.Storage.ModelName.Require(modelName),
                 fromOffset,
-                toOffset);
+                toOffset,
+                valueAnswers: valueTask is not null);
 
             // Empty is an ordinary state; --json still owes the caller a payload, not prose.
             if (metrics.TotalFeedback == 0 && !jsonOutput)
@@ -608,7 +613,7 @@ public static class FeedbackCommand
             }
             else
             {
-                OutputMetricsAsPanel(metrics);
+                OutputMetricsAsPanel(metrics, valueTask);
             }
 
             return 0;
@@ -618,6 +623,18 @@ public static class FeedbackCommand
             ErrorSuggestions.DisplayError(ex, "feedback");
             return 1;
         }
+    }
+
+    /// <summary>
+    /// The task of the model in production when it answers a value (<see cref="TaskMetadata.AnswersAreValues"/>), else null — also null
+    /// when nothing is promoted or the file cannot be read: feedback is readable without a production model, and its metrics keep the
+    /// reading they have always had then.
+    /// </summary>
+    private static async Task<string?> ProductionValueTaskAsync(string projectRoot, string modelName)
+    {
+        var (production, _) = await ProductionMetadata.TryReadAsync(
+            Path.Combine(projectRoot, ExperimentLayout.ModelsDirectory, MLoop.Core.Storage.ModelName.Require(modelName), ExperimentLayout.ProductionDirectory));
+        return TaskMetadata.AnswersAreValues(production?.Task) ? production!.Task : null;
     }
 
     private static string? FindProjectRoot()
@@ -662,7 +679,7 @@ public static class FeedbackCommand
         Console.WriteLine(JsonSerializer.Serialize(output, options));
     }
 
-    private static void OutputListAsTable(IReadOnlyList<FeedbackEntry> feedback, string modelName)
+    private static void OutputListAsTable(IReadOnlyList<FeedbackEntry> feedback, string modelName, string? valueTask = null)
     {
         AnsiConsole.Write(new Rule($"[cyan]Feedback - {modelName}[/]").LeftJustified());
         AnsiConsole.WriteLine();
@@ -688,6 +705,8 @@ public static class FeedbackCommand
             {
                 true => "[green]✓[/] [grey]inside[/]",
                 false => "[red]✗[/] [grey]outside[/]",
+                // A value that stated no interval is not "the same value" or not either: nothing judges it here.
+                null when valueTask is not null => "[grey]–[/] [grey]no interval[/]",
                 null => FeedbackValueComparer.ValuesMatch(entry.PredictedValue, entry.ActualValue) ? "[green]✓[/]" : "[red]✗[/]",
             };
 
@@ -751,7 +770,7 @@ public static class FeedbackCommand
             grid.AddRow("[grey]Not judged by an interval:[/]", $"[white]{coverage.Unjudged}[/] [grey](answered without an interval — logged before intervals were kept, or by a model that states none — or with an actual value that is not a number)[/]");
     }
 
-    private static void OutputMetricsAsPanel(FeedbackMetrics metrics)
+    private static void OutputMetricsAsPanel(FeedbackMetrics metrics, string? valueTask = null)
     {
         AnsiConsole.Write(new Rule($"[cyan]Feedback Metrics - {metrics.ModelName}[/]").LeftJustified());
         AnsiConsole.WriteLine();
@@ -774,9 +793,11 @@ public static class FeedbackCommand
         }
         else
         {
-            grid.AddRow("[grey]Accuracy:[/]", metrics.IntervalCoverage is null
-                ? "[grey]N/A[/]"
-                : "[grey]N/A (a value answer is judged by its interval, below)[/]");
+            grid.AddRow("[grey]Accuracy:[/]", metrics.IntervalCoverage is not null
+                ? "[grey]N/A (a value answer is judged by its interval, below)[/]"
+                : valueTask is not null && metrics.TotalFeedback > 0
+                    ? "[grey]N/A (this model answers a value and its predictions stated no interval — \"the same value\" is not a measure; judge it with [blue]mloop evaluate[/])[/]"
+                    : "[grey]N/A[/]");
         }
 
         if (metrics.IntervalCoverage is { } coverage)

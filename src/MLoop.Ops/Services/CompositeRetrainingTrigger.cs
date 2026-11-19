@@ -103,18 +103,22 @@ public sealed class CompositeRetrainingTrigger : IRetrainingTrigger
 
     public CompositeRetrainingTrigger(string projectRoot, IFeedbackCollector feedbackCollector, IPredictionLogger predictionLogs)
     {
-        _feedback = new FeedbackBasedTrigger(feedbackCollector, ProductionExperimentAsync);
+        _feedback = new FeedbackBasedTrigger(feedbackCollector, ProductionExperimentAsync, ProductionTaskAsync);
         _time = new TimeBasedTrigger(projectRoot);
         _projectRoot = projectRoot;
         _predictionLogs = predictionLogs ?? throw new ArgumentNullException(nameof(predictionLogs));
     }
 
-    /// <inheritdoc />
-    private async Task<string?> ProductionExperimentAsync(string modelName, CancellationToken cancellationToken)
-    {
-        var production = Path.Combine(_projectRoot, ExperimentLayout.ModelsDirectory, modelName, ExperimentLayout.ProductionDirectory);
-        return (await ProductionMetadata.ReadAsync(production, cancellationToken).ConfigureAwait(false))?.ExperimentId;
-    }
+    private async Task<string?> ProductionExperimentAsync(string modelName, CancellationToken cancellationToken) =>
+        (await ReadProductionAsync(modelName, cancellationToken).ConfigureAwait(false))?.ExperimentId;
+
+    private async Task<string?> ProductionTaskAsync(string modelName, CancellationToken cancellationToken) =>
+        (await ReadProductionAsync(modelName, cancellationToken).ConfigureAwait(false))?.Task;
+
+    private Task<ProductionMetadata?> ReadProductionAsync(string modelName, CancellationToken cancellationToken) =>
+        ProductionMetadata.ReadAsync(
+            Path.Combine(_projectRoot, ExperimentLayout.ModelsDirectory, modelName, ExperimentLayout.ProductionDirectory),
+            cancellationToken);
 
     /// <summary>
     /// Whether the window's inputs moved: some column's PSI is at <paramref name="threshold"/> or more <em>and</em> over what chance alone gives

@@ -53,12 +53,22 @@ public interface IFeedbackCollector
     /// <summary>
     /// Calculates accuracy metrics based on predictions vs feedback.
     /// </summary>
+    /// <param name="modelName">The model name the metrics are for.</param>
+    /// <param name="from">Only feedback recorded at or after this instant; null for no lower bound.</param>
+    /// <param name="to">Only feedback recorded at or before this instant; null for no upper bound.</param>
+    /// <param name="cancellationToken">Cancels the read.</param>
+    /// <param name="experimentId">Scope the metrics to this experiment's answers; null for every answer under the model name.</param>
+    /// <param name="valueAnswers">The model answers a value (a number on a scale — <c>TaskMetadata.AnswersAreValues</c>): an answer
+    /// that stated no interval then has no accuracy either, for "the same value" is not a measure of a value (≈ 0 for every model,
+    /// however good). Its feedback still counts in <see cref="FeedbackMetrics.TotalFeedback"/>; <see cref="FeedbackMetrics.Accuracy"/>
+    /// is null unless a class or text answer is among it. Without it (the default) every answer without an interval is matched.</param>
     Task<FeedbackMetrics> CalculateMetricsAsync(
         string modelName,
         DateTimeOffset? from = null,
         DateTimeOffset? to = null,
         CancellationToken cancellationToken = default,
-        string? experimentId = null);
+        string? experimentId = null,
+        bool valueAnswers = false);
 }
 
 /// <summary>One row of a feedback batch: the prediction it answers and the ground truth, with where it sits in its source.</summary>
