@@ -134,6 +134,10 @@ Global tools live in `~/.dotnet/tools` (`%USERPROFILE%\.dotnet\tools` on Windows
 `mloop` is not found — a .NET SDK installed from a zip, for one, does not put that folder on the `PATH` — add it
 to your `PATH` (on Windows: *Edit environment variables for your account* → `Path` → New), then open another terminal.
 
+If `mloop` (the tool or the standalone binary) answers *You must install .NET to run this application*, the .NET runtime is installed
+where the launcher does not look — a per-user install, for one. Set `DOTNET_ROOT` to the folder that holds `dotnet` (`where dotnet` on
+Windows, `which dotnet` elsewhere; for a per-user install on Windows it is usually `%LOCALAPPDATA%\Microsoft\dotnet`), then open another terminal.
+
 **Standalone Binary**:
 
 Download from [GitHub Releases](https://github.com/iyulab/MLoop/releases) and place in your PATH. Like the tool, the binary is one
