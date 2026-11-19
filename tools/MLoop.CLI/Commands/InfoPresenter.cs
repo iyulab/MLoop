@@ -318,9 +318,11 @@ internal static class InfoPresenter
 
         if (method == "structural")
             AnsiConsole.MarkupLine("[grey]These scores come from the columns' variance and collinearity, not from the label — they do not say which column predicts it.[/]");
-        var notRanked = AnalyzeJson.NotRanked(fileColumns, label, ranked);
+        var (categoricalMethod, categorical) = AnalyzeJson.RankCategorical(features, label, method);
+        ImportanceTables.WriteCategorical(categoricalMethod, categorical);
+        var notRanked = AnalyzeJson.NotRanked(fileColumns, label, [.. ranked, .. categorical]);
         if (notRanked.Count > 0)
-            AnsiConsole.MarkupLine($"[grey]{Markup.Escape(AnalyzeJson.NotRankedNote(notRanked))}[/]");
+            AnsiConsole.MarkupLine($"[grey]{Markup.Escape(AnalyzeJson.NotRankedNote(notRanked, method, categorical.Count > 0))}[/]");
 
         // Diagnostic notes
         if (importance != null)

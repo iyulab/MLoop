@@ -426,9 +426,11 @@ public static class AnalyzeCommand
                 foreach (var r in ranking)
                     table.AddRow(Markup.Escape(r.Feature), r.Score.ToString("F4"));
                 AnsiConsole.Write(table);
-                var notRanked = AnalyzeJson.NotRanked(fileColumns, ctx.Value.Label, ranking);
+                var (categoricalMethod, categorical) = AnalyzeJson.RankCategorical(result?.Features, ctx.Value.Label, method);
+                ImportanceTables.WriteCategorical(categoricalMethod, categorical);
+                var notRanked = AnalyzeJson.NotRanked(fileColumns, ctx.Value.Label, [.. ranking, .. categorical]);
                 if (notRanked.Count > 0)
-                    AnsiConsole.MarkupLine($"[grey]{Markup.Escape(AnalyzeJson.NotRankedNote(notRanked))}[/]");
+                    AnsiConsole.MarkupLine($"[grey]{Markup.Escape(AnalyzeJson.NotRankedNote(notRanked, method, categorical.Count > 0))}[/]");
             });
             return 0;
         }

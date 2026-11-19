@@ -285,6 +285,7 @@ $: object
 $.aspect: string
 $.available: boolean
 $.data: object
+$.data.categorical: null
 $.data.conditionNumber: number
 $.data.highCorrPairsCount: number
 $.data.lowVarianceCount: number

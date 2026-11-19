@@ -162,6 +162,28 @@ public static class AnalyzeJson
     /// <summary>One ranked feature: its name and the score under the chosen importance method.</summary>
     public readonly record struct RankedFeature(string Feature, double Score);
 
+    /// <summary>The method name of a ranking built from the categorical columns (mutual information with a categorical label).</summary>
+    public const string CategoricalMethod = "mutual-info-categorical";
+
+    /// <summary>The method name of a ranking of the categorical columns against a numeric label (the share of its variance their values explain).</summary>
+    public const string CategoricalRatioMethod = "correlation-ratio-categorical";
+
+    /// <summary>True for either ranking of the categorical columns — the one built from them rather than from the numeric analyses.</summary>
+    public static bool IsCategoricalMethod(string? method) => method == CategoricalMethod || method == CategoricalRatioMethod;
+
+    /// <summary>
+    /// The scores of the categorical columns and the name of the method that made them: mutual information against a categorical label,
+    /// the correlation ratio against a numeric one (DataLens fills exactly one of the two, by the label's kind).
+    /// </summary>
+    private static (string Method, List<(string Name, double Score)> Items)? CategoricalSource(FeatureReport? features)
+    {
+        if (features?.CategoricalMutualInfo is { Features.Count: > 0 } mi)
+            return (CategoricalMethod, mi.Features.Select(f => (f.Name, f.Mi)).ToList());
+        if (features?.CategoricalCorrelationRatio is { Features.Count: > 0 } ratio)
+            return (CategoricalRatioMethod, ratio.Features.Select(f => (f.Name, f.Ratio)).ToList());
+        return null;
+    }
+
     /// <summary>
     /// True when a candidate importance source has at least one finite, non-zero score among the
     /// non-label features — i.e. it actually discriminates. Guards against degenerate all-zero
@@ -210,10 +232,24 @@ public static class AnalyzeJson
             raw = features!.Anova!.Features.Select(f => (f.Name, f.FStatistic)).ToList();
             method = "anova-f";
         }
+        else if (CategoricalSource(features) is { } categoricalSource && HasSignal(categoricalSource.Items, label))
+        {
+            // The numeric sources read a numeric matrix only, so a table whose features are all categories has none of
+            // them. Categorical features are scored against a categorical label on their contingency table.
+            raw = categoricalSource.Items;
+            method = categoricalSource.Method;
+        }
         else if (structural is { Scores.Count: > 0 })
         {
             raw = structural.Scores.Select(s => (s.Name, s.Score)).ToList();
             method = "structural";
+        }
+        else if (CategoricalSource(features) is { } zeroed)
+        {
+            // Every categorical column scored zero (none relates to the label): that is an answer — a ranking of zeros —
+            // and not "no scores".
+            raw = zeroed.Items;
+            method = zeroed.Method;
         }
 
         if (raw == null || raw.Count == 0)
@@ -239,6 +275,24 @@ public static class AnalyzeJson
     }
 
     /// <summary>
+    /// The categorical columns scored against a categorical label, strongest first — the second ranking beside a numeric one. The two
+    /// are different estimators (a contingency table's mutual information against the numeric analyses') and are not one scale, so a
+    /// table with both gets both rankings and neither is merged into the other. Empty when the numeric method <em>is</em> the categorical
+    /// one (it is then the main ranking), or when there is nothing to rank.
+    /// </summary>
+    public static (string? Method, IReadOnlyList<RankedFeature> Ranking) RankCategorical(FeatureReport? features, string? label, string? method)
+    {
+        if (IsCategoricalMethod(method) || CategoricalSource(features) is not { } source)
+            return (null, Array.Empty<RankedFeature>());
+        var ranking = source.Items
+            .Where(f => string.IsNullOrEmpty(label) || !string.Equals(f.Name, label, StringComparison.Ordinal))
+            .OrderByDescending(f => f.Score)
+            .Select(f => new RankedFeature(f.Name, RoundScore(f.Score)))
+            .ToList();
+        return (ranking.Count == 0 ? null : source.Method, ranking);
+    }
+
+    /// <summary>
     /// The file's feature columns that the ranking does not hold — in file order. Importance is scored on the
     /// columns the analysis reads as numbers, so a text or category column is not ranked; without this a reader
     /// sees two columns ranked and concludes the third does not matter (a model may rely on it most).
@@ -253,8 +307,15 @@ public static class AnalyzeJson
     }
 
     /// <summary>The sentence that says which columns were not ranked and where to look instead.</summary>
-    public static string NotRankedNote(IReadOnlyList<string> notRanked)
-        => $"not ranked: {string.Join(", ", notRanked)} — importance here covers the columns read as numbers (text, category and constant columns are left out); `mloop explain` on a trained model scores every column the model reads";
+    public static string NotRankedNote(IReadOnlyList<string> notRanked, string? method = null, bool categoricalRankedSeparately = false)
+    {
+        var covers = IsCategoricalMethod(method)
+            ? "importance here covers the categorical columns, scored against the label (numeric columns are left out)"
+            : categoricalRankedSeparately
+                ? "importance here covers the columns read as numbers, and the categorical columns are ranked beside it (text and constant columns are left out)"
+                : "importance here covers the columns read as numbers (text, category and constant columns are left out)";
+        return $"not ranked: {string.Join(", ", notRanked)} — {covers}; `mloop explain` on a trained model scores every column the model reads";
+    }
 
     public static AnalyzeEnvelope MapImportance(FeatureReport? features, string? label, IReadOnlyList<string>? fileColumns = null)
     {
@@ -263,22 +324,26 @@ public static class AnalyzeJson
 
         if (method == null)
             return new AnalyzeEnvelope("importance", true,
-                "No feature importance scores available (requires a label and numeric/categorical features).",
-                new { method = (string?)null, ranking = Array.Empty<object>(), lowVarianceCount = 0, highCorrPairsCount = 0, conditionNumber = 0.0 },
+                "No feature importance scores available (numeric columns are scored against any label, categorical columns against a categorical label; this table has no column the analysis can score).",
+                new { method = (string?)null, ranking = Array.Empty<object>(), categorical = (object?)null, lowVarianceCount = 0, highCorrPairsCount = 0, conditionNumber = 0.0 },
                 Array.Empty<string>());
 
         var ranking = rankedFeatures
             .Select(r => new { feature = r.Feature, score = r.Score })
             .ToList();
+        var (categoricalMethod, categoricalRanked) = RankCategorical(features, label, method);
+        var categorical = categoricalRanked.Count == 0
+            ? null
+            : new { method = categoricalMethod, ranking = categoricalRanked.Select(r => new { feature = r.Feature, score = r.Score }).ToList() };
 
         var conditionNumber = structural?.ConditionNumber ?? 0.0;
         var lowVariance = structural?.LowVarianceCount ?? 0;
         var highCorrPairs = structural?.HighCorrPairsCount ?? 0;
 
         var flags = new List<string>();
-        var notRanked = NotRanked(fileColumns, label, rankedFeatures);
+        var notRanked = NotRanked(fileColumns, label, [.. rankedFeatures, .. categoricalRanked]);
         if (notRanked.Count > 0)
-            flags.Add(NotRankedNote(notRanked));
+            flags.Add(NotRankedNote(notRanked, method, categoricalRanked.Count > 0));
         if (conditionNumber > 1000)
             flags.Add($"multicollinearity-suspected (condition number {conditionNumber:F0})");
         if (lowVariance > 0)
@@ -287,12 +352,14 @@ public static class AnalyzeJson
             flags.Add($"high-correlation-pairs: {highCorrPairs}");
 
         var top = ranking.Count > 0 ? ranking[0].feature : "(none)";
-        var summary = $"{ranking.Count} feature(s) ranked by {method}; top = {top}.";
+        var summary = $"{ranking.Count} feature(s) ranked by {method}; top = {top}."
+            + (categoricalRanked.Count > 0 ? $" {categoricalRanked.Count} categorical column(s) ranked beside it by {categoricalMethod}." : "");
 
         return new AnalyzeEnvelope("importance", true, summary, new
         {
             method,
             ranking,
+            categorical,
             lowVarianceCount = lowVariance,
             highCorrPairsCount = highCorrPairs,
             conditionNumber = Math.Round(conditionNumber, 2)

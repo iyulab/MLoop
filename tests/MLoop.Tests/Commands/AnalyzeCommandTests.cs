@@ -325,6 +325,177 @@ public class AnalyzeCommandTests
         Assert.Equal("f2", features[0]);
     }
 
+    // A table whose features are all categories has no numeric source, so the ranking used to be empty.
+    private static FeatureReport OnlyCategoricalScores() => new()
+    {
+        TargetColumn = "cls",
+        CategoricalMutualInfo = new CategoricalMutualInfoSummary
+        {
+            Features =
+            [
+                new() { Name = "weak", Mi = 0.05, Levels = 3, Rows = 600 },
+                new() { Name = "strong", Mi = 0.62, Levels = 3, Rows = 600 },
+                new() { Name = "noise", Mi = 0.0, Levels = 3, Rows = 600 },
+            ],
+        },
+    };
+
+    [Fact]
+    public void MapImportance_OnlyCategoricalFeatures_RanksThemByCategoricalMutualInfo()
+    {
+        var env = AnalyzeJson.MapImportance(OnlyCategoricalScores(), label: "cls", fileColumns: ["weak", "strong", "noise", "cls"]);
+        using var doc = JsonDocument.Parse(AnalyzeJson.Serialize(env));
+        var data = doc.RootElement.GetProperty("data");
+
+        Assert.Equal(AnalyzeJson.CategoricalMethod, data.GetProperty("method").GetString());
+        var features = data.GetProperty("ranking").EnumerateArray()
+            .Select(r => r.GetProperty("feature").GetString()).ToList();
+        Assert.Equal(["strong", "weak", "noise"], features);
+        Assert.Empty(env.Flags); // every file column is ranked
+    }
+
+    [Fact]
+    public void MapImportance_CategoricalRanking_NamesNumericColumnsAsNotRankedInItsOwnWords()
+    {
+        var env = AnalyzeJson.MapImportance(OnlyCategoricalScores(), label: "cls", fileColumns: ["weak", "strong", "noise", "age", "cls"]);
+
+        var note = Assert.Single(env.Flags);
+        Assert.Contains("not ranked: age", note, StringComparison.Ordinal);
+        Assert.Contains("categorical columns", note, StringComparison.Ordinal);
+        Assert.DoesNotContain("read as numbers", note, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RankImportance_NumericMutualInfoWithSignal_WinsOverCategorical()
+    {
+        var report = OnlyCategoricalScores();
+        var mixed = new FeatureReport
+        {
+            TargetColumn = "cls",
+            MutualInfo = new MutualInfoSummary { Features = [new() { Name = "age", Mi = 0.4 }] },
+            CategoricalMutualInfo = report.CategoricalMutualInfo,
+        };
+
+        var (method, ranking) = AnalyzeJson.RankImportance(mixed, "cls");
+
+        Assert.Equal("mutual-info", method);
+        Assert.Equal(["age"], ranking.Select(r => r.Feature).ToArray());
+    }
+
+    private static FeatureReport MixedTable() => new()
+    {
+        TargetColumn = "cls",
+        MutualInfo = new MutualInfoSummary { Features = [new() { Name = "age", Mi = 0.4 }, new() { Name = "income", Mi = 0.1 }] },
+        CategoricalMutualInfo = new CategoricalMutualInfoSummary
+        {
+            Features = [new() { Name = "region", Mi = 0.02 }, new() { Name = "plan", Mi = 0.31 }, new() { Name = "cls", Mi = 1.0 }],
+        },
+    };
+
+    [Fact]
+    public void MapImportance_MixedTable_RanksTheCategoricalColumnsBesideTheNumericOnes_AndNeverMergesThem()
+    {
+        var env = AnalyzeJson.MapImportance(MixedTable(), label: "cls", fileColumns: ["age", "income", "region", "plan", "cls"]);
+        using var doc = JsonDocument.Parse(AnalyzeJson.Serialize(env));
+        var data = doc.RootElement.GetProperty("data");
+
+        Assert.Equal("mutual-info", data.GetProperty("method").GetString());
+        Assert.Equal(["age", "income"], data.GetProperty("ranking").EnumerateArray().Select(r => r.GetProperty("feature").GetString()).ToArray());
+        var categorical = data.GetProperty("categorical");
+        Assert.Equal(AnalyzeJson.CategoricalMethod, categorical.GetProperty("method").GetString());
+        Assert.Equal(["plan", "region"], categorical.GetProperty("ranking").EnumerateArray().Select(r => r.GetProperty("feature").GetString()).ToArray());
+        Assert.Empty(env.Flags);                     // every file column is ranked in one of the two
+        Assert.Contains("beside it", env.Summary, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MapImportance_NumericOnlyTable_HasNoCategoricalBlock_ButTheFieldIsThere()
+    {
+        var env = AnalyzeJson.MapImportance(TwoNumericFeaturesRanked(), label: "y", fileColumns: ["a", "b", "y"]);
+        using var doc = JsonDocument.Parse(AnalyzeJson.Serialize(env));
+
+        Assert.Equal(JsonValueKind.Null, doc.RootElement.GetProperty("data").GetProperty("categorical").ValueKind);
+    }
+
+    [Fact]
+    public void MapImportance_CategoricalColumnsThatAllScoreZero_AreARankingOfZeros_NotNoScores()
+    {
+        var report = new FeatureReport
+        {
+            TargetColumn = "cls",
+            CategoricalMutualInfo = new CategoricalMutualInfoSummary { Features = [new() { Name = "a", Mi = 0 }, new() { Name = "b", Mi = 0 }] },
+        };
+
+        var (method, ranking) = AnalyzeJson.RankImportance(report, "cls");
+
+        Assert.Equal(AnalyzeJson.CategoricalMethod, method);
+        Assert.Equal(2, ranking.Count);
+    }
+
+    [Fact]
+    public void MapImportance_NotRankedNote_SaysTheCategoricalColumnsAreRankedBesideWhenTheyAre()
+    {
+        var env = AnalyzeJson.MapImportance(MixedTable(), label: "cls", fileColumns: ["age", "income", "region", "plan", "notes", "cls"]);
+
+        var note = Assert.Single(env.Flags);
+        Assert.Contains("not ranked: notes", note, StringComparison.Ordinal);
+        Assert.Contains("ranked beside it", note, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void MapImportance_NumericLabel_RanksTheCategoricalColumnsByTheShareOfVarianceTheyExplain()
+    {
+        var report = new FeatureReport
+        {
+            TargetColumn = "price",
+            Permutation = new PermutationSummary
+            {
+                BaselineScore = 0.9,
+                Features = [new() { Name = "size", Importance = 0.5 }, new() { Name = "age", Importance = 0.1 }],
+            },
+            CategoricalCorrelationRatio = new CategoricalCorrelationRatioSummary
+            {
+                Features = [new() { Name = "colour", Ratio = 0.02 }, new() { Name = "model", Ratio = 0.71 }],
+            },
+        };
+
+        var env = AnalyzeJson.MapImportance(report, label: "price", fileColumns: ["size", "age", "colour", "model", "price"]);
+        using var doc = JsonDocument.Parse(AnalyzeJson.Serialize(env));
+        var data = doc.RootElement.GetProperty("data");
+
+        Assert.Equal("permutation", data.GetProperty("method").GetString());
+        var categorical = data.GetProperty("categorical");
+        Assert.Equal(AnalyzeJson.CategoricalRatioMethod, categorical.GetProperty("method").GetString());
+        Assert.Equal(["model", "colour"], categorical.GetProperty("ranking").EnumerateArray().Select(r => r.GetProperty("feature").GetString()).ToArray());
+        Assert.Empty(env.Flags);
+    }
+
+    [Fact]
+    public void RankImportance_NumericLabelWithOnlyCategoricalFeatures_IsRankedByTheRatio()
+    {
+        var report = new FeatureReport
+        {
+            TargetColumn = "price",
+            CategoricalCorrelationRatio = new CategoricalCorrelationRatioSummary { Features = [new() { Name = "model", Ratio = 0.6 }, new() { Name = "colour", Ratio = 0.0 }] },
+        };
+
+        var (method, ranking) = AnalyzeJson.RankImportance(report, "price");
+        var (besideMethod, beside) = AnalyzeJson.RankCategorical(report, "price", method);
+
+        Assert.Equal(AnalyzeJson.CategoricalRatioMethod, method);
+        Assert.Equal(["model", "colour"], ranking.Select(r => r.Feature).ToArray());
+        Assert.Null(besideMethod);                    // it is the main ranking already
+        Assert.Empty(beside);
+    }
+
+    [Fact]
+    public void MapImportance_NothingToScore_SaysWhichColumnsItCanScore()
+    {
+        var env = AnalyzeJson.MapImportance(new FeatureReport { TargetColumn = "y" }, label: "y");
+
+        Assert.Contains("no column the analysis can score", env.Summary, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void MapOutliers_HighRate_AddsFlag()
     {
