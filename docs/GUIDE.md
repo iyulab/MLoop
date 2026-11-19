@@ -933,7 +933,13 @@ falls it by about what it carried. A negative fall is chance (shuffling happened
 This is the model's reliance, not the data's: two columns that say the same thing share what either would show alone (shuffle one and the model
 leans on the other), so a small fall for each of a correlated pair does not mean neither matters. It is also not a cause — it says what the model
 used, not what moves the outcome in the world. When a held-out score is suspiciously near-perfect (the training warning about a possible leaked
-column), `explain` on the held-out file names the column that carries it. `mloop analyze importance` is the other question: which columns relate to
+column), `explain` on the held-out file names the column that carries it. A copy of the label with a little noise stays under that warning, so
+training also looks at each column alone, on the whole file: a classification column that removes at least three quarters of the errors of
+guessing the most common class (each row predicted from the other rows with the same value, so an identifier cannot look like the label), or a
+regression column that explains at least 95 % of the label's variance, is named with what it reaches. It is advice — the column is kept — and a
+column that is simply very strong (a measurement the label is nearly a function of) is named too: the question to answer is whether it will exist,
+with the same meaning, when the model is used; if not, `mloop features select --drop <column>`. A copy with enough noise, or on a label
+where one class holds nearly every row, stays unnamed — the statistic cannot tell it from a weak column. `mloop analyze importance` is the other question: which columns relate to
 the label in the data, before or without any model. Binary-classification, multiclass-classification and regression models are explained; the
 columns the model did not read as features (excluded as an identifier, a date or a constant at training) are listed as not shuffled.
 
@@ -1529,7 +1535,7 @@ curl -X POST http://localhost:5000/predict \
   quality gate, the gate policy, production as good or better, a post-train hook, or `"promote": false`). The job
   reads `Completed` only after that decision, so production is in place by the time a poller sees it
 - The completed job's `warnings` are the warnings `mloop train` prints and reports as `--json` warning events:
-  about the data and the run (a row-number column, text the model cannot read, a class too small), then the
+  about the data and the run (a row-number column, a column that alone nearly is the label, text the model cannot read, a class too small), then the
   performance diagnostics — a held-out score near-perfect on 500 rows or more (check for a leaked column), an
   accuracy that hides one class; an empty list when there are none
 - **Request limit per caller**: each caller — the subject of its token (`mloop token --subject <name>`) — may make

@@ -453,6 +453,27 @@ public class TrainingEngine : ITrainingEngine
     /// What an exclusion reason means to the person reading the warning — and, where there is one, what
     /// to do about it. The markers are <see cref="SchemaDataTypes"/>' vocabulary.
     /// </summary>
+    /// <summary>What a person reads when one column alone nearly reproduces the label: what it reaches, what the label's own majority gets, and what to check.</summary>
+    internal static MarkupText SingleColumnCopyWarning(MLoop.Core.Diagnostics.SingleColumnFinding finding)
+    {
+        if (finding.IsRegression)
+            return $"Column '{finding.Column}' alone explains {finding.Score:P0} of the label's variance — a column this close to the label is often computed from it " +
+                   $"or recorded after it, and is then missing, or not the same, where the model is used. If it will not exist as it is now when the model is used, " +
+                   $"exclude it: [cyan]mloop features select --drop {finding.Column}[/]. Training keeps it.";
+        return $"Column '{finding.Column}' alone names the label for {finding.Score:P0} of rows (the most common class alone gets {finding.Baseline:P0}) — a column this " +
+               $"close to the label is often computed from it or recorded after it, and is then missing, or not the same, where the model is used. If it will not exist " +
+               $"as it is now when the model is used, exclude it: [cyan]mloop features select --drop {finding.Column}[/]. Training keeps it.";
+    }
+
+    /// <summary>The columns after the first that are as close to the label: their names and what each reaches, in one line.</summary>
+    internal static MarkupText SingleColumnCopyAlso(IReadOnlyList<MLoop.Core.Diagnostics.SingleColumnFinding> others)
+    {
+        const int shown = 4;
+        var list = string.Join(", ", others.Take(shown).Select(c => $"'{c.Column}' ({c.Score:P0}{(c.IsRegression ? " of the variance" : " of rows")})"));
+        var more = others.Count > shown ? $", and {others.Count - shown} more" : "";
+        return $"Also this close to the label: {list}{more} — same question for each: will it exist, as it is now, when the model is used?";
+    }
+
     internal static string ExclusionReason(string marker) => marker switch
     {
         SchemaDataTypes.ExcludedIdentifier => " — a distinct value in every row",
@@ -771,6 +792,21 @@ public class TrainingEngine : ITrainingEngine
                     $"Possible ID/index column(s) (strictly increasing integers): {string.Join(", ", indexLike)} — " +
                     $"read as a feature, a row number lets the model learn the order of the rows. To exclude: " +
                     $"[cyan]mloop features select --drop {indexLike[0]}[/]");
+            }
+
+            // A column that by itself nearly is the label — judged on the whole file, here, like the exclusions: a copy of the
+            // label (or something recorded after it) scores like the label in the data and is not there when the model is used,
+            // and a copy with a little noise stays under the near-perfect-score warning. Advice, not an exclusion.
+            if (readsFeatures && MLoop.Core.Diagnostics.SingleColumnLabelCheck.Applies(config.Task))
+            {
+                var notFeatures = (config.FeatureExclusions ?? [])
+                    .Concat(config.ColumnOverrides?.Where(o => o.Value.Equals("ignore", StringComparison.OrdinalIgnoreCase)).Select(o => o.Key) ?? []);
+                var copies = MLoop.Core.Diagnostics.SingleColumnLabelCheck.Find(dataFilePath, config.LabelColumn, config.Task, notFeatures);
+                // The strongest column gets the whole sentence; the others are one line — the same paragraph said twice buries the run.
+                if (copies.Count > 0)
+                    WarningConsole.Warn(SingleColumnCopyWarning(copies[0]));
+                if (copies.Count > 1)
+                    WarningConsole.Warn(SingleColumnCopyAlso(copies.Skip(1).ToList()));
             }
 
             // Capture input schema before training (using enhanced detection).

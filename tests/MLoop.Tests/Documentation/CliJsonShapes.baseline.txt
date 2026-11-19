@@ -609,6 +609,11 @@ $.n: number
 $.trainer: string
 $.ts: string
 $.value: number
+## train#warning | train -> exit 0
+$: object
+$.event: string
+$.message: string
+$.ts: string
 ## compare | compare -> exit 0
 $: object
 $.best: string
