@@ -191,10 +191,16 @@ public static class FeedbackCommand
             Description = "Output in JSON format"
         };
 
+        var experimentOption = new Option<string?>("--experiment", "-e")
+        {
+            Description = "Whose answers the metrics are of: an experiment id, or 'all' for every experiment's (default: the experiment in production — what `trigger check` reads — or every one when nothing is promoted)"
+        };
+
         var command = new Command("metrics", "Calculate accuracy metrics from feedback");
         command.Options.Add(nameOption);
         command.Options.Add(fromOption);
         command.Options.Add(toOption);
+        command.Options.Add(experimentOption);
         command.Options.Add(jsonOption);
 
         command.SetAction((parseResult) =>
@@ -202,8 +208,9 @@ public static class FeedbackCommand
             var modelName = parseResult.GetValue(nameOption)!;
             var from = parseResult.GetValue(fromOption);
             var to = parseResult.GetValue(toOption);
+            var experiment = parseResult.GetValue(experimentOption);
             var json = parseResult.GetValue(jsonOption);
-            return ExecuteMetricsAsync(modelName, from, to, json);
+            return ExecuteMetricsAsync(modelName, from, to, experiment, json);
         });
 
         return command;
@@ -574,6 +581,7 @@ public static class FeedbackCommand
         string modelName,
         DateTime? from,
         DateTime? to,
+        string? experiment,
         bool jsonOutput)
     {
         // In --json mode stdout must be pure JSON, so narration routes to stderr for the
@@ -593,16 +601,29 @@ public static class FeedbackCommand
             // A model that answers a value has no accuracy for an answer that stated no interval ("the same value" is not a
             // measure of one) — the same reading `trigger check` has, from the same task (TaskMetadata.AnswersAreValues).
             var valueTask = await ProductionValueTaskAsync(projectRoot, modelName);
+
+            // One model's metrics are of one experiment's answers, as `trigger check` reads them: after a promotion the replaced model's
+            // feedback is not the new one's accuracy. The experiment in production by default; `--experiment all` for the lot.
+            var scope = await MetricsScopeAsync(projectRoot, modelName, experiment);
             var metrics = await collector.CalculateMetricsAsync(
                 MLoop.Core.Storage.ModelName.Require(modelName),
                 fromOffset,
                 toOffset,
+                experimentId: scope,
                 valueAnswers: valueTask is not null);
+            // What the scope left out, so a smaller number is not taken for less feedback.
+            var otherExperiments = 0;
+            if (scope is not null)
+            {
+                var every = await collector.CalculateMetricsAsync(
+                    MLoop.Core.Storage.ModelName.Require(modelName), fromOffset, toOffset, valueAnswers: valueTask is not null);
+                otherExperiments = Math.Max(0, every.TotalFeedback - metrics.TotalFeedback - metrics.UnattributedFeedback);
+            }
 
-            // How far a value answer is from the actual values — read on the production experiment's answers, as `trigger check` reads it.
-            var valueError = valueTask is null
+            // How far a value answer is from the actual values — of the same answers the rest of the metrics are of (`trigger check` reads the production experiment's).
+            var valueError = valueTask is null || metrics.ValueError is not { } scopedError
                 ? null
-                : await ValueErrorReadingAsync(collector, projectRoot, modelName, fromOffset, toOffset);
+                : await ValueErrorReadingAsync(projectRoot, modelName, scopedError, scope);
 
             // Empty is an ordinary state; --json still owes the caller a payload, not prose.
             if (metrics.TotalFeedback == 0 && !jsonOutput)
@@ -618,7 +639,7 @@ public static class FeedbackCommand
             }
             else
             {
-                OutputMetricsAsPanel(metrics, valueTask, valueError);
+                OutputMetricsAsPanel(metrics, valueTask, otherExperiments, valueError);
             }
 
             return 0;
@@ -630,24 +651,22 @@ public static class FeedbackCommand
         }
     }
 
-    /// <summary>The error of the production experiment's value answers on their feedback, with the RMSE it recorded on its held-out rows to read it against.</summary>
-    private sealed record ValueErrorReading(MLoop.DataStore.Interfaces.ValueError Error, double? HeldOutRmse, string ExperimentId);
+    /// <summary>The error of a value model's answers on their feedback — of one experiment's, or null for every experiment's — with the RMSE the production experiment recorded on its held-out rows to read it against (only when the answers are production's own).</summary>
+    private sealed record ValueErrorReading(MLoop.DataStore.Interfaces.ValueError Error, double? HeldOutRmse, string? ExperimentId);
 
     private static async Task<ValueErrorReading?> ValueErrorReadingAsync(
-        FileFeedbackCollector collector, string projectRoot, string modelName, DateTimeOffset? from, DateTimeOffset? to)
+        string projectRoot, string modelName, MLoop.DataStore.Interfaces.ValueError error, string? scope)
     {
         var (production, _) = await ProductionMetadata.TryReadAsync(
             Path.Combine(projectRoot, ExperimentLayout.ModelsDirectory, MLoop.Core.Storage.ModelName.Require(modelName), ExperimentLayout.ProductionDirectory));
-        if (production?.ExperimentId is not { } experimentId || !TaskMetadata.AnswersAreValues(production.Task))
-            return null;
 
-        var scoped = await collector.CalculateMetricsAsync(
-            MLoop.Core.Storage.ModelName.Require(modelName), from, to, experimentId: experimentId, valueAnswers: true);
-        if (scoped.ValueError is not { } error)
-            return null;
-
-        double? heldOut = production.Metrics is { } recorded && recorded.TryGetValue("rmse", out var rmse) && double.IsFinite(rmse) && rmse > 0 ? rmse : null;
-        return new ValueErrorReading(error, heldOut, experimentId);
+        // The RMSE on held-out rows is the production experiment's: another experiment's answers, or every experiment's mixed, have no
+        // such baseline on hand and are shown without a ratio rather than against the wrong model's.
+        double? heldOut = production is { ExperimentId: { } experiment } && string.Equals(experiment, scope, StringComparison.Ordinal)
+            && production.Metrics is { } recorded && recorded.TryGetValue("rmse", out var rmse) && double.IsFinite(rmse) && rmse > 0
+                ? rmse
+                : null;
+        return new ValueErrorReading(error, heldOut, scope);
     }
 
     /// <summary>
@@ -657,12 +676,13 @@ public static class FeedbackCommand
     private static void AddValueErrorRows(Grid grid, FeedbackMetrics metrics, ValueErrorReading reading)
     {
         var error = reading.Error;
-        var evidence = (metrics.Weighted ? $"{error.EffectiveN:0.#} effective rows of {error.N}" : $"{error.N} rows") + $", on {reading.ExperimentId}'s answers";
+        var evidence = (metrics.Weighted ? $"{error.EffectiveN:0.#} effective rows of {error.N}" : $"{error.N} rows")
+            + (reading.ExperimentId is { } experimentId ? $", on {experimentId}'s answers" : ", on every experiment's answers");
         var rmse = error.Rmse.ToString("0.###", CultureInfo.InvariantCulture);
         if (reading.HeldOutRmse is not { } heldOut)
         {
             grid.AddRow(metrics.Weighted ? "[grey]Error, RMSE (weighted):[/]" : "[grey]Error, RMSE:[/]",
-                $"[white]{rmse}[/] [grey]({evidence}; the model recorded no RMSE on its held-out rows to read it against)[/]");
+                $"[white]{rmse}[/] [grey]({evidence}; no held-out RMSE of these answers' model is on hand to read it against)[/]");
             return;
         }
 
@@ -676,6 +696,21 @@ public static class FeedbackCommand
             grid.AddRow("", $"[red]Established above {RetrainingDefaults.ErrorRiseRatio:0.##}× its held-out error:[/] [grey]the lower end of the 95 % interval of this error is over that — a retraining condition (`mloop trigger check`, `error_rise`).[/]");
         else if (error.EffectiveN < RetrainingDefaults.MinimumAccuracyFeedback)
             grid.AddRow("", $"[grey]Too few rows to judge (needs {RetrainingDefaults.MinimumAccuracyFeedback}).[/]");
+    }
+
+    /// <summary>
+    /// The experiment whose answers the metrics are of: the one asked for, 'all' (null — every experiment's), or by default the experiment in
+    /// production, which is also what <c>trigger check</c> reads. Null too when nothing is promoted or the pointer cannot be read: feedback is
+    /// readable without a production model, and its metrics keep the reading they have always had then.
+    /// </summary>
+    private static async Task<string?> MetricsScopeAsync(string projectRoot, string modelName, string? experiment)
+    {
+        if (experiment is not null)
+            return string.Equals(experiment.Trim(), "all", StringComparison.OrdinalIgnoreCase) ? null : experiment.Trim();
+
+        var (production, _) = await ProductionMetadata.TryReadAsync(
+            Path.Combine(projectRoot, ExperimentLayout.ModelsDirectory, MLoop.Core.Storage.ModelName.Require(modelName), ExperimentLayout.ProductionDirectory));
+        return production?.ExperimentId;
     }
 
     /// <summary>
@@ -833,7 +868,7 @@ public static class FeedbackCommand
             grid.AddRow("[grey]Not judged by an interval:[/]", $"[white]{coverage.Unjudged}[/] [grey](answered without an interval — logged before intervals were kept, or by a model that states none — or with an actual value that is not a number)[/]");
     }
 
-    private static void OutputMetricsAsPanel(FeedbackMetrics metrics, string? valueTask = null, ValueErrorReading? valueError = null)
+    private static void OutputMetricsAsPanel(FeedbackMetrics metrics, string? valueTask = null, int otherExperiments = 0, ValueErrorReading? valueError = null)
     {
         AnsiConsole.Write(new Rule($"[cyan]Feedback Metrics - {metrics.ModelName}[/]").LeftJustified());
         AnsiConsole.WriteLine();
@@ -843,6 +878,16 @@ public static class FeedbackCommand
         grid.AddColumn();
 
         grid.AddRow("[grey]Total Feedback Entries:[/]", $"[white]{metrics.TotalFeedback}[/]");
+        if (metrics.ExperimentId is { } scope)
+        {
+            var left = new List<string>();
+            if (otherExperiments > 0)
+                left.Add($"{otherExperiments} feedback on other experiments");
+            if (metrics.UnattributedFeedback > 0)
+                left.Add($"{metrics.UnattributedFeedback} earlier feedback that names no experiment its log still records");
+            grid.AddRow("[grey]Scope:[/]", $"[white]{Markup.Escape(scope)}'s answers[/]"
+                + (left.Count > 0 ? $" [grey]({string.Join("; ", left)} not counted — [blue]--experiment all[/] reads every one)[/]" : ""));
+        }
 
         if (metrics.Accuracy.HasValue)
         {

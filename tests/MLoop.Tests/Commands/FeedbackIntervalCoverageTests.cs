@@ -158,6 +158,88 @@ public sealed class FeedbackIntervalCoverageTests : IClassFixture<EveryCommandRu
         Assert.Equal(0.0, json.GetProperty("accuracy").GetDouble());
     }
 
+    /// <summary>Predictions of <paramref name="experiment"/> (class answers, "yes") logged for <paramref name="model"/>; returns the CSV of feedback whose actual is "yes" for the first <paramref name="right"/> and "no" for the rest.</summary>
+    private string SeedExperimentLog(string model, string experiment, int count, int right)
+    {
+        var dir = Path.Combine(_project.Root, ".mloop", "logs", model);
+        Directory.CreateDirectory(dir);
+        var lines = new List<string>();
+        var rows = new List<string>();
+        for (var i = 0; i < count; i++)
+        {
+            var id = $"{experiment[^3..]}{i:D3}x{Guid.NewGuid():N}"[..16];
+            lines.Add(JsonSerializer.Serialize(new { id, modelName = model, experimentId = experiment, input = new { x = i }, output = "yes", timestamp = "2026-11-01T00:00:00+00:00" }));
+            rows.Add($"{id},{(i < right ? "yes" : "no")}");
+        }
+        File.AppendAllLines(Path.Combine(dir, "2026-11-01.jsonl"), lines);
+        var file = $"scope-{model}-{experiment}.csv";
+        File.WriteAllText(Path.Combine(_project.Root, file), "prediction_id,actual\n" + string.Join('\n', rows) + "\n", new UTF8Encoding(false));
+        return file;
+    }
+
+    private void Promote(string model, string experiment, string task)
+    {
+        var production = Path.Combine(_project.Root, "models", model, "production");
+        Directory.CreateDirectory(production);
+        File.WriteAllText(Path.Combine(production, "metadata.json"),
+            JsonSerializer.Serialize(new { modelName = model, experimentId = experiment, task }), new UTF8Encoding(false));
+    }
+
+    [Fact]
+    public async Task MetricsAreOfTheProductionExperimentsAnswersLikeTriggerCheckAndAllOrOneOtherOnRequest()
+    {
+        // exp-001 answered 40 times, 10 right; exp-002 replaced it and has answered 50 times, 45 right.
+        foreach (var (experiment, count, right) in new[] { ("exp-001", 40, 10), ("exp-002", 50, 45) })
+            Assert.Equal(0, (await _project.RunAsync("feedback", "add", "--from-file", SeedExperimentLog("scoped", experiment, count, right), "--json")).Exit);
+        Promote("scoped", "exp-002", "binary-classification");
+
+        var byDefault = (await _project.RunAsync("feedback", "metrics", "--name", "scoped", "--json")).Json();
+        Assert.Equal(50, byDefault.GetProperty("totalFeedback").GetInt32());
+        Assert.Equal("exp-002", byDefault.GetProperty("experimentId").GetString());
+        Assert.Equal(0.9, byDefault.GetProperty("accuracy").GetDouble(), 9);
+
+        var every = (await _project.RunAsync("feedback", "metrics", "--name", "scoped", "--experiment", "all", "--json")).Json();
+        Assert.Equal(90, every.GetProperty("totalFeedback").GetInt32());
+        Assert.Equal(JsonValueKind.Null, every.GetProperty("experimentId").ValueKind);
+        Assert.Equal(55.0 / 90.0, every.GetProperty("accuracy").GetDouble(), 9);
+
+        var other = (await _project.RunAsync("feedback", "metrics", "--name", "scoped", "--experiment", "exp-001", "--json")).Json();
+        Assert.Equal(40, other.GetProperty("totalFeedback").GetInt32());
+        Assert.Equal(0.25, other.GetProperty("accuracy").GetDouble(), 9);
+
+        // The retraining condition reads the same answers: the two commands agree on the model in production.
+        var trigger = (await _project.RunAsync("trigger", "check", "--name", "scoped", "--json")).Json();
+        var accuracy = trigger.GetProperty("conditions").EnumerateArray().First(c => c.GetProperty("name").GetString() == "accuracy_threshold");
+        Assert.Equal(0.9, accuracy.GetProperty("currentValue").GetDouble(), 9);
+    }
+
+    [Fact]
+    public async Task TheTableSaysWhoseAnswersAndHowMuchFeedbackOfOtherExperimentsIsNotCounted()
+    {
+        foreach (var (experiment, count, right) in new[] { ("exp-001", 40, 10), ("exp-002", 50, 45) })
+            Assert.Equal(0, (await _project.RunAsync("feedback", "add", "--from-file", SeedExperimentLog("scopedtable", experiment, count, right), "--json")).Exit);
+        Promote("scopedtable", "exp-002", "binary-classification");
+
+        var table = await _project.RunAsync("feedback", "metrics", "--name", "scopedtable");
+        var words = System.Text.RegularExpressions.Regex.Replace(System.Text.RegularExpressions.Regex.Replace(table.Out, "\u001b\\[[0-9;]*m", ""), @"\s+", " ");
+
+        Assert.Contains("exp-002's answers", words, StringComparison.Ordinal);
+        Assert.Contains("40 feedback on other experiments not counted", words, StringComparison.Ordinal);
+        Assert.Contains("--experiment all", words, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task WithNothingPromotedTheMetricsAreOfEveryAnswerAsTheyAlwaysWere()
+    {
+        foreach (var (experiment, count, right) in new[] { ("exp-001", 40, 10), ("exp-002", 50, 45) })
+            Assert.Equal(0, (await _project.RunAsync("feedback", "add", "--from-file", SeedExperimentLog("unpromoted", experiment, count, right), "--json")).Exit);
+
+        var json = (await _project.RunAsync("feedback", "metrics", "--name", "unpromoted", "--json")).Json();
+
+        Assert.Equal(90, json.GetProperty("totalFeedback").GetInt32());
+        Assert.Equal(JsonValueKind.Null, json.GetProperty("experimentId").ValueKind);
+    }
+
     /// <summary>A promoted value model with the RMSE it recorded on its held-out rows (or none), answering 4.5 each time, and feedback of <paramref name="actual"/> for every answer.</summary>
     private string SeedValueModel(string model, string task, double? heldOutRmse, double actual, int count)
     {
@@ -208,7 +290,7 @@ public sealed class FeedbackIntervalCoverageTests : IClassFixture<EveryCommandRu
     }
 
     [Fact]
-    public async Task AValueModelThatRecordedNoHeldOutRmseShowsItsErrorAndSaysThereIsNothingToReadItAgainst()
+    public async Task AValueModelWithNoHeldOutRmseOnHandShowsItsErrorAndSaysThereIsNothingToReadItAgainst()
     {
         var file = SeedValueModel("valnobase", "ranking", heldOutRmse: null, actual: 6.5, count: 40);
         Assert.Equal(0, (await _project.RunAsync("feedback", "add", "--from-file", file, "--json")).Exit);
@@ -222,7 +304,7 @@ public sealed class FeedbackIntervalCoverageTests : IClassFixture<EveryCommandRu
         var table = await _project.RunAsync("feedback", "metrics", "--name", "valnobase");
         // The grid wraps a long line and colours each piece: read the words, without the colour codes and where the lines broke.
         var words = System.Text.RegularExpressions.Regex.Replace(System.Text.RegularExpressions.Regex.Replace(table.Out, "\u001b\\[[0-9;]*m", ""), @"\s+", " ");
-        Assert.True(words.Contains("recorded no RMSE", StringComparison.Ordinal), words);
+        Assert.True(words.Contains("no held-out RMSE", StringComparison.Ordinal), words);
     }
 
     [Fact]
@@ -235,5 +317,41 @@ public sealed class FeedbackIntervalCoverageTests : IClassFixture<EveryCommandRu
 
         Assert.Equal(JsonValueKind.Null, json.GetProperty("valueError").ValueKind);
         Assert.DoesNotContain("Error, RMSE", (await _project.RunAsync("feedback", "metrics", "--name", "valclass")).Out, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TheErrorFollowsTheScopeAndHasNoRatioForAnswersThatAreNotProductions()
+    {
+        // exp-001 answered 4.5 and was found to be off by 2 (feedback 6.5); exp-002 replaced it and is off by 0.1 (feedback 4.6). Held-out RMSE recorded for production (exp-002): 0.1.
+        var older = SeedValueModel("valscope", "regression", heldOutRmse: 0.1, actual: 6.5, count: 40);          // production = exp-001 here
+        Assert.Equal(0, (await _project.RunAsync("feedback", "add", "--from-file", older, "--json")).Exit);
+        var dir = Path.Combine(_project.Root, ".mloop", "logs", "valscope");
+        var lines = new List<string>();
+        var rows = new List<string>();
+        for (var i = 0; i < 40; i++)
+        {
+            var id = $"two{i:D3}x{Guid.NewGuid():N}"[..16];
+            lines.Add(JsonSerializer.Serialize(new { id, modelName = "valscope", experimentId = "exp-002", input = new { x = i }, output = 4.5, timestamp = "2026-11-02T00:00:00+00:00" }));
+            rows.Add($"{id},4.6");
+        }
+        File.WriteAllLines(Path.Combine(dir, "2026-11-02.jsonl"), lines);
+        File.WriteAllText(Path.Combine(_project.Root, "valscope-two.csv"), "prediction_id,actual\n" + string.Join('\n', rows) + "\n", new UTF8Encoding(false));
+        Assert.Equal(0, (await _project.RunAsync("feedback", "add", "--from-file", "valscope-two.csv", "--json")).Exit);
+        File.WriteAllText(Path.Combine(_project.Root, "models", "valscope", "production", "metadata.json"),
+            JsonSerializer.Serialize(new { modelName = "valscope", experimentId = "exp-002", task = "regression", metrics = new Dictionary<string, double> { ["rmse"] = 0.1 } }), new UTF8Encoding(false));
+
+        var production = (await _project.RunAsync("feedback", "metrics", "--name", "valscope", "--json")).Json().GetProperty("valueError");
+        Assert.Equal(0.1, production.GetProperty("rmse").GetDouble(), 9);
+        Assert.Equal(1.0, production.GetProperty("ratio").GetDouble(), 9);
+        Assert.Equal("exp-002", production.GetProperty("experimentId").GetString());
+
+        var older1 = (await _project.RunAsync("feedback", "metrics", "--name", "valscope", "--experiment", "exp-001", "--json")).Json().GetProperty("valueError");
+        Assert.Equal(2.0, older1.GetProperty("rmse").GetDouble(), 9);
+        Assert.Equal(JsonValueKind.Null, older1.GetProperty("ratio").ValueKind);   // not production's answers: no baseline on hand
+
+        var every = (await _project.RunAsync("feedback", "metrics", "--name", "valscope", "--experiment", "all", "--json")).Json().GetProperty("valueError");
+        Assert.Equal(JsonValueKind.Null, every.GetProperty("experimentId").ValueKind);
+        Assert.Equal(JsonValueKind.Null, every.GetProperty("ratio").ValueKind);
+        Assert.Equal(80, every.GetProperty("n").GetInt32());
     }
 }
