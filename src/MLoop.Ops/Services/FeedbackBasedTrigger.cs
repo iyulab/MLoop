@@ -60,6 +60,23 @@ public sealed class FeedbackBasedTrigger : IRetrainingTrigger
 
         foreach (var condition in conditions)
         {
+            // A task whose answers carry no prediction id (a forecast) can never receive feedback: every condition that reads feedback
+            // has nothing to read, and "no data" would promise data that cannot arrive.
+            if (!TaskMetadata.TakesFeedback(task) && condition.Type is ConditionType.AccuracyDrop or ConditionType.FeedbackVolume
+                    or ConditionType.IntervalCoverage or ConditionType.ErrorRise)
+            {
+                results.Add(new ConditionResult(
+                    condition,
+                    IsMet: false,
+                    CurrentValue: null,
+                    Details: $"Does not apply: a {task} model's forecasts are not logged and carry no prediction id, so no feedback can name one" +
+                             " — `mloop evaluate` on the series that followed is how to judge it")
+                {
+                    Applies = false,
+                });
+                continue;
+            }
+
             var result = condition.Type switch
             {
                 ConditionType.AccuracyDrop => EvaluateAccuracyDrop(condition, metrics, valueAnswers ? task : null),

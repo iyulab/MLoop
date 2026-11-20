@@ -1,4 +1,5 @@
 using FluentAssertions;
+using MLoop.Core.Evaluation;
 using MLoop.DataStore.Interfaces;
 using MLoop.DataStore.Services;
 using MLoop.Ops.Interfaces;
@@ -111,4 +112,28 @@ public class CompositeRetrainingTriggerTests : IDisposable
         result.IsMet.Should().BeFalse();
         result.Details.Should().Contain("does not apply");
     }
+
+    [Fact]
+    public async Task No_feedback_condition_applies_to_a_forecasting_model_whose_forecasts_cannot_take_feedback()
+    {
+        // A forecast is not logged and carries no prediction id, so no feedback names one: the condition has nothing to read and says why,
+        // instead of "no error data available", which promises data that cannot arrive.
+        Promote("sales", "forecasting", """{"rmse":1.0}""");
+        var trigger = new CompositeRetrainingTrigger(_testDir, new FileFeedbackCollector(_testDir), new FilePredictionLogger(_testDir));
+
+        var evaluation = await trigger.EvaluateAsync("sales",
+            [RetrainingDefaults.Accuracy(), RetrainingDefaults.Coverage(), RetrainingDefaults.ErrorRise(), RetrainingDefaults.Feedback()]);
+
+        evaluation.ConditionResults.Should().HaveCount(4);
+        evaluation.ConditionResults.Should().OnlyContain(r => !r.IsMet && !r.Applies && (r.Details ?? "").Contains("not logged"));
+    }
+
+    [Theory]
+    [InlineData("forecasting", false)]
+    [InlineData(" Forecasting ", false)]
+    [InlineData("regression", true)]
+    [InlineData("recommendation", true)]
+    [InlineData(null, true)]
+    public void Only_a_forecast_cannot_take_feedback(string? task, bool expected) =>
+        TaskMetadata.TakesFeedback(task).Should().Be(expected);
 }
