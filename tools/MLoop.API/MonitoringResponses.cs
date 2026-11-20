@@ -75,5 +75,6 @@ public sealed record TriggerConditionView(
     double Threshold,
     double? CurrentValue,
     bool IsMet,
+    bool Applies,
     string? Details,
     DriftSignal? Drift);

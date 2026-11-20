@@ -182,6 +182,7 @@ public class FeedbackBasedTriggerTests : IDisposable
         result.ConditionResults[0].IsMet.Should().BeFalse();
         result.ConditionResults[0].CurrentValue.Should().BeNull();
         result.ConditionResults[0].Details.Should().Contain("Accuracy does not apply").And.Contain("interval coverage");
+        result.ConditionResults[0].Applies.Should().BeFalse();
     }
 
     [Fact]

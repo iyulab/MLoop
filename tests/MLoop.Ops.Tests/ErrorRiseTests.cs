@@ -157,6 +157,7 @@ public class ErrorRiseTests : IDisposable
         r.IsMet.Should().BeFalse();
         r.CurrentValue.Should().BeNull();
         r.Details.Should().Contain("does not apply").And.Contain("a class or a text");
+        r.Applies.Should().BeFalse();
     }
 
     [Fact]
@@ -170,6 +171,7 @@ public class ErrorRiseTests : IDisposable
         r.IsMet.Should().BeFalse();
         r.CurrentValue.Should().BeNull();
         r.Details.Should().Contain("does not apply").And.Contain("not on the scale of its labels");
+        r.Applies.Should().BeFalse();
     }
 
     [Fact]
@@ -183,6 +185,7 @@ public class ErrorRiseTests : IDisposable
         r.IsMet.Should().BeFalse();
         r.CurrentValue.Should().BeNull();
         r.Details.Should().Contain("recorded no RMSE");
+        r.Applies.Should().BeFalse();
     }
 
     [Fact]
@@ -196,6 +199,7 @@ public class ErrorRiseTests : IDisposable
         r.IsMet.Should().BeFalse();
         r.CurrentValue.Should().BeNull();
         r.Details.Should().Contain("No error data available");
+        r.Applies.Should().BeTrue("a value model with nothing readable yet is waiting for data, not inapplicable");
     }
 
     [Fact]
@@ -219,5 +223,33 @@ public class ErrorRiseTests : IDisposable
         thirty.Should().BeLessThan(2.0).And.BeGreaterThan(1.5);
         thousands.Should().BeGreaterThan(thirty).And.BeLessThan(2.0);
         floor.Should().Be(0.0);
+    }
+
+    [Fact]
+    public async Task Interval_coverage_does_not_apply_to_a_model_whose_task_is_known_to_answer_a_class_but_waits_for_data_for_a_value_model()
+    {
+        await Feedback("clf", Alternating(60, 3.0));
+
+        var forClass = (await TriggerFor("binary-classification", 1.0).EvaluateAsync("clf", [RetrainingDefaults.Coverage()])).ConditionResults.Single();
+        var forValue = (await TriggerFor("regression", 1.0).EvaluateAsync("clf", [RetrainingDefaults.Coverage()])).ConditionResults.Single();
+
+        forClass.Applies.Should().BeFalse();
+        forClass.Details.Should().Contain("Interval coverage does not apply").And.Contain("a class or a text");
+        forValue.Applies.Should().BeTrue();
+        forValue.Details.Should().Contain("No interval coverage data available");
+    }
+
+    [Fact]
+    public async Task A_condition_that_is_judged_applies_whether_or_not_it_is_met()
+    {
+        await Feedback("reg", Alternating(60, 3.0));
+
+        var met = (await TriggerFor("regression", 1.0).EvaluateAsync("reg", [Rise])).ConditionResults.Single();
+        var unmet = (await TriggerFor("regression", 100.0).EvaluateAsync("reg", [Rise])).ConditionResults.Single();
+
+        met.IsMet.Should().BeTrue();
+        met.Applies.Should().BeTrue();
+        unmet.IsMet.Should().BeFalse();
+        unmet.Applies.Should().BeTrue();
     }
 }

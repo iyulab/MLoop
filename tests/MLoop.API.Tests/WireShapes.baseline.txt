@@ -237,6 +237,7 @@ $.summary.totalModels: number
 $: object
 $.conditions: array
 $.conditions[]: object
+$.conditions[].applies: boolean
 $.conditions[].currentValue: number
 $.conditions[].details: string
 $.conditions[].isMet: boolean

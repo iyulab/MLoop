@@ -157,4 +157,83 @@ public sealed class FeedbackIntervalCoverageTests : IClassFixture<EveryCommandRu
 
         Assert.Equal(0.0, json.GetProperty("accuracy").GetDouble());
     }
+
+    /// <summary>A promoted value model with the RMSE it recorded on its held-out rows (or none), answering 4.5 each time, and feedback of <paramref name="actual"/> for every answer.</summary>
+    private string SeedValueModel(string model, string task, double? heldOutRmse, double actual, int count)
+    {
+        var file = SeedValueLogWithoutInterval(model, task, count);
+        var production = Path.Combine(_project.Root, "models", model, "production");
+        File.WriteAllText(Path.Combine(production, "metadata.json"),
+            JsonSerializer.Serialize(new { modelName = model, experimentId = "exp-001", task, metrics = heldOutRmse is { } rmse ? new Dictionary<string, double> { ["rmse"] = rmse } : null }),
+            new UTF8Encoding(false));
+        var rows = File.ReadAllLines(Path.Combine(_project.Root, file)).Skip(1)
+            .Select(l => l.Split(',')[0] + "," + actual.ToString(CultureInfo.InvariantCulture));
+        File.WriteAllText(Path.Combine(_project.Root, file), "prediction_id,actual\n" + string.Join('\n', rows) + "\n", new UTF8Encoding(false));
+        return file;
+    }
+
+    [Fact]
+    public async Task AValueModelsFeedbackErrorIsShownNextToTheErrorItMadeOnItsHeldOutRows()
+    {
+        // Answers of 4.5 against actual 4.6: an error of 0.1 on every row, as large as the 0.1 recorded at training — not a rise.
+        var file = SeedValueModel("valerr", "regression", heldOutRmse: 0.1, actual: 4.6, count: 40);
+        Assert.Equal(0, (await _project.RunAsync("feedback", "add", "--from-file", file, "--json")).Exit);
+
+        var json = (await _project.RunAsync("feedback", "metrics", "--name", "valerr", "--json")).Json();
+        var error = json.GetProperty("valueError");
+        Assert.Equal(0.1, error.GetProperty("rmse").GetDouble(), 9);
+        Assert.Equal(0.1, error.GetProperty("heldOutRmse").GetDouble(), 9);
+        Assert.Equal(1.0, error.GetProperty("ratio").GetDouble(), 9);
+        Assert.Equal(40, error.GetProperty("n").GetInt32());
+        Assert.Equal("exp-001", error.GetProperty("experimentId").GetString());
+
+        var table = await _project.RunAsync("feedback", "metrics", "--name", "valerr");
+        Assert.Contains("Error, RMSE", table.Out, StringComparison.Ordinal);
+        Assert.Contains("1.00×", table.Out, StringComparison.Ordinal);
+        Assert.DoesNotContain("Established above", table.Out, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AnErrorEstablishedAboveTheRetrainingRatioIsSaidSoAndNamesTheCondition()
+    {
+        // 4.5 against 6.5: an error of 2 on every row against a held-out 0.1 — twenty times, on forty rows.
+        var file = SeedValueModel("valrise", "regression", heldOutRmse: 0.1, actual: 6.5, count: 40);
+        Assert.Equal(0, (await _project.RunAsync("feedback", "add", "--from-file", file, "--json")).Exit);
+
+        var table = await _project.RunAsync("feedback", "metrics", "--name", "valrise");
+
+        Assert.Contains("20.00×", table.Out, StringComparison.Ordinal);
+        Assert.Contains("Established above", table.Out, StringComparison.Ordinal);
+        Assert.Contains("error_rise", table.Out, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AValueModelThatRecordedNoHeldOutRmseShowsItsErrorAndSaysThereIsNothingToReadItAgainst()
+    {
+        var file = SeedValueModel("valnobase", "ranking", heldOutRmse: null, actual: 6.5, count: 40);
+        Assert.Equal(0, (await _project.RunAsync("feedback", "add", "--from-file", file, "--json")).Exit);
+
+        var json = (await _project.RunAsync("feedback", "metrics", "--name", "valnobase", "--json")).Json();
+        var error = json.GetProperty("valueError");
+        Assert.Equal(2.0, error.GetProperty("rmse").GetDouble(), 9);
+        Assert.Equal(JsonValueKind.Null, error.GetProperty("heldOutRmse").ValueKind);
+        Assert.Equal(JsonValueKind.Null, error.GetProperty("ratio").ValueKind);
+
+        var table = await _project.RunAsync("feedback", "metrics", "--name", "valnobase");
+        // The grid wraps a long line and colours each piece: read the words, without the colour codes and where the lines broke.
+        var words = System.Text.RegularExpressions.Regex.Replace(System.Text.RegularExpressions.Regex.Replace(table.Out, "\u001b\\[[0-9;]*m", ""), @"\s+", " ");
+        Assert.True(words.Contains("recorded no RMSE", StringComparison.Ordinal), words);
+    }
+
+    [Fact]
+    public async Task AModelThatAnswersAClassHasNoValueError()
+    {
+        var file = SeedValueLogWithoutInterval("valclass", "binary-classification", 40);
+        Assert.Equal(0, (await _project.RunAsync("feedback", "add", "--from-file", file, "--json")).Exit);
+
+        var json = (await _project.RunAsync("feedback", "metrics", "--name", "valclass", "--json")).Json();
+
+        Assert.Equal(JsonValueKind.Null, json.GetProperty("valueError").ValueKind);
+        Assert.DoesNotContain("Error, RMSE", (await _project.RunAsync("feedback", "metrics", "--name", "valclass")).Out, StringComparison.Ordinal);
+    }
 }

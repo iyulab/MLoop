@@ -1838,6 +1838,12 @@ shows `no interval` in the Match column, and `trigger check` reports `Accuracy d
 Its feedback is kept (it counts in `totalFeedback` and in the retraining sets); to judge the model on it, run `mloop evaluate` on rows
 whose true value you know.
 
+A value model's feedback does have a distance from the truth, whether or not its answers stated an interval: `feedback metrics` prints
+`Error, RMSE` — the root mean squared difference between answer and actual value on the production experiment's answers — next to the RMSE
+that experiment made on the rows it held out at training (`2.64× the 1.845 it made on its held-out rows`), in red once the rise is established
+(the 95% lower end at 1.25× or more, the `error_rise` retraining condition), and `--json` carries `valueError` (`rmse`, `meanSquaredError`, `n`,
+`effectiveN`, `heldOutRmse`, `ratio`, `experimentId`; `heldOutRmse` and `ratio` are `null` for a model that recorded no RMSE, a ranking model).
+
 Coverage is a check on the model, not a gate: nothing is promoted or refused by it. `mloop trigger check` reads it as a
 retraining condition (`interval_coverage` — below the stated level less 5 points, established on at least 30 rows, as an
 accuracy drop is) and, for feedback that has no accuracy, says why its accuracy row shows `-`. When it stays well under the stated level
@@ -2001,6 +2007,8 @@ mloop trigger check --json                  # shouldRetrain, recommendedAction, 
 | `input_drift` (`DataDrift`) | PSI ≥ 0.25 on any input column and over what chance alone gives for the window (the answers' drift is reported apart and does not count) | logged predictions against the training profile (`mloop drift`) |
 
 `error_rise` is the condition for the answers `accuracy_threshold` cannot judge: a number is never "the same value" as the actual one, so a value answer has distance, not accuracy. It is judged like the other two, on evidence — the feedback RMSE's 95% lower end, with weighted feedback counted by its effective rows — and a held-out error is read as optimistic: on fresh rows of the same distribution public regression models measured 0.87 to 1.18 times their held-out error, which is why the ratio is 1.25 and not 1 (one run, 27 table × seed cells; a model whose error doubled was caught on 100 rows every time, one whose error rose by half about half the time). It does not apply to a class or a text answer, nor to a ranking model (its score is not on the scale of its labels, so it records no RMSE), and says so instead of reading as "no problem". A feedback sample drawn with unequal probabilities needs its weights (`mloop feedback add --weight-column`): weighted, the mean squared error of a sample that favours large answers stayed within 3.3% of the whole pool in all 27 cells; unweighted, the median of 12 of those cells read 17% too high.
+
+A condition about something the model does not do — accuracy of a model that answers a value, interval coverage or error of one that answers a class — shows `– n/a` in the status column and `applies: false` in `--json` and `GET /trigger`, not `✗ NOT MET`: nothing is wrong, nothing is being checked. A model with no feedback yet still applies; it is waiting for data.
 
 An accuracy drop is judged on evidence, not on the point estimate: with weighted feedback the count is the
 effective number of rows (`effectiveSampleSize` in `mloop feedback metrics --json`), and the details say which

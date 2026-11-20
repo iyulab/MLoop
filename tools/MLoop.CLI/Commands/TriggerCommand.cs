@@ -160,6 +160,7 @@ public static class TriggerCommand
                 Threshold = r.Condition.Threshold,
                 r.CurrentValue,
                 r.IsMet,
+                r.Applies,
                 r.Details,
                 Drift = r.Drift is { } d ? DriftEvaluator.Signal(d) : null
             })
@@ -193,7 +194,8 @@ public static class TriggerCommand
 
         foreach (var cr in result.ConditionResults)
         {
-            var statusIcon = cr.IsMet ? "[green]✓ MET[/]" : "[grey]✗ NOT MET[/]";
+            // A condition about something this model does not do is not «not met»: nothing is being checked.
+            var statusIcon = !cr.Applies ? "[grey]– n/a[/]" : cr.IsMet ? "[green]✓ MET[/]" : "[grey]✗ NOT MET[/]";
             var thresholdStr = FormatThreshold(cr.Condition);
             var currentStr = FormatCurrentValue(cr);
 

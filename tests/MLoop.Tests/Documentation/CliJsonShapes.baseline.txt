@@ -89,6 +89,7 @@ $.intervalCoverage: null
 $.modelName: string
 $.totalFeedback: number
 $.unattributedFeedback: number
+$.valueError: null
 $.weighted: boolean
 ## feedback-add | feedback add -> exit 0
 $: object
@@ -116,11 +117,13 @@ $.intervalCoverage: null
 $.modelName: string
 $.totalFeedback: number
 $.unattributedFeedback: number
+$.valueError: null
 $.weighted: boolean
 ## trigger-check | trigger check -> exit 0
 $: object
 $.conditions: array
 $.conditions[]: object
+$.conditions[].applies: boolean
 $.conditions[].currentValue: number
 $.conditions[].details: string
 $.conditions[].drift: null|object

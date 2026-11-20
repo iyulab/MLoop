@@ -94,4 +94,11 @@ public record ConditionResult(
     /// PSI, most moved first — which inputs moved, not only that something did.
     /// </summary>
     public MLoop.Core.Monitoring.DriftReport? Drift { get; init; }
+
+    /// <summary>
+    /// Whether the condition can be judged for this model at all. False for a condition that is about something the model does not do —
+    /// accuracy of a model that answers a value, an error of one that answers a class — which is not the same as «not met»: nothing is
+    /// wrong, nothing is being checked. True otherwise, including «no feedback yet» (that is waiting for data, not inapplicable).
+    /// </summary>
+    public bool Applies { get; init; } = true;
 }

@@ -599,6 +599,11 @@ public static class FeedbackCommand
                 toOffset,
                 valueAnswers: valueTask is not null);
 
+            // How far a value answer is from the actual values — read on the production experiment's answers, as `trigger check` reads it.
+            var valueError = valueTask is null
+                ? null
+                : await ValueErrorReadingAsync(collector, projectRoot, modelName, fromOffset, toOffset);
+
             // Empty is an ordinary state; --json still owes the caller a payload, not prose.
             if (metrics.TotalFeedback == 0 && !jsonOutput)
             {
@@ -609,11 +614,11 @@ public static class FeedbackCommand
 
             if (jsonOutput)
             {
-                OutputMetricsAsJson(metrics);
+                OutputMetricsAsJson(metrics, valueError);
             }
             else
             {
-                OutputMetricsAsPanel(metrics, valueTask);
+                OutputMetricsAsPanel(metrics, valueTask, valueError);
             }
 
             return 0;
@@ -623,6 +628,54 @@ public static class FeedbackCommand
             ErrorSuggestions.DisplayError(ex, "feedback");
             return 1;
         }
+    }
+
+    /// <summary>The error of the production experiment's value answers on their feedback, with the RMSE it recorded on its held-out rows to read it against.</summary>
+    private sealed record ValueErrorReading(MLoop.DataStore.Interfaces.ValueError Error, double? HeldOutRmse, string ExperimentId);
+
+    private static async Task<ValueErrorReading?> ValueErrorReadingAsync(
+        FileFeedbackCollector collector, string projectRoot, string modelName, DateTimeOffset? from, DateTimeOffset? to)
+    {
+        var (production, _) = await ProductionMetadata.TryReadAsync(
+            Path.Combine(projectRoot, ExperimentLayout.ModelsDirectory, MLoop.Core.Storage.ModelName.Require(modelName), ExperimentLayout.ProductionDirectory));
+        if (production?.ExperimentId is not { } experimentId || !TaskMetadata.AnswersAreValues(production.Task))
+            return null;
+
+        var scoped = await collector.CalculateMetricsAsync(
+            MLoop.Core.Storage.ModelName.Require(modelName), from, to, experimentId: experimentId, valueAnswers: true);
+        if (scoped.ValueError is not { } error)
+            return null;
+
+        double? heldOut = production.Metrics is { } recorded && recorded.TryGetValue("rmse", out var rmse) && double.IsFinite(rmse) && rmse > 0 ? rmse : null;
+        return new ValueErrorReading(error, heldOut, experimentId);
+    }
+
+    /// <summary>
+    /// How far the answers were from the actual values: the RMSE of the feedback and, when the model recorded one, how many times the RMSE it
+    /// made on its held-out rows — red when that rise is established (the 95 % lower end at the retraining ratio, the way <c>trigger check</c> judges it).
+    /// </summary>
+    private static void AddValueErrorRows(Grid grid, FeedbackMetrics metrics, ValueErrorReading reading)
+    {
+        var error = reading.Error;
+        var evidence = (metrics.Weighted ? $"{error.EffectiveN:0.#} effective rows of {error.N}" : $"{error.N} rows") + $", on {reading.ExperimentId}'s answers";
+        var rmse = error.Rmse.ToString("0.###", CultureInfo.InvariantCulture);
+        if (reading.HeldOutRmse is not { } heldOut)
+        {
+            grid.AddRow(metrics.Weighted ? "[grey]Error, RMSE (weighted):[/]" : "[grey]Error, RMSE:[/]",
+                $"[white]{rmse}[/] [grey]({evidence}; the model recorded no RMSE on its held-out rows to read it against)[/]");
+            return;
+        }
+
+        var ratio = error.Rmse / heldOut;
+        var established = error.EffectiveN >= RetrainingDefaults.MinimumAccuracyFeedback
+            && RetrainingDefaults.ErrorLowerBound(error) / heldOut >= RetrainingDefaults.ErrorRiseRatio;
+        var color = established ? "red" : "green";
+        grid.AddRow(metrics.Weighted ? "[grey]Error, RMSE (weighted):[/]" : "[grey]Error, RMSE:[/]",
+            $"[{color}]{rmse}[/] [grey]— {ratio:0.00}× the {heldOut.ToString("0.###", CultureInfo.InvariantCulture)} it made on its held-out rows ({evidence})[/]");
+        if (established)
+            grid.AddRow("", $"[red]Established above {RetrainingDefaults.ErrorRiseRatio:0.##}× its held-out error:[/] [grey]the lower end of the 95 % interval of this error is over that — a retraining condition (`mloop trigger check`, `error_rise`).[/]");
+        else if (error.EffectiveN < RetrainingDefaults.MinimumAccuracyFeedback)
+            grid.AddRow("", $"[grey]Too few rows to judge (needs {RetrainingDefaults.MinimumAccuracyFeedback}).[/]");
     }
 
     /// <summary>
@@ -730,7 +783,7 @@ public static class FeedbackCommand
         AnsiConsole.MarkupLine($"[grey]Showing {feedback.Count} entries[/]");
     }
 
-    private static void OutputMetricsAsJson(FeedbackMetrics metrics)
+    private static void OutputMetricsAsJson(FeedbackMetrics metrics, ValueErrorReading? valueError = null)
     {
         var options = new JsonSerializerOptions
         {
@@ -748,6 +801,16 @@ public static class FeedbackCommand
             metrics.ExperimentId,
             metrics.UnattributedFeedback,
             metrics.IntervalCoverage,
+            ValueError = valueError is null ? null : new
+            {
+                valueError.Error.Rmse,
+                valueError.Error.MeanSquaredError,
+                valueError.Error.N,
+                valueError.Error.EffectiveN,
+                valueError.HeldOutRmse,
+                Ratio = valueError.HeldOutRmse is { } heldOut ? valueError.Error.Rmse / heldOut : (double?)null,
+                valueError.ExperimentId,
+            },
             CalculatedAt = metrics.CalculatedAt.ToString("o")
         }, options));
     }
@@ -770,7 +833,7 @@ public static class FeedbackCommand
             grid.AddRow("[grey]Not judged by an interval:[/]", $"[white]{coverage.Unjudged}[/] [grey](answered without an interval — logged before intervals were kept, or by a model that states none — or with an actual value that is not a number)[/]");
     }
 
-    private static void OutputMetricsAsPanel(FeedbackMetrics metrics, string? valueTask = null)
+    private static void OutputMetricsAsPanel(FeedbackMetrics metrics, string? valueTask = null, ValueErrorReading? valueError = null)
     {
         AnsiConsole.Write(new Rule($"[cyan]Feedback Metrics - {metrics.ModelName}[/]").LeftJustified());
         AnsiConsole.WriteLine();
@@ -802,6 +865,9 @@ public static class FeedbackCommand
 
         if (metrics.IntervalCoverage is { } coverage)
             AddIntervalCoverageRows(grid, metrics, coverage);
+
+        if (valueError is not null)
+            AddValueErrorRows(grid, metrics, valueError);
 
         grid.AddRow("[grey]Calculated At:[/]", $"[grey]{TimestampDisplay.Local(metrics.CalculatedAt)}[/]");
 
