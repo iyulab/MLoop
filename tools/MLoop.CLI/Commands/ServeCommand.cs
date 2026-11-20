@@ -269,6 +269,10 @@ public class ServeCommand : Command
                 // A stop sent to `mloop serve` (docker stop, a supervisor, kill) is the server's to act on.
                 using var forwarding = StopSignalForwarding.To(process);
 
+                // A parent killed outright (taskkill /F, Stop-Process) runs nothing to forward: on Windows the system ends the server when
+                // this process's handle on the job closes, instead of leaving it listening on its port with the model files open.
+                using var job = OperatingSystem.IsWindows() ? KillOnCloseJob.Hold(process) : null;
+
                 // Started means answering; a server that exits first reports through its exit code below.
                 if (await ServerReadiness.WaitUntilAnsweringAsync(process, host, port, ReadinessTimeout))
                 {

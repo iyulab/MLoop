@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`mloop serve` on Windows no longer leaves its server listening when the process is killed outright.** The server runs as a child of the foreground command; a stop the command receives was already passed on, but `taskkill /F` or `Stop-Process` on the command gives it no chance to pass anything on, so the server stayed behind holding its port and its model files (and the next `serve --detach` on that port was refused). The server is now put in a Windows job object that the system ends when the command's handle on it closes, however the command ends. `serve --detach` is unchanged: its server is meant to outlive the command.
+
 ### Changed
 
 - **The README and GUIDE carry a Windows reader the whole way.** The standalone-binary section says the binary reuses the installed .NET runtime and gives the release file's fixed address (a PowerShell and a shell line); the Installation text names the step for a .NET runtime the launcher cannot find (`DOTNET_ROOT`, as with a per-user install); the feedback-from-a-file recipe has a PowerShell line for the ids where it used `jq`; `feedback list` shows its `--limit` (20 by default).
