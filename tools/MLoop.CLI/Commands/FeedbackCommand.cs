@@ -191,10 +191,16 @@ public static class FeedbackCommand
             Description = "Output in JSON format"
         };
 
+        var experimentOption = new Option<string?>("--experiment", "-e")
+        {
+            Description = "Whose answers the metrics are of: an experiment id, or 'all' for every experiment's (default: the experiment in production — what `trigger check` reads — or every one when nothing is promoted)"
+        };
+
         var command = new Command("metrics", "Calculate accuracy metrics from feedback");
         command.Options.Add(nameOption);
         command.Options.Add(fromOption);
         command.Options.Add(toOption);
+        command.Options.Add(experimentOption);
         command.Options.Add(jsonOption);
 
         command.SetAction((parseResult) =>
@@ -202,8 +208,9 @@ public static class FeedbackCommand
             var modelName = parseResult.GetValue(nameOption)!;
             var from = parseResult.GetValue(fromOption);
             var to = parseResult.GetValue(toOption);
+            var experiment = parseResult.GetValue(experimentOption);
             var json = parseResult.GetValue(jsonOption);
-            return ExecuteMetricsAsync(modelName, from, to, json);
+            return ExecuteMetricsAsync(modelName, from, to, experiment, json);
         });
 
         return command;
@@ -574,6 +581,7 @@ public static class FeedbackCommand
         string modelName,
         DateTime? from,
         DateTime? to,
+        string? experiment,
         bool jsonOutput)
     {
         // In --json mode stdout must be pure JSON, so narration routes to stderr for the
@@ -593,11 +601,24 @@ public static class FeedbackCommand
             // A model that answers a value has no accuracy for an answer that stated no interval ("the same value" is not a
             // measure of one) — the same reading `trigger check` has, from the same task (TaskMetadata.AnswersAreValues).
             var valueTask = await ProductionValueTaskAsync(projectRoot, modelName);
+
+            // One model's metrics are of one experiment's answers, as `trigger check` reads them: after a promotion the replaced model's
+            // feedback is not the new one's accuracy. The experiment in production by default; `--experiment all` for the lot.
+            var scope = await MetricsScopeAsync(projectRoot, modelName, experiment);
             var metrics = await collector.CalculateMetricsAsync(
                 MLoop.Core.Storage.ModelName.Require(modelName),
                 fromOffset,
                 toOffset,
+                experimentId: scope,
                 valueAnswers: valueTask is not null);
+            // What the scope left out, so a smaller number is not taken for less feedback.
+            var otherExperiments = 0;
+            if (scope is not null)
+            {
+                var every = await collector.CalculateMetricsAsync(
+                    MLoop.Core.Storage.ModelName.Require(modelName), fromOffset, toOffset, valueAnswers: valueTask is not null);
+                otherExperiments = Math.Max(0, every.TotalFeedback - metrics.TotalFeedback - metrics.UnattributedFeedback);
+            }
 
             // Empty is an ordinary state; --json still owes the caller a payload, not prose.
             if (metrics.TotalFeedback == 0 && !jsonOutput)
@@ -613,7 +634,7 @@ public static class FeedbackCommand
             }
             else
             {
-                OutputMetricsAsPanel(metrics, valueTask);
+                OutputMetricsAsPanel(metrics, valueTask, otherExperiments);
             }
 
             return 0;
@@ -623,6 +644,21 @@ public static class FeedbackCommand
             ErrorSuggestions.DisplayError(ex, "feedback");
             return 1;
         }
+    }
+
+    /// <summary>
+    /// The experiment whose answers the metrics are of: the one asked for, 'all' (null — every experiment's), or by default the experiment in
+    /// production, which is also what <c>trigger check</c> reads. Null too when nothing is promoted or the pointer cannot be read: feedback is
+    /// readable without a production model, and its metrics keep the reading they have always had then.
+    /// </summary>
+    private static async Task<string?> MetricsScopeAsync(string projectRoot, string modelName, string? experiment)
+    {
+        if (experiment is not null)
+            return string.Equals(experiment.Trim(), "all", StringComparison.OrdinalIgnoreCase) ? null : experiment.Trim();
+
+        var (production, _) = await ProductionMetadata.TryReadAsync(
+            Path.Combine(projectRoot, ExperimentLayout.ModelsDirectory, MLoop.Core.Storage.ModelName.Require(modelName), ExperimentLayout.ProductionDirectory));
+        return production?.ExperimentId;
     }
 
     /// <summary>
@@ -770,7 +806,7 @@ public static class FeedbackCommand
             grid.AddRow("[grey]Not judged by an interval:[/]", $"[white]{coverage.Unjudged}[/] [grey](answered without an interval — logged before intervals were kept, or by a model that states none — or with an actual value that is not a number)[/]");
     }
 
-    private static void OutputMetricsAsPanel(FeedbackMetrics metrics, string? valueTask = null)
+    private static void OutputMetricsAsPanel(FeedbackMetrics metrics, string? valueTask = null, int otherExperiments = 0)
     {
         AnsiConsole.Write(new Rule($"[cyan]Feedback Metrics - {metrics.ModelName}[/]").LeftJustified());
         AnsiConsole.WriteLine();
@@ -780,6 +816,16 @@ public static class FeedbackCommand
         grid.AddColumn();
 
         grid.AddRow("[grey]Total Feedback Entries:[/]", $"[white]{metrics.TotalFeedback}[/]");
+        if (metrics.ExperimentId is { } scope)
+        {
+            var left = new List<string>();
+            if (otherExperiments > 0)
+                left.Add($"{otherExperiments} feedback on other experiments");
+            if (metrics.UnattributedFeedback > 0)
+                left.Add($"{metrics.UnattributedFeedback} earlier feedback that names no experiment its log still records");
+            grid.AddRow("[grey]Scope:[/]", $"[white]{Markup.Escape(scope)}'s answers[/]"
+                + (left.Count > 0 ? $" [grey]({string.Join("; ", left)} not counted — [blue]--experiment all[/] reads every one)[/]" : ""));
+        }
 
         if (metrics.Accuracy.HasValue)
         {
