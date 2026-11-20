@@ -59,7 +59,14 @@ public enum ConditionType
     /// established below the stated level (less a tolerance). The feedback counterpart of <see cref="AccuracyDrop"/> for an
     /// answer that is a value with an interval.
     /// </summary>
-    IntervalCoverage
+    IntervalCoverage,
+
+    /// <summary>
+    /// A model that answers values is further from the actual values than it was from the rows it held out at training: the feedback's
+    /// RMSE is established at <see cref="RetrainingCondition.Threshold"/> times that error or more. The feedback counterpart of
+    /// <see cref="AccuracyDrop"/> for an answer that is a value — whether or not it stated an interval.
+    /// </summary>
+    ErrorRise
 }
 
 /// <summary>

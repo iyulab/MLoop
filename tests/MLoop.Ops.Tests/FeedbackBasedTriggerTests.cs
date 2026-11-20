@@ -368,10 +368,11 @@ public class FeedbackBasedTriggerTests : IDisposable
         var conditions = await _trigger.GetDefaultConditionsAsync("test-model");
 
         // Assert
-        conditions.Should().HaveCount(3);
+        conditions.Should().HaveCount(4);
         conditions.Should().Contain(c => c.Type == ConditionType.AccuracyDrop);
         conditions.Should().Contain(c => c.Type == ConditionType.FeedbackVolume);
         conditions.Should().Contain(c => c.Type == ConditionType.IntervalCoverage);
+        conditions.Should().Contain(c => c.Type == ConditionType.ErrorRise);
     }
 
     [Fact]

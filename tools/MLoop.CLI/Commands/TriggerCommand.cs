@@ -240,6 +240,7 @@ public static class TriggerCommand
             ConditionType.TimeBased => $"[yellow]> {condition.Threshold:N0} days[/]",
             ConditionType.DataDrift => $"[yellow]PSI >= {condition.Threshold:0.##}[/]",
             ConditionType.IntervalCoverage => $"[yellow]< level - {condition.Threshold * 100:0.##}%[/]",
+            ConditionType.ErrorRise => $"[yellow]>= {condition.Threshold:0.##}x held-out error[/]",
             _ => $"[yellow]{condition.Threshold}[/]"
         };
     }
@@ -257,6 +258,7 @@ public static class TriggerCommand
             ConditionType.TimeBased => $"[{color}]{result.CurrentValue:N0} days[/]",
             ConditionType.DataDrift => $"[{color}]PSI {result.CurrentValue:0.000}[/]",
             ConditionType.IntervalCoverage => $"[{color}]{result.CurrentValue:P1}[/]",
+            ConditionType.ErrorRise => $"[{color}]{result.CurrentValue:0.00}x[/]",
             _ => $"[{color}]{result.CurrentValue}[/]"
         };
     }

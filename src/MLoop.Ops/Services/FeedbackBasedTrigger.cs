@@ -13,6 +13,7 @@ public sealed class FeedbackBasedTrigger : IRetrainingTrigger
     private readonly IFeedbackCollector _feedbackCollector;
     private readonly Func<string, CancellationToken, Task<string?>>? _productionExperiment;
     private readonly Func<string, CancellationToken, Task<string?>>? _productionTask;
+    private readonly Func<string, CancellationToken, Task<double?>>? _productionHeldOutError;
 
     /// <param name="feedbackCollector">Where feedback is read.</param>
     /// <param name="productionExperiment">The experiment in production for a model name, or null when none is —
@@ -20,14 +21,19 @@ public sealed class FeedbackBasedTrigger : IRetrainingTrigger
     /// <param name="productionTask">The task of the model in production (<c>similarity</c>, <c>regression</c>, …), or null when
     /// unknown. A task whose answer is a value (<see cref="TaskMetadata.AnswersAreValues"/>) has no accuracy for an answer that
     /// stated no interval — "the same value" is not a measure of it — and the condition says so instead of asking for retraining.</param>
+    /// <param name="productionHeldOutError">The RMSE the model in production made on the rows it held out at training, or null when it
+    /// recorded none (a ranking model's score is not on the scale of its labels). What <see cref="ConditionType.ErrorRise"/> compares the
+    /// feedback's error with; without it the condition says it has nothing to compare with.</param>
     public FeedbackBasedTrigger(
         IFeedbackCollector feedbackCollector,
         Func<string, CancellationToken, Task<string?>>? productionExperiment = null,
-        Func<string, CancellationToken, Task<string?>>? productionTask = null)
+        Func<string, CancellationToken, Task<string?>>? productionTask = null,
+        Func<string, CancellationToken, Task<double?>>? productionHeldOutError = null)
     {
         _feedbackCollector = feedbackCollector ?? throw new ArgumentNullException(nameof(feedbackCollector));
         _productionExperiment = productionExperiment;
         _productionTask = productionTask;
+        _productionHeldOutError = productionHeldOutError;
     }
 
     /// <inheritdoc />
@@ -46,6 +52,9 @@ public sealed class FeedbackBasedTrigger : IRetrainingTrigger
             ? null
             : await _productionTask(modelName, cancellationToken).ConfigureAwait(false);
         var valueAnswers = TaskMetadata.AnswersAreValues(task);
+        var heldOutError = _productionHeldOutError is null
+            ? null
+            : await _productionHeldOutError(modelName, cancellationToken).ConfigureAwait(false);
         var metrics = await _feedbackCollector.CalculateMetricsAsync(
             modelName, cancellationToken: cancellationToken, experimentId: experimentId, valueAnswers: valueAnswers).ConfigureAwait(false);
 
@@ -56,6 +65,7 @@ public sealed class FeedbackBasedTrigger : IRetrainingTrigger
                 ConditionType.AccuracyDrop => EvaluateAccuracyDrop(condition, metrics, valueAnswers ? task : null),
                 ConditionType.FeedbackVolume => EvaluateFeedbackVolume(condition, metrics),
                 ConditionType.IntervalCoverage => EvaluateIntervalCoverage(condition, metrics),
+                ConditionType.ErrorRise => EvaluateErrorRise(condition, metrics, valueAnswers ? task : null, heldOutError),
                 _ => CreateUnsupportedResult(condition)
             };
             results.Add(result);
@@ -83,7 +93,10 @@ public sealed class FeedbackBasedTrigger : IRetrainingTrigger
         string modelName,
         CancellationToken cancellationToken = default)
     {
-        var defaults = new List<RetrainingCondition> { RetrainingDefaults.Accuracy(), RetrainingDefaults.Coverage(), RetrainingDefaults.Feedback() };
+        var defaults = new List<RetrainingCondition>
+        {
+            RetrainingDefaults.Accuracy(), RetrainingDefaults.Coverage(), RetrainingDefaults.ErrorRise(), RetrainingDefaults.Feedback(),
+        };
 
         return Task.FromResult<IReadOnlyList<RetrainingCondition>>(defaults);
     }
@@ -193,6 +206,74 @@ public sealed class FeedbackBasedTrigger : IRetrainingTrigger
 
         return new ConditionResult(condition, IsMet: isMet, CurrentValue: coverage.Observed, Details: details);
     }
+
+    /// <summary>
+    /// A model that answers values, judged by how far its answers were from the actual values: not on the point estimate of the feedback's
+    /// RMSE but on whether even its 95 % lower end is at the ratio of the error the model made on its held-out rows
+    /// (<see cref="RetrainingCondition.Threshold"/>), and only with enough rows to say. A class or text answer has no distance and a model
+    /// that recorded no held-out RMSE has nothing to compare with — each says so rather than reading as «no problem».
+    /// </summary>
+    private static ConditionResult EvaluateErrorRise(
+        RetrainingCondition condition,
+        FeedbackMetrics metrics,
+        string? valueTask,
+        double? heldOutError)
+    {
+        if (valueTask is null)
+        {
+            return new ConditionResult(
+                condition,
+                IsMet: false,
+                CurrentValue: null,
+                Details: "Error rise does not apply: this model's answer is a class or a text, not a value");
+        }
+
+        if (heldOutError is not { } baseline)
+        {
+            return new ConditionResult(
+                condition,
+                IsMet: false,
+                CurrentValue: null,
+                Details: $"Error rise does not apply: the {valueTask} model in production recorded no RMSE on its held-out rows" +
+                         (string.Equals(valueTask, "ranking", StringComparison.OrdinalIgnoreCase)
+                             ? " — a ranking score is not on the scale of its labels, so its feedback has no error to read"
+                             : " to compare the feedback with"));
+        }
+
+        if (metrics.ValueError is not { } error)
+        {
+            return new ConditionResult(
+                condition,
+                IsMet: false,
+                CurrentValue: null,
+                Details: "No error data available (no feedback whose answer and actual value are both numbers" + Scope(metrics) + ")");
+        }
+
+        var ratio = error.Rmse / baseline;
+        var evidence = (metrics.Weighted ? $"{error.EffectiveN:0.#} effective rows of feedback" : $"{error.N} feedback") + Scope(metrics);
+        if (error.EffectiveN < RetrainingDefaults.MinimumAccuracyFeedback)
+        {
+            return new ConditionResult(
+                condition,
+                IsMet: false,
+                CurrentValue: ratio,
+                Details: $"Error {ratio:0.00}× the held-out error ({Formatted(error.Rmse)} against {Formatted(baseline)}) on {evidence} — too few to judge (needs {RetrainingDefaults.MinimumAccuracyFeedback})");
+        }
+
+        var lower = RetrainingDefaults.ErrorLowerBound(error) / baseline;
+        var isMet = lower >= condition.Threshold;
+        string details;
+        if (isMet)
+            details = $"Error {ratio:0.00}× the held-out error (95% interval from {lower:0.00}×, {Formatted(error.Rmse)} against {Formatted(baseline)}, {evidence}) is at least {condition.Threshold:0.##}×";
+        else if (ratio >= condition.Threshold)
+            details = $"Error {ratio:0.00}× the held-out error is at least {condition.Threshold:0.##}×, but its 95% interval starts at {lower:0.00}× on {evidence} — not established";
+        else
+            details = $"Error {ratio:0.00}× the held-out error ({Formatted(error.Rmse)} against {Formatted(baseline)}, {evidence}) is under {condition.Threshold:0.##}×";
+
+        return new ConditionResult(condition, IsMet: isMet, CurrentValue: ratio, Details: details);
+    }
+
+    private static string Formatted(double value) => value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
 
     private static ConditionResult EvaluateFeedbackVolume(
         RetrainingCondition condition,

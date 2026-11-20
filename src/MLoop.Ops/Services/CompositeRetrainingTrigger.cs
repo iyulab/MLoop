@@ -27,6 +27,17 @@ public static class RetrainingDefaults
     public const string IntervalName = "Scheduled Retraining";
     public const string DriftName = "input_drift";
     public const string CoverageName = "interval_coverage";
+    public const string ErrorRiseName = "error_rise";
+
+    /// <summary>
+    /// How many times the error the model made on its held-out rows its feedback error must be established at before retraining is
+    /// recommended (the lower end of the 95 % interval of the feedback RMSE, not its point estimate). Measured, not guessed
+    /// (<c>scripts/error-rise-measure.py</c>, 27 table × seed cells of public regression tables): the error a model makes on fresh rows of
+    /// its own distribution reads 0.87 to 1.18 times its held-out error — the held-out rows are a small sample — so a ratio of 1 reads
+    /// that noise as a rise once the feedback is large (two thirds of the cells would fire), and 1.25 never does (none of 27), while a model
+    /// whose error has doubled is caught on 100 rows every time and one whose error rose by half on 100 rows about half the time.
+    /// </summary>
+    public const double ErrorRiseRatio = 1.25;
 
     /// <summary>
     /// How far below the level an interval states its coverage may fall before retraining is recommended: a «90 %» interval that
@@ -72,6 +83,25 @@ public static class RetrainingDefaults
         new(ConditionType.IntervalCoverage, CoverageName, shortfall,
             $"Trigger retraining when the share of actual values inside the intervals the model stated is established more than {shortfall:P0} points below the level they stated");
 
+    /// <summary>
+    /// The lower end of the 95 % interval of the feedback's RMSE — the least the model can plausibly be off by on this feedback. A rise
+    /// is established when this, not the point estimate, is over the ratio of the held-out error: a few large errors in thirty rows would
+    /// otherwise read as a model that got worse. The mean of the squares is judged by its standard error (normal approximation, over
+    /// the effective rows) and the root taken after.
+    /// </summary>
+    public static double ErrorLowerBound(MLoop.DataStore.Interfaces.ValueError error)
+    {
+        ArgumentNullException.ThrowIfNull(error);
+        if (error.EffectiveN <= 0)
+            return 0;
+        var lower = error.MeanSquaredError - AccuracyConfidenceZ * error.SquaredErrorSd / Math.Sqrt(error.EffectiveN);
+        return Math.Sqrt(Math.Max(0, lower));
+    }
+
+    public static RetrainingCondition ErrorRise(double ratio = ErrorRiseRatio) =>
+        new(ConditionType.ErrorRise, ErrorRiseName, ratio,
+            $"Trigger retraining when the error of a model that answers values is established at {ratio:0.##} times the error it made on its held-out rows or more");
+
     public static RetrainingCondition Feedback(int count = FeedbackVolume) =>
         new(ConditionType.FeedbackVolume, FeedbackVolumeName, count,
             $"Trigger retraining when {count}+ new feedback entries are available");
@@ -85,7 +115,7 @@ public static class RetrainingDefaults
             $"Trigger retraining when an input column's PSI against the training data reaches {threshold:0.##}");
 
     /// <summary>Every default condition, in the order they are reported.</summary>
-    public static IReadOnlyList<RetrainingCondition> All { get; } = [Accuracy(), Coverage(), Feedback(), Interval(), Drift()];
+    public static IReadOnlyList<RetrainingCondition> All { get; } = [Accuracy(), Coverage(), ErrorRise(), Feedback(), Interval(), Drift()];
 }
 
 /// <summary>
@@ -103,7 +133,7 @@ public sealed class CompositeRetrainingTrigger : IRetrainingTrigger
 
     public CompositeRetrainingTrigger(string projectRoot, IFeedbackCollector feedbackCollector, IPredictionLogger predictionLogs)
     {
-        _feedback = new FeedbackBasedTrigger(feedbackCollector, ProductionExperimentAsync, ProductionTaskAsync);
+        _feedback = new FeedbackBasedTrigger(feedbackCollector, ProductionExperimentAsync, ProductionTaskAsync, ProductionHeldOutErrorAsync);
         _time = new TimeBasedTrigger(projectRoot);
         _projectRoot = projectRoot;
         _predictionLogs = predictionLogs ?? throw new ArgumentNullException(nameof(predictionLogs));
@@ -114,6 +144,13 @@ public sealed class CompositeRetrainingTrigger : IRetrainingTrigger
 
     private async Task<string?> ProductionTaskAsync(string modelName, CancellationToken cancellationToken) =>
         (await ReadProductionAsync(modelName, cancellationToken).ConfigureAwait(false))?.Task;
+
+    /// <summary>The RMSE the production experiment made on the rows it held out at training, as promotion recorded it; null when none is.</summary>
+    private async Task<double?> ProductionHeldOutErrorAsync(string modelName, CancellationToken cancellationToken) =>
+        (await ReadProductionAsync(modelName, cancellationToken).ConfigureAwait(false))?.Metrics is { } metrics
+        && metrics.TryGetValue("rmse", out var rmse) && double.IsFinite(rmse) && rmse > 0
+            ? rmse
+            : null;
 
     private Task<ProductionMetadata?> ReadProductionAsync(string modelName, CancellationToken cancellationToken) =>
         ProductionMetadata.ReadAsync(

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`mloop trigger check` and `GET /trigger` judge a model that answers values by how far it is from the actual values.** A new retraining condition, `error_rise`, compares the RMSE of the feedback (answer against actual value, both numbers, weighted like the other feedback readings) with the RMSE the production experiment made on the rows it held out at training, and is met when the 95% lower end of the feedback RMSE is at 1.25 times that or more, on at least 30 effective rows. Regression, forecasting, sentence-similarity and recommendation models had no feedback condition that read their error — `accuracy_threshold` says "does not apply" for them and `interval_coverage` reads only answers that stated an interval. A class or text model, and a ranking model (which records no RMSE), get a line that says the condition does not apply. The 1.25 comes from public regression tables: unchanged models read 0.87 to 1.18 times their held-out error on fresh rows, so a ratio of 1 would call a large unchanged feedback sample a rise. `FeedbackMetrics` gains `ValueError` (mean squared error, its spread, rows and effective rows) for the library; `mloop trigger check --json` and `GET /trigger` list one more condition.
+
 ### Changed
 
 - **The README and GUIDE carry a Windows reader the whole way.** The standalone-binary section says the binary reuses the installed .NET runtime and gives the release file's fixed address (a PowerShell and a shell line); the Installation text names the step for a .NET runtime the launcher cannot find (`DOTNET_ROOT`, as with a per-user install); the feedback-from-a-file recipe has a PowerShell line for the ids where it used `jq`; `feedback list` shows its `--limit` (20 by default).
