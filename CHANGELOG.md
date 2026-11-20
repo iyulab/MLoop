@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- **`mloop serve` on Windows no longer leaves its server listening when the process is killed outright.** The server runs as a child of the foreground command; a stop the command receives was already passed on, but `taskkill /F` or `Stop-Process` on the command gives it no chance to pass anything on, so the server stayed behind holding its port and its model files (and the next `serve --detach` on that port was refused). The server is now put in a Windows job object that the system ends when the command's handle on it closes, however the command ends. `serve --detach` is unchanged: its server is meant to outlive the command.
+- **`mloop serve` on Windows no longer leaves its server listening when the process is killed outright.** The server runs as a child of the foreground command; a stop the command receives was already passed on, but `taskkill /F` or `Stop-Process` on the command gives it no chance to pass anything on, so the server stayed behind holding its port and its model files (and the next `serve --detach` on that port was refused). The server is now put in a Windows job object that the system ends when the command's handle on it closes, however the command ends. `serve --detach` is unchanged: its server is meant to outlive the command. A test starts a process that holds a child in the job, kills it outright and checks that the child goes with it (and that without the job the child stays), on Windows.
 
 ### Changed
 
