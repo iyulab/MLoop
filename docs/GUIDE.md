@@ -1767,7 +1767,7 @@ metrics` and `mloop trigger check` measure the model with, and what a retraining
 mloop feedback add --prediction-id 2869808376524814 --actual-value no --source reviewer-llm -w 4   # the actual value, where it came from, its weight
 mloop feedback add --from-file labels.csv                                                           # many predictions at once, from a table
 mloop feedback list [--name <model>] [--limit N] [--json]            # 20 entries unless --limit says more
-mloop feedback metrics [--name <model>] [--json]
+mloop feedback metrics [--name <model>] [--experiment <id|all>] [--json]   # of the production experiment's answers unless told otherwise
 ```
 
 | Option (`add`) | Short | Description |
@@ -1837,6 +1837,8 @@ prints `Accuracy: N/A (this model answers a value and its predictions stated no 
 shows `no interval` in the Match column, and `trigger check` reports `Accuracy does not apply` instead of asking for retraining.
 Its feedback is kept (it counts in `totalFeedback` and in the retraining sets); to judge the model on it, run `mloop evaluate` on rows
 whose true value you know.
+
+`feedback metrics` reads the answers of the experiment in production — the same answers `trigger check` judges — and says so on a `Scope:` line with how much feedback on other experiments it left out: after a promotion the replaced model's feedback is not the new model's accuracy, and a table that mixed them could call a healthy model's intervals too narrow. `--experiment <id>` reads another experiment's answers and `--experiment all` every one (`experimentId` is `null` in `--json` then); with nothing promoted the metrics are of every answer, as before.
 
 Coverage is a check on the model, not a gate: nothing is promoted or refused by it. `mloop trigger check` reads it as a
 retraining condition (`interval_coverage` — below the stated level less 5 points, established on at least 30 rows, as an
