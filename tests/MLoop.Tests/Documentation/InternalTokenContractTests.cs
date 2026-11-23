@@ -63,16 +63,20 @@ public class InternalTokenContractTests
         new(@"\b(?:[Cc]ycle|[Ss]print)[- ]\d+\b", RegexOptions.Compiled);
 
     /// <summary>
-    /// An absolute path on someone's machine. Any drive letter, not just the one that happened to
-    /// leak: the point is that the path is unreachable for every reader, not which volume it names.
+    /// An absolute path on someone's machine, written with either separator. Any drive letter, not just the one
+    /// that happened to leak: the point is that the path is unreachable for every reader, not which volume it
+    /// names.
     /// </summary>
     /// <remarks>
-    /// Applied to prose only. In documentation a drive path is a place someone actually went and
-    /// pasted, which is exactly the leak; in C# it is the input a test is about — the tip for a
-    /// missing path has to be given a Windows path to have anything to assert on — and forbidding
-    /// it there would be forbidding the test rather than the leak.
+    /// Applied to every published file that is not C#. In documentation, a script, a workflow or a build file a
+    /// drive path is a place someone actually went and pasted, which is exactly the leak; in C# it is the input a
+    /// test is about — the tip for a missing path has to be given a Windows path to have anything to assert on —
+    /// and forbidding it there would be forbidding the test rather than the leak. This used to be applied to
+    /// Markdown alone, and a script that deployed to a drive on one machine's disk passed it for as long as it
+    /// existed: a script is not prose, but it is as public as prose. The forward-slash form is the same leak and
+    /// was matched nowhere — the same script carried it in its header comment.
     /// </remarks>
-    private static readonly Regex DriveLetterPath = new(@"\b[A-Za-z]:\\", RegexOptions.Compiled);
+    private static readonly Regex DriveLetterPath = new(@"\b[A-Za-z]:[\\/]", RegexOptions.Compiled);
 
     /// <summary>
     /// Names of the private working tree this package is developed in. The bare word "roadmap" is
@@ -132,6 +136,8 @@ public class InternalTokenContractTests
         Assert.Contains(files, f => f.EndsWith("Directory.Build.props", StringComparison.Ordinal));
         Assert.Contains(files, f => f.EndsWith(".yml", StringComparison.Ordinal));
         Assert.Contains(files, f => f.EndsWith(".sh", StringComparison.Ordinal));
+        Assert.Contains(files, f => f.EndsWith(".ps1", StringComparison.Ordinal));
+        Assert.Contains(files, f => f.EndsWith(".py", StringComparison.Ordinal));
         Assert.Contains(files, f => f.EndsWith(".env.example", StringComparison.Ordinal));
     }
 
@@ -146,11 +152,11 @@ public class InternalTokenContractTests
             if (relative.EndsWith(nameof(InternalTokenContractTests) + ".cs", StringComparison.Ordinal))
                 continue; // the guard names the shapes it forbids
 
-            var isProse = relative.EndsWith(".md", StringComparison.OrdinalIgnoreCase);
+            var isCSharp = relative.EndsWith(".cs", StringComparison.OrdinalIgnoreCase);
             var lines = File.ReadAllLines(file);
             for (var i = 0; i < lines.Length; i++)
             {
-                foreach (var token in TokensInFileLine(relative, lines[i], isProse))
+                foreach (var token in TokensInFileLine(relative, lines[i], isCSharp))
                     findings.Add($"{relative}:{i + 1}  {token}");
             }
         }
@@ -180,6 +186,10 @@ public class InternalTokenContractTests
     [InlineData("found in the sweep (Cycle 82)", true, "cycle written as a word and a number")]
     [InlineData("found during sprint-35", true, "sprint id")]
     [InlineData(@"open D:\data\project", true, "absolute path on one machine")]
+    [InlineData("# deploys to D:/data/lib on one machine", true, "absolute path written with forward slashes")]
+    [InlineData(@"$OutputDir = ""D:\lib""", true, "a script variable holding a drive path")]
+    [InlineData("a request to http://localhost:5000/health", false, "a URL is not a drive path")]
+    [InlineData("the value a:b and the ratio 3:1/2", false, "a colon after a one-letter word is not a drive")]
     [InlineData("tracked in claudedocs/plans", true, "private working tree")]
     [InlineData("kept in the acme-umbrella repo", true, "private workspace repository name")]
     [InlineData("see the umbrella policy for the cadence", true, "pointer at the private workspace's policy")]
@@ -197,7 +207,7 @@ public class InternalTokenContractTests
     [InlineData("decoded as Latin-1", false, "an encoding whose name is not upper-case")]
     public void GuardSeesEachShapeItForbidsAndToleratesEachNearMiss(string line, bool isInternal, string what)
     {
-        var found = InternalTokensIn(line, isProse: true).ToArray();
+        var found = InternalTokensIn(line, isCSharp: false).ToArray();
 
         if (isInternal)
             Assert.True(found.Length > 0, $"the guard no longer recognizes a {what}: \"{line}\"");
@@ -209,13 +219,13 @@ public class InternalTokenContractTests
     /// The tokens one line of a published file carries. An ignore file's pattern lines name paths — keeping a
     /// private working tree out of a clone is what such a line is for — so only its comments are read as prose.
     /// </summary>
-    private static IEnumerable<string> TokensInFileLine(string relativePath, string line, bool isProse)
+    private static IEnumerable<string> TokensInFileLine(string relativePath, string line, bool isCSharp)
     {
         var isIgnoreFile = relativePath.EndsWith(".gitignore", StringComparison.Ordinal);
         if (isIgnoreFile && !line.TrimStart().StartsWith('#'))
             return [];
 
-        return InternalTokensIn(line, isProse);
+        return InternalTokensIn(line, isCSharp);
     }
 
     [Theory]
@@ -224,12 +234,12 @@ public class InternalTokenContractTests
     [InlineData("docs/guide.md", "claudedocs/", true, "the same text in a document")]
     public void IgnoreFilePatternsAreExemptAndItsCommentsAreNot(string path, string line, bool isInternal, string what)
     {
-        var found = TokensInFileLine(path, line, isProse: path.EndsWith(".md", StringComparison.Ordinal)).ToArray();
+        var found = TokensInFileLine(path, line, isCSharp: path.EndsWith(".cs", StringComparison.Ordinal)).ToArray();
 
         Assert.True(isInternal == (found.Length > 0), $"{what}: \"{line}\" in {path} -> {(found.Length > 0 ? string.Join(", ", found) : "nothing")}");
     }
 
-    private static IEnumerable<string> InternalTokensIn(string line, bool isProse)
+    private static IEnumerable<string> InternalTokensIn(string line, bool isCSharp)
     {
         foreach (Match match in WorkItemId.Matches(line))
         {
@@ -237,7 +247,7 @@ public class InternalTokenContractTests
                 yield return match.Value;
         }
 
-        if (isProse)
+        if (!isCSharp)
         {
             foreach (Match match in DriveLetterPath.Matches(line))
                 yield return match.Value + "…  (absolute path on one machine)";

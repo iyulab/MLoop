@@ -74,3 +74,6 @@ tmpclaude-*
 # Python bytecode (the benchmark scripts import one another)
 __pycache__/
 *.pyc
+
+# Local CLI build output (scripts/build-cli-local.ps1)
+/artifacts/

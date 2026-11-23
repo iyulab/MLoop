@@ -1,12 +1,20 @@
 # build-cli-local.ps1
-# MLoop CLI를 single file로 빌드하여 D:/data/lib에 배포
+# Builds the MLoop CLI as a single file and copies mloop.exe to an output directory.
+#
+#   .\scripts\build-cli-local.ps1                       # -> <repo>\artifacts\cli-local
+#   .\scripts\build-cli-local.ps1 -OutputDir <dir>       # any directory you choose
+#   $env:MLOOP_LOCAL_BIN = "<dir>"; .\scripts\build-cli-local.ps1
+
+param(
+    [string]$OutputDir = $env:MLOOP_LOCAL_BIN
+)
 
 $ErrorActionPreference = "Stop"
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $CliProject = Join-Path $ProjectRoot "tools\MLoop.CLI\MLoop.CLI.csproj"
-$OutputDir = "D:\lib"
 $PublishDir = Join-Path $ProjectRoot "tools\MLoop.CLI\bin\publish"
+if (-not $OutputDir) { $OutputDir = Join-Path $ProjectRoot "artifacts\cli-local" }
 
 Write-Host "=== MLoop CLI Local Build ===" -ForegroundColor Cyan
 Write-Host "Project: $CliProject"

@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **The README's Windows line for the standalone binary makes the folder it writes into.** `Invoke-WebRequest -OutFile "$HOME\tools\mloop.exe"` stopped on a machine with no `tools` folder; the line before it now creates the folder if it is missing.
 
+### Changed
+
+- **`scripts/build-cli-local.ps1` takes its output directory as `-OutputDir` (or `MLOOP_LOCAL_BIN`).** It deployed to one fixed drive directory; with neither set it now writes to `artifacts/cli-local` inside the repository (ignored by git).
+
 ## [0.53.0] - 2026-11-23
 
 ### Added

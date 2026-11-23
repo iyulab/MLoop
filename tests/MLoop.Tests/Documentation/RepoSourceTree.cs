@@ -51,7 +51,7 @@ internal static class RepoSourceTree
     /// it is the one nobody rereads.
     /// </summary>
     internal static readonly string[] PublishedPatterns =
-        ["*.md", "*.cs", "*.csproj", "*.props", "*.yml", "*.sh", "*.ps1", "*.json", ".env.example", ".gitignore"];
+        ["*.md", "*.cs", "*.csproj", "*.props", "*.yml", "*.sh", "*.ps1", "*.py", "*.json", ".env.example", ".gitignore"];
 
     /// <summary>
     /// Every file of <see cref="PublishedPatterns"/> this repository actually publishes, as absolute paths.

@@ -150,6 +150,22 @@ jobs:
     - name: Check formatting
       run: dotnet format MLoop.slnx --verify-no-changes --verbosity diagnostic
 
+  # The organisation's scan for text only an insider can look up (a ticket id, a private-notes path, an
+  # absolute local path). It reads every published file outside tests/ — the contract test
+  # InternalTokenContractTests reads the rest, and keeps tests/ to itself because a test about a Windows
+  # path has to be given one. Pinned to a commit, not a branch.
+  internal-token-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Internal token scan
+      uses: iyulab/dotnet-ci-actions/internal-token-scan@525f158c6c78ec57d9aa1ff6c41e055b4dd503f5
+      with:
+        exclude-dirs: .git,bin,obj,node_modules,dist,.venv,TestResults,coverage,tests
+
   security-scan:
     runs-on: ubuntu-latest
     if: github.event_name != 'workflow_dispatch' # TEMPORARY (feat/csvhelper-34 only): cannot restore the unpublished pin

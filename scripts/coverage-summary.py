@@ -172,7 +172,7 @@ def self_test():
         assert [b[0] for b in below] == ["Asm"], below            # 66.7 < 90 is seen
         _, below = render(by_assembly, by_file, {"Asm": 66.0}, 0.0, 5, 1, 2)
         assert not below, below                                   # at or above the floor is not
-        assert not counted("/r/src/Asm/obj/x.cs") and not counted("C:\\r\\tests\\T.cs")
+        assert not counted("/r/src/Asm/obj/x.cs") and not counted("r\\tests\\T.cs")
         assert counted("/r/src/Asm/Models/x.cs")
         assert find_reports(os.path.join(tmp, "p1", "TestResults", "nothing-here")) == []
     print("coverage-summary self-test: ok")
