@@ -144,7 +144,8 @@ Download from [GitHub Releases](https://github.com/iyulab/MLoop/releases) and pl
 file that reuses the .NET runtime already installed on the machine (it does not carry its own). The latest release's file has a fixed address:
 
 ```powershell
-# Windows (PowerShell) — into a folder of your choice, then run it by its path
+# Windows (PowerShell) — into a folder of your choice (made here if it is not there), then run it by its path
+New-Item -ItemType Directory -Force "$HOME\tools" | Out-Null
 Invoke-WebRequest https://github.com/iyulab/MLoop/releases/latest/download/mloop-win-x64.exe -OutFile "$HOME\tools\mloop.exe"
 ```
 
