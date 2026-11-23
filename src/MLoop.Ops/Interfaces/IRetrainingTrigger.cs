@@ -59,7 +59,14 @@ public enum ConditionType
     /// established below the stated level (less a tolerance). The feedback counterpart of <see cref="AccuracyDrop"/> for an
     /// answer that is a value with an interval.
     /// </summary>
-    IntervalCoverage
+    IntervalCoverage,
+
+    /// <summary>
+    /// A model that answers values is further from the actual values than it was from the rows it held out at training: the feedback's
+    /// RMSE is established at <see cref="RetrainingCondition.Threshold"/> times that error or more. The feedback counterpart of
+    /// <see cref="AccuracyDrop"/> for an answer that is a value — whether or not it stated an interval.
+    /// </summary>
+    ErrorRise
 }
 
 /// <summary>
@@ -87,4 +94,11 @@ public record ConditionResult(
     /// PSI, most moved first — which inputs moved, not only that something did.
     /// </summary>
     public MLoop.Core.Monitoring.DriftReport? Drift { get; init; }
+
+    /// <summary>
+    /// Whether the condition can be judged for this model at all. False for a condition that is about something the model does not do —
+    /// accuracy of a model that answers a value, an error of one that answers a class — which is not the same as «not met»: nothing is
+    /// wrong, nothing is being checked. True otherwise, including «no feedback yet» (that is waiting for data, not inapplicable).
+    /// </summary>
+    public bool Applies { get; init; } = true;
 }

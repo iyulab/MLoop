@@ -95,6 +95,7 @@ public sealed class TimeBasedTrigger : IRetrainingTrigger
             case ConditionType.FeedbackVolume:
             case ConditionType.PerformanceDegradation:
             case ConditionType.IntervalCoverage:
+            case ConditionType.ErrorRise:
                 // These conditions require additional data sources (feedback, drift detection, etc.)
                 // Return as "not supported" in this simple implementation
                 return new ConditionResult(

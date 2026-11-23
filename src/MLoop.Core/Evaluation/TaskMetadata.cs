@@ -99,6 +99,15 @@ public static class TaskMetadata
     public static bool AnswersAreValues(string? task) => task is not null && ValueTasks.Contains(task.Trim());
 
     /// <summary>
+    /// Whether an answer of <paramref name="task"/> can be named by feedback — whether it carries a prediction id. A forecast does not: it is the
+    /// horizon after the training series, made in one stateful replay (<c>ForecastReplayService</c>), and neither <c>mloop predict --log</c> nor
+    /// <c>POST /predict</c> logs it or returns an id (measured on a trained forecasting model: the log stays empty and <c>feedback add</c> finds no
+    /// prediction). A condition that reads feedback has nothing to read for such a task, so it does not apply — saying "no data" would promise data
+    /// that cannot arrive. Trimmed, case-insensitive; an unknown task or none is <c>true</c>, which keeps the reading it has always had.
+    /// </summary>
+    public static bool TakesFeedback(string? task) => !string.Equals(task?.Trim(), "forecasting", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
     /// All distinct canonical primary metrics across tasks. Metric allowlists (e.g. validate)
     /// union this so adding a task can never again leave them out of sync.
     /// </summary>

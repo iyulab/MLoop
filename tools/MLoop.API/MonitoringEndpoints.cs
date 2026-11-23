@@ -275,6 +275,7 @@ public static class MonitoringEndpoints
                         cr.Condition.Threshold,
                         cr.CurrentValue,
                         cr.IsMet,
+                        cr.Applies,
                         cr.Details,
                         cr.Drift is { } d ? MLoop.Ops.Services.DriftEvaluator.Signal(d) : null))]));
             }

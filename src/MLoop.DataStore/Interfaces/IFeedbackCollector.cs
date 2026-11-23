@@ -148,6 +148,9 @@ public record FeedbackEntry(
 /// <param name="IntervalCoverage">How often the actual value fell inside the interval the answer stated — present when any
 /// counted prediction stated an interval and its actual value is a number; those predictions are read here and are left out of
 /// <see cref="Accuracy"/>, which for a value answer is a match of two numbers and means nothing. Null otherwise.</param>
+/// <param name="ValueError">How far the answers were from the actual values, over the counted feedback whose answer and actual value are both
+/// numbers — asked for with <c>valueAnswers</c> (a class answer has no distance), and read whether or not the answer stated an interval, for a
+/// point answer is off by some amount either way. Null when none is asked for or none has two numbers.</param>
 public record FeedbackMetrics(
     string ModelName,
     int TotalFeedback,
@@ -157,7 +160,23 @@ public record FeedbackMetrics(
     double? EffectiveSampleSize = null,
     string? ExperimentId = null,
     int UnattributedFeedback = 0,
-    IntervalCoverage? IntervalCoverage = null);
+    IntervalCoverage? IntervalCoverage = null,
+    ValueError? ValueError = null);
+
+/// <summary>
+/// The error of a value answer on its feedback: the mean of the squared differences between the actual value and the answer, by weight
+/// (a row reviewed with probability π counts 1/π), with the spread of those squares so a reader can say how sure the mean is. What
+/// <c>error_rise</c> compares with the error the model made on the rows it held out at training.
+/// </summary>
+/// <param name="MeanSquaredError">Weighted mean of (actual − answer)².</param>
+/// <param name="SquaredErrorSd">Weighted standard deviation of (actual − answer)² — the spread of the squares, not of the errors.</param>
+/// <param name="N">How many predictions were read (rows, not weights).</param>
+/// <param name="EffectiveN">What the mean is worth as evidence: <see cref="N"/> unweighted, Kish's (Σw)² ÷ Σw² weighted.</param>
+public sealed record ValueError(double MeanSquaredError, double SquaredErrorSd, int N, double EffectiveN)
+{
+    /// <summary>The root of <see cref="MeanSquaredError"/> — in the units of the value, like the model's own RMSE.</summary>
+    public double Rmse => Math.Sqrt(MeanSquaredError);
+}
 
 /// <summary>
 /// The posterior check of a stated prediction interval: of the predictions that stated one, the share whose actual value fell

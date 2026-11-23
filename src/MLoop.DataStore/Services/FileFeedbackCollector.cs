@@ -268,7 +268,45 @@ public sealed class FileFeedbackCollector : IFeedbackCollector
             EffectiveSampleSize: effectiveSize,
             ExperimentId: experimentId,
             UnattributedFeedback: unattributed,
-            IntervalCoverage: CoverageOf(judged, unjudged: matched.Count + leftOut));
+            IntervalCoverage: CoverageOf(judged, unjudged: matched.Count + leftOut),
+            ValueError: valueAnswers ? ValueErrorOf(feedback) : null);
+    }
+
+    /// <summary>
+    /// The error of the answers that have a distance from their actual value — both numbers — by weight; null when none does. A row with
+    /// weight zero counts for nothing and is not read.
+    /// </summary>
+    private static ValueError? ValueErrorOf(IReadOnlyList<FeedbackEntry> feedback)
+    {
+        var squares = new List<(double Square, double Weight)>();
+        foreach (var entry in feedback)
+        {
+            if (entry.EffectiveWeight > 0
+                && FeedbackValueComparer.TryReadNumber(entry.PredictedValue, out var answer)
+                && FeedbackValueComparer.TryReadNumber(entry.ActualValue, out var actual))
+            {
+                var difference = actual - answer;
+                squares.Add((difference * difference, entry.EffectiveWeight));
+            }
+        }
+
+        if (squares.Count == 0)
+            return null;
+
+        double total = 0, weightSquares = 0, sum = 0;
+        foreach (var (square, weight) in squares)
+        {
+            total += weight;
+            weightSquares += weight * weight;
+            sum += weight * square;
+        }
+
+        var mean = sum / total;
+        double spread = 0;
+        foreach (var (square, weight) in squares)
+            spread += weight * (square - mean) * (square - mean);
+
+        return new ValueError(mean, Math.Sqrt(spread / total), squares.Count, total * total / weightSquares);
     }
 
     /// <summary>

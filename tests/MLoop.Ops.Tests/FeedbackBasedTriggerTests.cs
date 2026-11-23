@@ -182,6 +182,7 @@ public class FeedbackBasedTriggerTests : IDisposable
         result.ConditionResults[0].IsMet.Should().BeFalse();
         result.ConditionResults[0].CurrentValue.Should().BeNull();
         result.ConditionResults[0].Details.Should().Contain("Accuracy does not apply").And.Contain("interval coverage");
+        result.ConditionResults[0].Applies.Should().BeFalse();
     }
 
     [Fact]
@@ -368,10 +369,11 @@ public class FeedbackBasedTriggerTests : IDisposable
         var conditions = await _trigger.GetDefaultConditionsAsync("test-model");
 
         // Assert
-        conditions.Should().HaveCount(3);
+        conditions.Should().HaveCount(4);
         conditions.Should().Contain(c => c.Type == ConditionType.AccuracyDrop);
         conditions.Should().Contain(c => c.Type == ConditionType.FeedbackVolume);
         conditions.Should().Contain(c => c.Type == ConditionType.IntervalCoverage);
+        conditions.Should().Contain(c => c.Type == ConditionType.ErrorRise);
     }
 
     [Fact]
