@@ -162,7 +162,7 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Internal token scan
-      uses: iyulab/dotnet-ci-actions/internal-token-scan@525f158c6c78ec57d9aa1ff6c41e055b4dd503f5
+      uses: iyulab/dotnet-ci-actions/internal-token-scan@01c214a97aee2b48fb0bcebc9473d3df11c6532c
       with:
         exclude-dirs: .git,bin,obj,node_modules,dist,.venv,TestResults,coverage,tests
 
