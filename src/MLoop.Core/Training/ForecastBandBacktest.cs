@@ -102,7 +102,7 @@ internal static class ForecastBandBacktest
     /// The recipe the run fitted — the same window and horizon, with the series length the run kept ahead of its fit by a
     /// horizon — fitted on <c>series[start .. start + length)</c>, and its forecast at the last of those points.
     /// </summary>
-    private static Forecast FitAndForecast(
+    internal static Forecast FitAndForecast(
         MLContext mlContext, IReadOnlyList<float> series, int start, int length, int horizon, int windowSize, int configuredSeriesLength)
     {
         var seriesLength = length + horizon;
