@@ -8,6 +8,9 @@ name: Runtime smoke
 # paths change, and every Sunday at 04:00 UTC (after the scheduled benchmarks, the day before the weekly release day), so that
 # a regression on these paths shows up in a week and not at the next release. A Linux x64 runner runs the script's
 # linux/amd64 container natively, without emulation.
+# The `text-lifecycle` jobs walk each deep-learning text task (NER, question answering, sentence similarity) through the
+# model's operating life with the real CLI (scripts/text-task-lifecycle.py) on the runner itself. Each task trains two or
+# three models for a fixed number of epochs, so each has a job of its own instead of lengthening the one above.
 on:
   schedule:
     - cron: '0 4 * * 0'
@@ -16,7 +19,7 @@ on:
       runtime:
         description: 'Which runtime to drive'
         type: choice
-        options: [both, tf, torch, text, anomaly]
+        options: [both, tf, torch, text, anomaly, lifecycle]
         default: both
 
 concurrency:
@@ -29,6 +32,7 @@ env:
 
 jobs:
   smoke:
+    if: ${{ inputs.runtime != 'lifecycle' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
@@ -43,3 +47,42 @@ jobs:
 
     - name: Run
       run: ./scripts/runtime-smoke.sh ${{ inputs.runtime != 'both' && inputs.runtime || '' }}
+
+  text-lifecycle:
+    # On the schedule there are no inputs; on request, with everything or by name.
+    if: ${{ !inputs.runtime || inputs.runtime == 'both' || inputs.runtime == 'lifecycle' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        task: [ner, qa, sim]
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Build the CLI and the API
+      # `mloop serve` starts the API assembly beside the CLI or the one MLOOP_API_PATH names
+      run: |
+        dotnet build tools/MLoop.CLI -c Release
+        dotnet build tools/MLoop.API -c Release
+
+    - name: Install the libtorch runtime
+      run: dotnet tools/MLoop.CLI/bin/Release/net10.0/mloop.dll runtime install torch
+
+    - name: Walk
+      env:
+        MLOOP_API_PATH: ${{ github.workspace }}/tools/MLoop.API/bin/Release/net10.0/MLoop.API.dll
+      run: |
+        python3 scripts/text-task-lifecycle.py --mloop "dotnet $PWD/tools/MLoop.CLI/bin/Release/net10.0/mloop.dll" \
+          --tasks ${{ matrix.task }} --job --work "$RUNNER_TEMP/lifecycle"
+
+    - name: Show the checks
+      if: always()
+      run: cat "$RUNNER_TEMP/lifecycle/${{ matrix.task }}/summary.json" || echo 'no summary was written'
