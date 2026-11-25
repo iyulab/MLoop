@@ -68,6 +68,14 @@ public record TrainingConfig
     public double TestSplit { get; init; } = 0.2;
 
     /// <summary>
+    /// The data file the run was given, when <see cref="DataFile"/> is something prepared from it — a converted, composed,
+    /// sampled, cleaned or split copy. It is the file the caller named; for <c>mloop train</c> over several files, the file
+    /// they were merged into. Recorded with the experiment, so a later reader of the input columns has the
+    /// caller's file to fall back on when the prepared copy is gone. Null when the training reads the named file itself.
+    /// </summary>
+    public string? SourceDataFile { get; init; }
+
+    /// <summary>
     /// Path to separate test data file (when pre-split, e.g. for balanced training)
     /// </summary>
     public string? TestDataFile { get; init; }

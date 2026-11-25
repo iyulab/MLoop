@@ -141,6 +141,13 @@ public class ExperimentConfig
     public required string DataFile { get; init; }
 
     /// <summary>
+    /// The file the run was given, when <see cref="DataFile"/> was prepared from it (<c>TrainingConfig.SourceDataFile</c>).
+    /// Absent when the two are one file, and on experiments recorded before the field existed.
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    public string? SourceDataFile { get; init; }
+
+    /// <summary>
     /// The SHA-256 of <see cref="DataFile"/>'s content as the user had it
     /// (<c>sha256:&lt;hex&gt;</c>, see <c>MLoop.Core.Data.DataFingerprint</c>), so the experiment
     /// can say which data it saw rather than only where it looked. Null on experiments recorded

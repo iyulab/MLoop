@@ -285,6 +285,7 @@ public class TrainingEngine : ITrainingEngine
                 Config = new ExperimentConfig
                 {
                     DataFile = originalDataFile, // Store original path, not converted temp file
+                    SourceDataFile = config.SourceDataFile == originalDataFile ? null : config.SourceDataFile,
                     DataFileHash = input.DataFileHash,
                     LabelColumn = config.LabelColumn,
                     TimeLimitSeconds = grantedSeconds.Value,
@@ -358,6 +359,7 @@ public class TrainingEngine : ITrainingEngine
                 Config = new ExperimentConfig
                 {
                     DataFile = originalDataFile, // Store original path, not converted temp file
+                    SourceDataFile = config.SourceDataFile == originalDataFile ? null : config.SourceDataFile,
                     DataFileHash = input.DataFileHash,
                     LabelColumn = config.LabelColumn,
                     TimeLimitSeconds = grantedSeconds.Value,

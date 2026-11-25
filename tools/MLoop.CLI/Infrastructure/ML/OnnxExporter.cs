@@ -137,6 +137,15 @@ public sealed class OnnxExporter
             : experiment.Config?.DataFile is { Length: > 0 } recorded
                 ? ProjectPaths.Resolve(recorded, request.ProjectRoot)
                 : null;
+        // That training file can be a copy prepared from the one the caller named, outside the project or since deleted.
+        // The named file stands in for it when it has every column the model reads; where preparation made columns the
+        // named file lacks, the refusal below speaks of the training file as before.
+        if (!named && !IsReadable(dataPath, request) && experiment.Config?.SourceDataFile is { Length: > 0 } source)
+        {
+            var sourcePath = ProjectPaths.Resolve(source, request.ProjectRoot);
+            if (IsReadable(sourcePath, request) && await HasEveryColumnReadAsync(sourcePath, experiment.Config, cancellationToken))
+                dataPath = sourcePath;
+        }
         if (dataPath is not null && request.DataWithinProject && !ProjectPaths.IsWithinReal(dataPath, request.ProjectRoot))
         {
             return named
@@ -258,6 +267,29 @@ public sealed class OnnxExporter
             }
             gate.Release();
         }
+    }
+
+    /// <summary>Whether <paramref name="path"/> is a file this request may read the input columns from.</summary>
+    private static bool IsReadable([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] string? path, OnnxExportRequest request) =>
+        path is not null
+        && (!request.DataWithinProject || ProjectPaths.IsWithinReal(path, request.ProjectRoot))
+        && TabularDataFile.Exists(path);
+
+    /// <summary>
+    /// Whether the table at <paramref name="path"/> names every column the model reads - the schema's features and the
+    /// columns the loader keeps by name (<see cref="PreserveColumns"/>) - compared as the same text however composed.
+    /// False without a schema: nothing then says the file would do.
+    /// </summary>
+    private static async Task<bool> HasEveryColumnReadAsync(string path, ExperimentConfig config, CancellationToken cancellationToken)
+    {
+        if (config.InputSchema is not { } schema)
+            return false;
+        var headers = await new CsvHelperImpl().ReadHeadersAsync(
+            await TabularDataFile.AsCsvAsync(path), cancellationToken: cancellationToken);
+        var present = headers.Select(CanonicalText.Nfc).ToHashSet(StringComparer.Ordinal);
+        return schema.Columns.Where(c => c.Purpose == "Feature").Select(c => c.Name)
+            .Concat(PreserveColumns(config) ?? [])
+            .All(name => present.Contains(CanonicalText.Nfc(name)));
     }
 
     private static OnnxExportOutcome Refused(OnnxExportRefusalKind kind, string message)

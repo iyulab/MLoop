@@ -179,6 +179,7 @@ public class TrainingJobRunner : BackgroundService
                 definition.Training?.TimeLimitSeconds ?? ConfigDefaults.DefaultTimeLimitSeconds,
                 testFile is null ? testSplit : 0,
                 testFile is null ? null : Path.GetFullPath(testFile));
+            config = config with { SourceDataFile = Path.GetFullPath(job.DataFile) };
             if (DataLoaderFactory.IsDirectoryBased(config.Task) && ClassBalance.Requested(job.Balance))
                 config = config with { Balance = job.Balance };
 

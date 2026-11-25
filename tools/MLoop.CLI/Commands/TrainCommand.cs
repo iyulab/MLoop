@@ -435,6 +435,7 @@ public static partial class TrainCommand
                 useAutoTime,
                 preFeaturizer,
                 preFeaturizerColumns);
+            trainingConfig = trainingConfig with { SourceDataFile = Path.GetFullPath(sourceDataFile) };
             // A directory of images is not a file to balance up front: the trainer oversamples its own training split.
             if (DataLoaderFactory.IsDirectoryBased(trainingConfig.Task) && ClassBalance.Requested(balance))
                 trainingConfig = trainingConfig with { Balance = balance };
