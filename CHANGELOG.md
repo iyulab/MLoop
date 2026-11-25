@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **`mloop predict <pictures> --save-images <folder>` writes a copy of each picture with what was found drawn on it** — an object detector's boxes with their labels and scores, or an image-anomaly model's distances as a heat map over the part of the picture the encoder read, tinted where they pass where the held-out normal pictures ended, the farthest patch outlined and the score written. A picture within normal stays clear. The originals are not changed, and a folder inside the one being read is refused. Drawn with SkiaSharp, already a dependency; ASCII labels use a built-in font, so a Linux install with no fonts draws them too (`MLoop.Core.Data.PictureOverlay`).
+
 ### Fixed
 
 - **`mloop train` trains a YOLO folder again.** Since 0.51.0 the check before a training run asked every object-detection folder for a COCO annotations file, so an `images/` + `labels/` dataset was refused («No COCO annotations file found») although the loader reads it. (`POST /train` and `POST /datasets` share the check.)

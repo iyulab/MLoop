@@ -358,6 +358,7 @@ images — and evaluate reads a labelled dataset:
 
 ```bash
 mloop predict photos/            # → predictions/<model>-detections-<ts>.json (label + score + box per image)
+mloop predict photos/ --save-images out/    # also: a copy of each picture with its boxes drawn on it, in out/
 mloop evaluate exp-001 datasets/yolo   # → mAP (map_50 / map_50_95)
 ```
 
@@ -379,6 +380,7 @@ cd line
 # datasets/normal/   ← pictures of normal items (subfolders are fine)
 mloop train datasets/normal --task image-anomaly                 # keeps the normal pictures' patch vectors as a bank
 mloop predict photos/ --json                                      # per picture: score, 16 × 16 patch distances, crop
+mloop predict photos/ --save-images out/                          # copies of the pictures with the heat map drawn on them
 mloop evaluate exp-001 datasets/check                             # check/good/*.png vs check/<defect>/*.png → AUROC, defects missed
 ```
 

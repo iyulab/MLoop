@@ -631,6 +631,14 @@ mloop predict [data-file] [options]
 #                                only boxes of 0.5 and over, and a lower value shows no more of it.
 #                                Any other task refuses the option. `POST /predict` takes the same
 #                                as `?scoreThreshold=` or a `scoreThreshold` field beside `images`.
+#   --save-images <folder>       Object detection and image anomaly: also write a copy of each picture, with what was
+#                                found drawn on it, into this folder (outside the folder being read; the originals are
+#                                not changed). Detection: each box with its label and score. Image anomaly: patches
+#                                farther from normal than the held-out normal pictures ever were are tinted, the farthest
+#                                one outlined, and the score written beside where normal ended — a picture within normal
+#                                stays clear. Copies are PNG files named as the pictures (subfolders kept). Labels in
+#                                letters other than ASCII need a font on the machine that has them; without one they are
+#                                drawn as '?' (a bare Linux install has no fonts)
 #   --log                        Enable prediction logging to DataStore
 
 # Examples
@@ -1269,7 +1277,7 @@ mloop init line --task image-anomaly     # scaffolds datasets/normal/
 
 ```bash
 mloop train datasets/normal --task image-anomaly [--encoder <id>] [--bank-size N]
-mloop predict <image-or-folder> [--json] [--output scores.json]
+mloop predict <image-or-folder> [--json] [--output scores.json] [--save-images <folder>]
 mloop evaluate <exp-id> <folder> [--normal-class good] [--json]
 ```
 

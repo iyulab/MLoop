@@ -79,6 +79,12 @@ public static partial class PredictCommand
                           "0.05 keeps every box down to 0.05, so a lower value shows boxes a not-yet-confident detector finds; a model trained before keeps only boxes of 0.5 and over"
         };
 
+        var saveImagesOption = new Option<string?>("--save-images")
+        {
+            Description = "Object detection and image anomaly: also write a copy of each picture into this folder with what was found drawn " +
+                          "on it — the boxes with their labels and scores, or a heat map of how far each part of the picture is from normal, the farthest part outlined"
+        };
+
         var jsonOption = new Option<bool>("--json")
         {
             Description = "Emit structured predictions as JSON to stdout (same schema as the /predict API, incl. normalized confidence) instead of writing a CSV. Progress goes to stderr."
@@ -98,6 +104,7 @@ public static partial class PredictCommand
         command.Options.Add(includeFeaturesOption);
         command.Options.Add(jsonOption);
         command.Options.Add(scoreThresholdOption);
+        command.Options.Add(saveImagesOption);
         var recordsOption = DataFileOptions.Records();
         command.Options.Add(recordsOption);
 
@@ -111,7 +118,7 @@ public static partial class PredictCommand
             var logPredictions = parseResult.GetValue(logOption);
             var includeFeatures = parseResult.GetValue(includeFeaturesOption);
             var json = parseResult.GetValue(jsonOption);
-            return ExecuteAsync(dataFile, name, modelPath, output, unknownStrategy, logPredictions, includeFeatures, json, parseResult.GetValue(recordsOption), parseResult.GetValue(experimentOption), parseResult.GetValue(scoreThresholdOption));
+            return ExecuteAsync(dataFile, name, modelPath, output, unknownStrategy, logPredictions, includeFeatures, json, parseResult.GetValue(recordsOption), parseResult.GetValue(experimentOption), parseResult.GetValue(scoreThresholdOption), parseResult.GetValue(saveImagesOption));
         });
 
         return command;
@@ -164,7 +171,8 @@ public static partial class PredictCommand
         bool json = false,
         string? records = null,
         string? experiment = null,
-        double? scoreThreshold = null)
+        double? scoreThreshold = null,
+        string? saveImages = null)
     {
         // In --json mode stdout must be pure JSON, so narration routes to stderr for the
         // duration — and the scope guarantees stdout still carries a document on an exit
@@ -209,6 +217,14 @@ public static partial class PredictCommand
             if (model is null)
                 return 1;
             var (resolvedModelPath, experimentId, trainedSchema, configLabelColumn, taskType, preserveColumns, interval) = model;
+
+            if (saveImages is not null && TaskTypes.Canonical(taskType) is not ("object-detection" or "image-anomaly"))
+            {
+                ErrorConsole.Error(
+                    $"--save-images draws what object detection and image anomaly find on their pictures; this model's task is {taskType ?? "unknown"}.",
+                    "Run it again without --save-images.");
+                return 1;
+            }
 
             // Forecasting: generate future predictions without input data. The forecast is horizon-based
             // (stateful SSA replaying the training series), so it exits here before the row-oriented
@@ -257,7 +273,7 @@ public static partial class PredictCommand
 
                 return await PredictObjectDetectionAsync(
                     projectRoot, resolvedModelPath, dataFile, output, resolvedModelName, configLabelColumn, fileSystem,
-                    scoreThreshold ?? DetectionScoreThreshold.Default, json, experimentId);
+                    scoreThreshold ?? DetectionScoreThreshold.Default, json, experimentId, saveImages);
             }
 
             if (scoreThreshold is not null)
@@ -269,7 +285,7 @@ public static partial class PredictCommand
             // Image anomaly scores pictures against the bank beside the model: no table, schema or categories.
             if (taskType != null && TaskTypes.Canonical(taskType) == "image-anomaly")
                 return await ImageAnomalyCli.PredictAsync(
-                    projectRoot, resolvedModelPath, experimentId, dataFile, output, resolvedModelName, json, fileSystem);
+                    projectRoot, resolvedModelPath, experimentId, dataFile, output, resolvedModelName, json, fileSystem, saveImages);
 
             // Resolve data file path (Convention: datasets/predict.csv)
             // Read mloop.yaml only when it can matter: no file was named, so data.predict may name one.
@@ -926,7 +942,8 @@ public static partial class PredictCommand
         FileSystemManager fileSystem,
         double scoreThreshold,
         bool json = false,
-        string? experimentId = null)
+        string? experimentId = null,
+        string? saveImages = null)
     {
         // Resolve the input dataset directory (or a direct COCO .json).
         string resolvedDataDir;
@@ -973,6 +990,9 @@ public static partial class PredictCommand
             return 1;
         }
 
+        if (!PictureCopies.TryResolve(saveImages, projectRoot, resolvedDataDir, images, out var copies))
+            return 1;
+
         // Resolve output path — the convention itself lives in ProjectLayout, because `status`
         // reads these names back and used to know only the tabular one. --json writes no file: the detections go to stdout.
         string resolvedOutputPath = string.Empty;
@@ -1013,6 +1033,11 @@ public static partial class PredictCommand
 
                 ctx.Status("[green]Detection complete![/]");
             });
+
+        copies?.Save("boxes", (i, target) => MLoop.Core.Data.PictureOverlay.SaveBoxes(
+            images[i],
+            [.. detections[i].Detections.Select(d => new MLoop.Core.Data.DrawnBox(d.Label, d.Score, d.X0, d.Y0, d.X1, d.Y1))],
+            target));
 
         if (json)
         {

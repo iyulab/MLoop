@@ -34,7 +34,7 @@ internal static class ImageAnomalyCli
     /// <summary><c>mloop predict &lt;images&gt;</c> for an image-anomaly model.</summary>
     internal static async Task<int> PredictAsync(
         string projectRoot, string modelPath, string? experimentId, string? dataFile, string? output, string modelName,
-        bool json, FileSystemManager fileSystem)
+        bool json, FileSystemManager fileSystem, string? saveImages = null)
     {
         if (string.IsNullOrWhiteSpace(dataFile))
         {
@@ -62,6 +62,9 @@ internal static class ImageAnomalyCli
             return 1;
         }
 
+        if (!PictureCopies.TryResolve(saveImages, projectRoot, path, images, out var copies))
+            return 1;
+
         var (scorer, refusal) = ImageAnomalyScorer.Open(modelPath);
         if (scorer is null)
         {
@@ -82,6 +85,8 @@ internal static class ImageAnomalyCli
         }
 
         var grid = scorer.Model.Grid;
+        copies?.Save("heat maps", (i, target) => MLoop.Core.Data.PictureOverlay.SaveHeatMap(
+            images[i], scores[i].Distances, grid.Rows, grid.Columns, scores[i].Crop, scorer.Model.Baseline?.Max, target));
         var document = new
         {
             Model = modelName,
