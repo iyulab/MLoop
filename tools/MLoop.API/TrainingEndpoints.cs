@@ -39,6 +39,7 @@ public static class TrainingEndpoints
             TrainingJobRunner jobRunner,
             ProjectRootPath projectRootPath,
             ConfigLoader configLoader,
+            TrainingPrerequisites prerequisites,
             ILogger<Program> logger) =>
         {
             // The definition first: the task decides what the data is (a table, or a directory of images), and the
@@ -58,6 +59,9 @@ public static class TrainingEndpoints
             var metricRejection = MLoop.Core.Evaluation.MetricNames.Rejection(trainDefinition!.Task, request.Metric);
             if (metricRejection != null)
                 return TypedResults.BadRequest(new ErrorResponse(metricRejection));
+
+            if (prerequisites(trainDefinition!.Task, trainDefinition.Encoder) is { } notRunnable)
+                return TypedResults.BadRequest(new ErrorResponse($"{notRunnable.Message} {notRunnable.Hint}"));
 
             // Validate every data file exists and is within project root. A relative path is the project's — the
             // form POST /samples answers with — not the server process's working directory.

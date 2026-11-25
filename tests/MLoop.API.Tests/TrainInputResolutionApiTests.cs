@@ -28,7 +28,27 @@ public class TrainInputResolutionApiTests : IClassFixture<TestWebApplicationFact
         return path;
     }
 
+    // A class folder as training takes one: with a picture in it (the door reads the names, the job reads the pictures).
+    private void ClassFolder(params string[] parts) => File.WriteAllBytes(Path.Combine(Dir(parts), "0.png"), [1]);
+
     private static async Task<string> BodyOf(HttpResponseMessage response) => await response.Content.ReadAsStringAsync();
+
+    [Fact]
+    public async Task ATaskTheMachineCannotRun_IsRefusedAtTheDoor_WithWhatIsMissing()
+    {
+        _factory.MissingPrerequisite = new("Task 'object-detection' requires libtorch CPU runtime (~100MB).", "Install it with: mloop runtime install torch");
+        try
+        {
+            var response = await _client.PostAsJsonAsync("/train", new { labelColumn = "label", task = "object-detection", name = "no-runtime" });
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            (await BodyOf(response)).Should().Contain("requires libtorch").And.Contain("mloop runtime install torch");
+        }
+        finally
+        {
+            _factory.MissingPrerequisite = null;
+        }
+    }
 
     [Fact]
     public async Task AnImageTaskWithNoDataFileAndNoDatasetDirectory_IsRefusedWithWhereToPutOne_NotA500()
@@ -45,9 +65,8 @@ public class TrainInputResolutionApiTests : IClassFixture<TestWebApplicationFact
     [Fact]
     public async Task AnImageTaskWithNoDataFile_TrainsOnTheTasksPlaceUnderDatasets()
     {
-        var images = Dir("datasets", "images");
-        Dir("datasets", "images", "cat");
-        Dir("datasets", "images", "dog");
+        ClassFolder("datasets", "images", "cat");
+        ClassFolder("datasets", "images", "dog");
 
         var response = await _client.PostAsJsonAsync("/train", new { labelColumn = "label", task = "image-classification", name = "img-default", promote = false });
 
@@ -61,8 +80,8 @@ public class TrainInputResolutionApiTests : IClassFixture<TestWebApplicationFact
     [Fact]
     public async Task AnImageTaskNamingADirectory_TrainsOnIt_AndAFileInsteadIsRefused()
     {
-        var folder = Dir("datasets", "named-images");
-        Dir("datasets", "named-images", "a");
+        ClassFolder("datasets", "named-images", "a");
+        ClassFolder("datasets", "named-images", "b");
         var coco = Dir("datasets", "coco-named");
         File.WriteAllText(Path.Combine(coco, "annotations.json"), "{}");
 

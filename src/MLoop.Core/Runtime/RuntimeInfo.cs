@@ -110,7 +110,9 @@ public static class RuntimeRegistry
             ["osx-arm64"] = "runtimes/osx-arm64/native",
         },
         ApproximateSizeMB = 120,
-        RequiredByTasks = []
+        // Not a task's "required runtime" — no task is gated on it by name — but image anomaly scores through it too.
+        RequiredByTasks = [],
+        UsedBy = ["image-anomaly", "embed", "export onnx --verify"]
     };
 
     public static IReadOnlyList<RuntimeDefinition> All { get; } = [TensorFlow, Torch, OnnxRuntime];
@@ -152,6 +154,9 @@ public class RuntimeDefinition
     public required Dictionary<string, string> NativeSearchPaths { get; init; }
     public required int ApproximateSizeMB { get; init; }
     public required string[] RequiredByTasks { get; init; }
+
+    /// <summary>What a reader installs it for, as <c>mloop runtime list</c> says it: the tasks that require it, unless named otherwise.</summary>
+    public string[] UsedBy { get => field ?? RequiredByTasks; init; }
 }
 
 /// <summary>

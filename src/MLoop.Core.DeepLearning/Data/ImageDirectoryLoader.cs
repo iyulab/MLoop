@@ -240,6 +240,41 @@ public sealed class ImageDirectoryLoader : DataProviderBase
             : null;
 
     /// <summary>
+    /// Why a classifier cannot be trained on <paramref name="directory"/>, and what to change, or <c>null</c> when it can: no
+    /// class folders, a class folder with no picture (a class the model would silently never answer), or pictures in one class
+    /// only. Asked before a training run; reading a folder to evaluate on it is not asked this — a labelled test folder may
+    /// well hold one class. Folders whose name starts with <c>.</c> or <c>__</c> are tools' own and are not classes.
+    /// </summary>
+    public static (string Message, string Hint)? TrainingRefusal(string directory)
+    {
+        const string LayoutHint = "Put each class's pictures in a folder named after the class: <folder>/<class>/<pictures>.";
+        if (!Directory.Exists(directory))
+            return null;
+        if (NoClassFoldersMessage(directory) is { } noClasses)
+            return (noClasses, LayoutHint);
+
+        var folders = Directory.GetDirectories(directory)
+            .Where(d => Path.GetFileName(d) is var name && !name.StartsWith('.') && !name.StartsWith("__", StringComparison.Ordinal))
+            .OrderBy(d => d, StringComparer.Ordinal)
+            .Select(d => (Name: Path.GetFileName(d), Pictures: Directory.EnumerateFiles(d).Count(IsSupportedImage)))
+            .ToList();
+        var empty = folders.Where(f => f.Pictures == 0).Select(f => f.Name).ToList();
+        var filled = folders.Where(f => f.Pictures > 0).Select(f => f.Name).ToList();
+
+        if (filled.Count == 0)
+            return ($"No class folder in '{directory}' holds a picture ({SupportedExtensionList}).", LayoutHint);
+        if (empty.Count > 0)
+            return ($"{(empty.Count == 1 ? "A class folder" : $"{empty.Count} class folders")} in '{directory}' " +
+                    $"{(empty.Count == 1 ? "holds" : "hold")} no picture: {string.Join(", ", empty)}.",
+                    $"Add pictures ({SupportedExtensionList}) to {(empty.Count == 1 ? "it" : "each")}, " +
+                    $"or remove the folder to train without {(empty.Count == 1 ? "that class" : "those classes")}.");
+        if (filled.Count < 2)
+            return ($"Image classification needs at least two classes, but '{directory}' has one class folder: {filled[0]}.",
+                    $"Add a folder of pictures for each other class beside {filled[0]}/.");
+        return null;
+    }
+
+    /// <summary>
     /// Enumerates class subfolders and their images, validating the layout and
     /// emitting warnings for degenerate cases (single class, sparse classes,
     /// class imbalance).

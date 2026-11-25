@@ -228,7 +228,7 @@ public static class ImageAnomalyTrainer
         }
         catch (UnreadableImageException ex)
         {
-            throw new InvalidOperationException($"'{files[ex.Index]}' could not be read as an image: {ex.Message}", ex);
+            throw new InvalidOperationException($"'{files[ex.Index]}' could not be read as an image: {ex.Reason}. {MLoop.Core.Data.PictureFiles.UnreadableHint}", ex);
         }
     }
 

@@ -41,6 +41,10 @@ public class FirstSessionGuidanceTests
     }
 
     [Fact]
+    public void AnImageAnomalyProjectListsAFolderOfNormalPictures()
+        => Assert.Equal("datasets/normal/", InitCommand.FolderStructure("default", false, true, isImageAnomaly: true)[0].Path.TrimEnd());
+
+    [Fact]
     public void NextStepsDoNotAskForAPromotionThatIsAboutToHappen()
     {
         var steps = TrainPresenter.NextStepsAfterTraining("default", "exp-001", promotionFollows: true);

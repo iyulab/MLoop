@@ -231,7 +231,8 @@ public static partial class TrainCommand
             }
             if (TrainingInput.DirectoryDatasetRefusal(effectiveDefinition.Task, resolvedDataFile) is { } wrongLayout)
             {
-                ShowRefusal(wrongLayout);
+                // The message names files and folders of the user's, which may hold brackets.
+                ShowRefusal(new TrainingInput.Refusal(Markup.Escape(wrongLayout.Message), wrongLayout.Hint is { } hint ? Markup.Escape(hint) : null));
                 return null;
             }
         }

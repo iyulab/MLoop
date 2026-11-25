@@ -28,6 +28,10 @@ public class TestWebApplicationFactory : WebApplicationFactory<ProgramTests>
     /// <summary>The encoder store <c>POST /embed</c> reads in this factory — empty until a test installs one.</summary>
     public string EncoderRoot => Path.Combine(_testProjectRoot, "encoders");
 
+    /// <summary>What <c>POST /train</c> is told the machine lacks. Null by default: intake tests judge the request, whatever
+    /// runtimes the machine running them has installed.</summary>
+    public MLoop.CLI.Infrastructure.ML.TrainingInput.Refusal? MissingPrerequisite { get; set; }
+
     public TestWebApplicationFactory()
     {
         // Create a temporary test project directory with .mloop marker
@@ -67,6 +71,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<ProgramTests>
             ReplaceService<IPredictionLogger>(services, new FilePredictionLogger(_testProjectRoot));
             ReplaceService<IFeedbackCollector>(services, new FileFeedbackCollector(_testProjectRoot));
             ReplaceService<IPromotionManager>(services, new FilePromotionManager(_testProjectRoot));
+            ReplaceService<MLoop.CLI.Infrastructure.ML.TrainingPrerequisites>(services, (_, _) => MissingPrerequisite);
             // Encoders live outside any project; the test's own directory, so a test can install one and others see none.
             ReplaceService(services, new MLoop.Core.Embedding.EmbedderPool(new MLoop.Core.Embedding.EncoderStore(EncoderRoot)));
         });

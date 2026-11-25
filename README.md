@@ -71,7 +71,7 @@ MLoop fills the gap left by the discontinued ML.NET CLI, providing a simple yet 
 | **Ranking** | Learning to Rank (LightGBM, FastTree) | Built-in |
 | **Time Series** | Forecasting (SSA), Time Series Anomaly (SR-CNN) | Built-in |
 | **Recommendation** | Matrix Factorization (collaborative filtering) | Built-in |
-| **Image Anomaly** | Patch distances to a bank of normal pictures (no label, no runtime install) | An installed image encoder (`mloop encoder install`) |
+| **Image Anomaly** | Patch distances to a bank of normal pictures (no label) | ONNX Runtime (`mloop runtime install onnxruntime`) and an image encoder (`mloop encoder install`) |
 | **Deep Learning** | Image Classification, Object Detection, Text Classification, NER, Sentence Similarity, QA | On-demand (`mloop runtime install`) |
 
 > Image Classification (directory loader → TensorFlow transfer learning, `tf` runtime) and Object
@@ -324,7 +324,8 @@ mloop train --task image-classification   # auto-detects datasets/images/
 ```
 
 Supported extensions: `.jpg .jpeg .png .bmp .gif`. The trainer uses TensorFlow transfer learning,
-so the `tf` runtime must be installed first. After training, `mloop predict` classifies new images
+so the `tf` runtime must be installed first. Training stops before it starts, and says what to change, when a class folder
+holds no picture or only one class has pictures. After training, `mloop predict` classifies new images
 and `mloop evaluate exp-001 datasets/images` reports multiclass accuracy over a labelled directory.
 
 ### Object Detection
@@ -349,7 +350,8 @@ The COCO `bbox` (`[x, y, width, height]`, absolute pixels) is converted to the `
 the AutoFormerV2 trainer expects. Conventional annotation file names — `annotations.json` and
 `_annotations.coco.json` (Roboflow) — are auto-detected; `file_name` is resolved relative to the
 annotations file. YOLO datasets (`images/` + `labels/*.txt`) are also auto-detected. The trainer
-uses the `torch` runtime, which must be installed first.
+uses the `torch` runtime, which must be installed first. Training stops before it starts, naming each, when a COCO file
+names a picture that is not there or a box that is empty or reaches outside its picture.
 
 After training, predict reads pictures alone — a folder of them (no annotations needed), one image, or a dataset's
 images — and evaluate reads a labelled dataset:
@@ -365,10 +367,13 @@ mloop evaluate exp-001 datasets/yolo   # → mAP (map_50 / map_50_95)
 ### Image Anomaly
 
 When there are plenty of normal pictures and few or no defective ones, `image-anomaly` learns what *normal* looks like
-and scores how far a new picture is from it — and shows where. It needs no label, no runtime install and no new
-dependency beyond an installed image encoder (`mloop encoder install dinov2-small`; see [`mloop embed`](docs/GUIDE.md)):
+and scores how far a new picture is from it — and shows where. It needs no label. Pictures are read by an installed
+image encoder, which runs on ONNX Runtime; each is installed once (see [`mloop embed`](docs/GUIDE.md)):
 
 ```bash
+mloop runtime install onnxruntime      # one-time ONNX Runtime CPU
+mloop encoder install dinov2-small     # one-time image encoder
+
 mloop init line --task image-anomaly
 cd line
 # datasets/normal/   ← pictures of normal items (subfolders are fine)

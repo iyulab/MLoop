@@ -239,6 +239,7 @@ try
     // Registered as an instance, so the container does not dispose it: it lives as long as the process.
     builder.Services.AddSingleton(MLoop.Core.Embedding.EmbedderPool.Shared);
     builder.Services.AddSingleton<TrainingJobStore>();
+    builder.Services.AddSingleton<MLoop.CLI.Infrastructure.ML.TrainingPrerequisites>(MLoop.CLI.Infrastructure.ML.TrainingInput.RuntimeRefusal);
     builder.Services.AddSingleton<MLoop.CLI.Infrastructure.ML.ITrainingEngine>(sp =>
     {
         var fileSystem = sp.GetRequiredService<IFileSystemManager>();

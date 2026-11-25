@@ -9,6 +9,9 @@ public sealed class UnreadableImageException(int index, string reason, Exception
 {
     /// <summary>The image's zero-based position in the batch.</summary>
     public int Index { get; } = index;
+
+    /// <summary>Why it could not be read, without the position.</summary>
+    public string Reason { get; } = reason;
 }
 
 /// <summary>A rectangle of an image in its own pixels: left, top, right, bottom.</summary>
@@ -86,6 +89,20 @@ public static class ImagePreprocessor
     /// an image this preprocessor — and so a model reading the same bytes — can decode.
     /// </summary>
     public static void EnsureDecodable(ReadOnlySpan<byte> encoded, int index = 0) => Decode(encoded, index);
+
+    /// <summary>Why <paramref name="encoded"/> cannot be read as a picture, or <c>null</c> when it can — decoded as it is when scored.</summary>
+    public static string? WhyUnreadable(ReadOnlySpan<byte> encoded)
+    {
+        try
+        {
+            Decode(encoded, 0);
+            return null;
+        }
+        catch (UnreadableImageException ex)
+        {
+            return ex.Reason;
+        }
+    }
 
     private static (byte[] Rgb, int Width, int Height) Decode(ReadOnlySpan<byte> encoded, int index)
     {

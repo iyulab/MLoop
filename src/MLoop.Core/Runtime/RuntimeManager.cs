@@ -278,26 +278,50 @@ public class RuntimeManager
     /// </exception>
     public static void EnsureRuntimeForTask(string taskType)
     {
-        if (string.IsNullOrWhiteSpace(taskType))
-            return;
+        if (ObstacleFor(taskType) is { } obstacle)
+            throw new InvalidOperationException($"{obstacle.Message} {obstacle.Hint}");
 
-        var runtime = RuntimeRegistry.GetRequiredByTask(taskType);
-        if (runtime == null)
-            return;
+        if (!string.IsNullOrWhiteSpace(taskType) && RuntimeRegistry.GetRequiredByTask(taskType) is { } runtime)
+            new RuntimeManager().EnsureLoaded(runtime);
+    }
+
+    /// <summary>
+    /// Why <paramref name="taskType"/> cannot run here for want of its native runtime — none exists for this platform, or it
+    /// is not installed — or <c>null</c> when nothing stands in the way. Reads only; loads nothing.
+    /// </summary>
+    public static RuntimeObstacle? ObstacleFor(string? taskType)
+    {
+        if (string.IsNullOrWhiteSpace(taskType) || RuntimeRegistry.GetRequiredByTask(taskType) is not { } runtime)
+            return null;
 
         var rid = PlatformDetector.GetRuntimeIdentifier();
         if (!runtime.NuGetPackages.ContainsKey(rid))
-            throw new InvalidOperationException(
+        {
+            return new RuntimeObstacle(
                 $"Task '{taskType}' needs the {runtime.DisplayName} runtime, which has no build for {rid}; " +
-                $"it runs on {string.Join(", ", runtime.NuGetPackages.Keys)}.");
+                $"it runs on {string.Join(", ", runtime.NuGetPackages.Keys)}.",
+                WhatRunsInstead(taskType, rid));
+        }
 
-        var manager = new RuntimeManager();
-        if (!manager.IsInstalled(runtime))
-            throw new InvalidOperationException(
-                $"Task '{taskType}' requires {runtime.DisplayName} runtime (~{runtime.ApproximateSizeMB}MB). " +
+        return new RuntimeManager().IsInstalled(runtime)
+            ? null
+            : new RuntimeObstacle(
+                $"Task '{taskType}' requires {runtime.DisplayName} runtime (~{runtime.ApproximateSizeMB}MB).",
                 $"Install it with: mloop runtime install {runtime.Id}");
+    }
 
-        manager.EnsureLoaded(runtime);
+    /// <summary>What a reader on a platform without a task's runtime can do: the other picture tasks that run here, and where this one does.</summary>
+    private static string WhatRunsInstead(string taskType, string rid)
+    {
+        string[] pictureTasks = ["image-classification", "object-detection", "image-anomaly"];
+        var here = pictureTasks
+            .Where(t => !t.Equals(taskType, StringComparison.OrdinalIgnoreCase)
+                && (RuntimeRegistry.GetRequiredByTask(t) is not { } needed || needed.NuGetPackages.ContainsKey(rid)))
+            .ToList();
+        var others = pictureTasks.Contains(taskType, StringComparer.OrdinalIgnoreCase) && here.Count > 0
+            ? $" Of the other picture tasks, this machine runs {string.Join(" and ", here)}."
+            : "";
+        return $"Train it on one of those platforms.{others} `mloop runtime list` shows what this machine can install.";
     }
 
     /// <summary>
@@ -528,3 +552,6 @@ public enum DownloadPhase
     Verifying,
     Complete
 }
+
+/// <summary>Why a task's native runtime is not usable here, and what to do about it.</summary>
+public sealed record RuntimeObstacle(string Message, string Hint);

@@ -213,6 +213,17 @@ public static partial class EvaluateCommand
             var resolvedTestDataFile = ResolveTestData(testDataFile, experimentData, projectRoot, fileSystem, userConfig);
             if (resolvedTestDataFile is null)
                 return 1;
+            if (isDirectoryBased)
+            {
+                var folder = Directory.Exists(resolvedTestDataFile)
+                    ? resolvedTestDataFile
+                    : Path.GetDirectoryName(Path.GetFullPath(resolvedTestDataFile))!;
+                if (MLoop.Core.Data.PictureFiles.Unreadable(MLoop.Core.Data.ImageDirectoryLoader.ListImages(folder)) is { } unreadable)
+                {
+                    ErrorConsole.Error(Markup.Escape(unreadable), MLoop.Core.Data.PictureFiles.UnreadableHint);
+                    return 1;
+                }
+            }
             // What the output names is the file the user gave; validation may hand back a composed or converted copy to read instead.
             var reportedTestDataFile = resolvedTestDataFile;
 

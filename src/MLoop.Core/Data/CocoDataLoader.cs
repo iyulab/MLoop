@@ -106,6 +106,92 @@ public sealed class CocoDataLoader : DataProviderBase
     }
 
     /// <summary>
+    /// Why the annotations of <paramref name="path"/> should not be trained on as they are — a picture they name is not there or
+    /// cannot be opened, or a box has no area or reaches outside its picture — or <c>null</c> when they name only pictures that
+    /// are there and boxes inside them. Asked before a training run, which on a CPU can take hours: a warning above it is not
+    /// read, and a detector learns a wrong box as readily as a right one. Evaluation reads such a set as before, skipping what
+    /// it cannot use with a warning. A file that does not parse, or holds no images, is reported when the run reads it.
+    /// </summary>
+    public static ContentProblem? ContentProblems(string path)
+    {
+        string annotationFile, imageRoot;
+        CocoDocument? doc;
+        try
+        {
+            (annotationFile, imageRoot) = ResolveAnnotationFile(path);
+            using var stream = File.OpenRead(annotationFile);
+            doc = JsonSerializer.Deserialize<CocoDocument>(stream, JsonOptions);
+        }
+        catch (Exception ex) when (ex is JsonException or IOException or InvalidOperationException)
+        {
+            return null;
+        }
+
+        if (doc?.Images is null || doc.Annotations is null)
+            return null;
+
+        var annotations = doc.Annotations
+            .Where(a => a.ImageId.HasValue && a.Bbox is { Count: 4 })
+            .ToLookup(a => a.ImageId!.Value);
+        var missing = new List<string>();
+        var unreadable = new List<string>();
+        var outside = new List<string>();
+        foreach (var image in doc.Images.Where(i => i.Id.HasValue && !string.IsNullOrWhiteSpace(i.FileName)))
+        {
+            if (!annotations.Contains(image.Id!.Value))
+                continue;
+
+            var file = Path.GetFullPath(Path.Combine(imageRoot, image.FileName!));
+            if (!File.Exists(file))
+            {
+                missing.Add(image.FileName!);
+                continue;
+            }
+
+            // The size of the file itself: the width and height the annotations declare are another claim to be wrong about.
+            using var codec = SkiaSharp.SKCodec.Create(file);
+            if (codec is null)
+            {
+                unreadable.Add(image.FileName!);
+                continue;
+            }
+
+            var (width, height) = (codec.Info.Width, codec.Info.Height);
+            foreach (var annotation in annotations[image.Id!.Value])
+            {
+                var box = annotation.Bbox!;
+                float x = box[0], y = box[1], w = box[2], h = box[3];
+                if (w <= 0 || h <= 0 || x < -BoxTolerance || y < -BoxTolerance
+                    || x + w > width + BoxTolerance || y + h > height + BoxTolerance)
+                {
+                    outside.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                        $"{image.FileName} ({width}x{height}) has box x={x:0.#}, y={y:0.#}, width={w:0.#}, height={h:0.#}"));
+                }
+            }
+        }
+
+        var parts = new List<string>();
+        if (missing.Count > 0)
+            parts.Add($"{Count(missing.Count, "picture it names is", "pictures it names are")} not there: {Some(missing)}");
+        if (unreadable.Count > 0)
+            parts.Add($"{Count(unreadable.Count, "picture cannot", "pictures cannot")} be opened: {Some(unreadable)}");
+        if (outside.Count > 0)
+            parts.Add($"{Count(outside.Count, "box is empty or reaches", "boxes are empty or reach")} outside its picture: {Some(outside)}");
+
+        return parts.Count == 0 ? null : new ContentProblem(annotationFile, string.Join("; ", parts) + ".");
+
+        static string Count(int count, string one, string many) => $"{count} {(count == 1 ? one : many)}";
+        static string Some(List<string> items) =>
+            string.Join(", ", items.Take(3)) + (items.Count > 3 ? $" and {items.Count - 3} more" : "");
+    }
+
+    // A box a pixel over its picture's edge is how some tools round one; it is trained on as it is.
+    private const float BoxTolerance = 1.5f;
+
+    /// <summary>What <see cref="ContentProblems"/> found in an annotations file.</summary>
+    public sealed record ContentProblem(string AnnotationFile, string Problems);
+
+    /// <summary>
     /// Resolves the annotations JSON file and the directory image paths are relative to.
     /// Accepts either a directory (searched by convention) or a direct path to the JSON file.
     /// </summary>

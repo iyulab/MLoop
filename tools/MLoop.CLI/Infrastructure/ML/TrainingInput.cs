@@ -1,6 +1,7 @@
 using MLoop.CLI.Commands;
 using MLoop.CLI.Infrastructure.Configuration;
 using MLoop.CLI.Infrastructure.Diagnostics;
+using MLoop.Core.Runtime;
 using MLoop.Core.Data;
 using MLoop.Core.Models;
 using MLoop.Core.Prediction;
@@ -9,6 +10,12 @@ using MLoop.Core.Training;
 using MLoop.Extensibility.Preprocessing;
 
 namespace MLoop.CLI.Infrastructure.ML;
+
+/// <summary>
+/// What a machine lacks for a task to train — <see cref="TrainingInput.RuntimeRefusal"/>. The server asks through this, so what it
+/// asks about is the host's to say.
+/// </summary>
+public delegate TrainingInput.Refusal? TrainingPrerequisites(string task, string? encoderId);
 
 /// <summary>
 /// What a data file goes through before it is trained on, where both <c>mloop train</c> and
@@ -360,15 +367,14 @@ public static class TrainingInput
             return Directory.Exists(p) ? p : null;
         }
 
-        var conventionDir = task.Equals("object-detection", StringComparison.OrdinalIgnoreCase)
-            ? "coco"
-            : "images";
+        // An anomaly model learns from every picture under its folder, so `datasets/` as a whole is not offered to it: it would
+        // take the labelled pictures a reader keeps there to evaluate with, defects included, for normal ones.
+        string[][] conventions = IsImageAnomaly(task)
+            ? [[ProjectLayout.DatasetsDirectory, "normal"], [ProjectLayout.DatasetsDirectory, "images"]]
+            : [[ProjectLayout.DatasetsDirectory, task.Equals("object-detection", StringComparison.OrdinalIgnoreCase) ? "coco" : "images"],
+               [ProjectLayout.DatasetsDirectory]];
 
-        foreach (var candidate in new[]
-        {
-            Path.Combine(projectRoot, ProjectLayout.DatasetsDirectory, conventionDir),
-            Path.Combine(projectRoot, ProjectLayout.DatasetsDirectory)
-        })
+        foreach (var candidate in conventions.Select(parts => Path.Combine([projectRoot, .. parts])))
         {
             if (Directory.Exists(candidate))
                 return candidate;
@@ -378,19 +384,38 @@ public static class TrainingInput
     }
 
     /// <summary>
-    /// Why the directory found for a directory-based task is not the layout the task reads — class subfolders for image
-    /// classification, a COCO annotations file for object detection — or <c>null</c> when it is. Asked before the run is queued, by
-    /// <c>mloop train</c> and <c>POST /train</c> alike: a wrong folder is a refusal at the door, not a job that fails seconds later
-    /// after taking its place in the queue. The loaders state the rules; this asks them.
+    /// Why the directory found for a directory-based task cannot be trained on — not the layout the task reads, no picture, a
+    /// class folder with none, annotations naming a picture that is not there or a box outside its picture — or <c>null</c> when
+    /// it can. Asked before the run is queued, by <c>mloop train</c> and <c>POST /train</c> alike: a wrong folder is a refusal
+    /// at the door, not a job that fails seconds later after taking its place in the queue, or a model trained on part of what
+    /// was meant. The loaders state the rules; this asks them.
     /// </summary>
     public static Refusal? DirectoryDatasetRefusal(string task, string directory)
     {
-        var why = task.Equals("object-detection", StringComparison.OrdinalIgnoreCase)
-            ? MLoop.Core.Data.CocoDataLoader.AnnotationFileRefusal(directory)
-            : task.Equals("image-classification", StringComparison.OrdinalIgnoreCase)
-                ? MLoop.Core.Data.ImageDirectoryLoader.NoClassFoldersMessage(directory)
+        if (task.Equals("object-detection", StringComparison.OrdinalIgnoreCase))
+        {
+            if (MLoop.Core.Data.YoloDataLoader.IsYoloDirectory(directory))
+                return null;
+            if (MLoop.Core.Data.CocoDataLoader.AnnotationFileRefusal(directory) is { } noAnnotations)
+                return new Refusal(noAnnotations, DirectoryDatasetNotFound(task).Hint);
+            return MLoop.Core.Data.CocoDataLoader.ContentProblems(directory) is { } found
+                ? new Refusal($"'{found.AnnotationFile}' cannot be trained on as it is: {found.Problems}",
+                    "Add each missing picture or remove its entry from the annotations file, and correct each box so that it lies " +
+                    "inside its picture ([x, y, width, height] in pixels); then train again.")
                 : null;
-        return why is null ? null : new Refusal(why, DirectoryDatasetNotFound(task).Hint);
+        }
+
+        if (task.Equals("image-classification", StringComparison.OrdinalIgnoreCase))
+            return MLoop.Core.Data.ImageDirectoryLoader.TrainingRefusal(directory) is { } wrong
+                ? new Refusal(wrong.Message, wrong.Hint)
+                : null;
+
+        if (IsImageAnomaly(task) && MLoop.Core.ImageAnomaly.ImageAnomalyTrainer.ListImages(directory).Count == 0)
+            return new Refusal(
+                $"No pictures in '{directory}' ({MLoop.Core.ImageAnomaly.ImageAnomalyTrainer.ExtensionList}).",
+                "Put pictures of normal items in it, or name another folder: mloop train <folder> --task image-anomaly");
+
+        return null;
     }
 
     /// <summary>Why no dataset directory was found for a directory-based task, and where to put one.</summary>
@@ -398,8 +423,36 @@ public static class TrainingInput
         task.Equals("object-detection", StringComparison.OrdinalIgnoreCase)
             ? new Refusal("Object-detection dataset not found.",
                 "Put a COCO annotations.json plus images under datasets/coco/, or pass a directory: mloop train --task object-detection <dir>")
-            : new Refusal("Image dataset directory not found.",
-                "Lay images out as datasets/images/<class>/<files>, or pass a directory: mloop train --task image-classification <dir>");
+            : IsImageAnomaly(task)
+                ? new Refusal("Folder of normal pictures not found.",
+                    "Put pictures of normal items under datasets/normal/, or pass a directory: mloop train <folder> --task image-anomaly")
+                : new Refusal("Image dataset directory not found.",
+                    "Lay images out as datasets/images/<class>/<files>, or pass a directory: mloop train --task image-classification <dir>");
+
+    /// <summary>
+    /// Why <paramref name="task"/> cannot train on this machine as it stands — its native runtime has no build for the platform
+    /// or is not installed, or an image-anomaly model has no encoder to read pictures with — or <c>null</c> when nothing is
+    /// missing. Asked before any work: no experiment is made for a run that cannot start.
+    /// </summary>
+    public static Refusal? RuntimeRefusal(string task, string? encoderId)
+    {
+        if (RuntimeManager.ObstacleFor(task) is { } obstacle)
+            return new Refusal(obstacle.Message, obstacle.Hint);
+        if (!IsImageAnomaly(task))
+            return null;
+
+        var missing = new List<string>();
+        if (OnnxRuntimeNative.Unavailable() is { } noRuntime)
+            missing.Add(noRuntime);
+        if (new MLoop.Core.Embedding.EncoderStore().Resolve(encoderId).Refusal is { } noEncoder)
+            missing.Add(noEncoder);
+        return missing.Count == 0
+            ? null
+            : new Refusal("image-anomaly cannot train yet.", string.Join(" ", missing.Select(m => m.EndsWith('.') ? m : m + ".")));
+    }
+
+    private static bool IsImageAnomaly(string task) =>
+        string.Equals(MLoop.Core.Models.TaskTypes.Canonical(task), "image-anomaly", StringComparison.Ordinal);
 
     /// <summary>The file a job trains on, and what preparing it did.</summary>
     /// <param name="DataFile">The prepared file.</param>

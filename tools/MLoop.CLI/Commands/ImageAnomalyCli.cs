@@ -56,6 +56,12 @@ internal static class ImageAnomalyCli
             return 1;
         }
 
+        if (MLoop.Core.Data.PictureFiles.Unreadable(images) is { } unreadable)
+        {
+            ErrorConsole.Error(Markup.Escape(unreadable), MLoop.Core.Data.PictureFiles.UnreadableHint);
+            return 1;
+        }
+
         var (scorer, refusal) = ImageAnomalyScorer.Open(modelPath);
         if (scorer is null)
         {
@@ -70,7 +76,8 @@ internal static class ImageAnomalyCli
         }
         catch (UnreadableImageException ex)
         {
-            ErrorConsole.Error(Markup.Escape($"'{images[ex.Index]}' could not be read as an image: {ex.Message}"));
+            ErrorConsole.Error(Markup.Escape($"'{images[ex.Index]}' could not be read as an image: {ex.Reason}"),
+                MLoop.Core.Data.PictureFiles.UnreadableHint);
             return 1;
         }
 
@@ -178,7 +185,7 @@ internal static class ImageAnomalyCli
             }
             catch (UnreadableImageException ex)
             {
-                throw new InvalidOperationException($"'{files[ex.Index]}' could not be read as an image: {ex.Message}", ex);
+                throw new InvalidOperationException($"'{files[ex.Index]}' could not be read as an image: {ex.Reason}. {MLoop.Core.Data.PictureFiles.UnreadableHint}", ex);
             }
         }
 

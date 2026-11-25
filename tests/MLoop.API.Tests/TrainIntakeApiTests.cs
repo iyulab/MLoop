@@ -50,8 +50,8 @@ public class TrainIntakeApiTests : IClassFixture<TestWebApplicationFactory>
     public async Task ABlankLabelColumn_IsNotAColumnNamedNothing()
     {
         var images = Path.Combine(_factory.TestProjectRoot, "datasets", "imgs");
-        Directory.CreateDirectory(Path.Combine(images, "a"));
-        Directory.CreateDirectory(Path.Combine(images, "b"));
+        foreach (var label in new[] { "a", "b" })
+            File.WriteAllBytes(Path.Combine(Directory.CreateDirectory(Path.Combine(images, label)).FullName, "0.png"), [1]);
 
         var response = await _client.PostAsJsonAsync("/train",
             new { dataFile = images, labelColumn = "", task = "image-classification", promote = false });

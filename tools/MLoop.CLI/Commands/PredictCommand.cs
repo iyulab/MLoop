@@ -967,6 +967,12 @@ public static partial class PredictCommand
             return 1;
         }
 
+        if (MLoop.Core.Data.PictureFiles.Unreadable(images) is { } unreadable)
+        {
+            ErrorConsole.Error(Markup.Escape(unreadable), MLoop.Core.Data.PictureFiles.UnreadableHint);
+            return 1;
+        }
+
         // Resolve output path — the convention itself lives in ProjectLayout, because `status`
         // reads these names back and used to know only the tabular one. --json writes no file: the detections go to stdout.
         string resolvedOutputPath = string.Empty;

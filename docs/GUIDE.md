@@ -469,10 +469,13 @@ Notes:
   shows both. The time limit does not shorten it.
 - A prediction CSV with an `ImagePath` column (one row per image) is read as well.
 - Supported extensions: `.jpg .jpeg .png .bmp .gif`. Other files (e.g. `meta.json`) are ignored.
+- Training stops before it starts when a class folder holds no picture (the model would never answer that class) or
+  only one class has pictures. Folders whose name starts with `.` or `__` are not classes.
+- `mloop predict` and `mloop evaluate` read every picture first and stop on one that cannot be read, naming it.
 - The trainer uses TensorFlow transfer learning, so the `tf` runtime is required. Without it, training
   stops with a clear message pointing to `mloop runtime install tf`.
 - CSV-only steps (encoding conversion, sampling, balancing, multi-line flattening) are skipped for image
-  directories. The loader warns about empty class folders, single-class datasets, and severe class imbalance.
+  directories. The loader warns about severe class imbalance and about classes with very few pictures.
 
 ### Text tasks and language
 
@@ -1254,6 +1257,15 @@ models:
 `image-anomaly` is for the case where only normal pictures are plentiful: a surface, a part, a screen that is normal
 almost always and defective rarely, in ways nobody listed beforehand. It learns what normal looks like and scores a new
 picture by how unlike it is — and where.
+
+Pictures are read by an installed image encoder, which runs on ONNX Runtime. Install each once; training says which one
+is missing before it starts:
+
+```bash
+mloop runtime install onnxruntime
+mloop encoder install dinov2-small
+mloop init line --task image-anomaly     # scaffolds datasets/normal/
+```
 
 ```bash
 mloop train datasets/normal --task image-anomaly [--encoder <id>] [--bank-size N]
@@ -2149,7 +2161,7 @@ mloop runtime list                  # each runtime, its size, whether it is inst
 mloop runtime list --json
 mloop runtime install tf            # TensorFlow CPU — image-classification (Windows, Linux x64)
 mloop runtime install torch         # libtorch CPU — object-detection, text-classification, sentence-similarity, ner, question-answering
-mloop runtime install onnxruntime   # ONNX Runtime CPU — `mloop export onnx --verify`
+mloop runtime install onnxruntime   # ONNX Runtime CPU — image-anomaly, `mloop embed`, `mloop export onnx --verify`
 mloop runtime remove tf
 ```
 

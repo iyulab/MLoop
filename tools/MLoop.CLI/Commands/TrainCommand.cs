@@ -346,6 +346,13 @@ public static partial class TrainCommand
                 return 1;
             }
 
+            // Before the data is read or an experiment made: a run whose runtime or encoder is missing cannot start.
+            if (!analyzeData && TrainingInput.RuntimeRefusal(effectiveDefinition.Task, effectiveDefinition.Encoder) is { } notRunnable)
+            {
+                ErrorConsole.Error(Markup.Escape(notRunnable.Message), Markup.Escape(notRunnable.Hint ?? ""));
+                return 1;
+            }
+
             var mergedSources = new List<string>();
             var resolvedDataFile = await ResolveDataFileAsync(
                 effectiveDefinition, dataFile, dataPaths, autoMerge, autoTime, noAutoTime, time, records,

@@ -274,7 +274,20 @@ public static class InitCommand
                 AnsiConsole.MarkupLine($"  1. cd {projectName}");
             }
             var isObjectDetection = task.Equals("object-detection", StringComparison.OrdinalIgnoreCase);
-            if (isObjectDetection)
+            // A task whose runtime has no build here is said now, not after the pictures are in place.
+            if (MLoop.Core.Runtime.RuntimeManager.ObstacleFor(task) is { } obstacle
+                && !MLoop.Core.Runtime.RuntimeRegistry.GetRequiredByTask(task)!.NuGetPackages.ContainsKey(MLoop.Core.Runtime.PlatformDetector.GetRuntimeIdentifier()))
+            {
+                WarningConsole.Warn(Markup.Escape($"{obstacle.Message} {obstacle.Hint}"));
+            }
+            if (IsImageAnomaly(task))
+            {
+                AnsiConsole.MarkupLine("  2. Place pictures of normal items under datasets/normal/");
+                AnsiConsole.MarkupLine("  3. mloop runtime install onnxruntime [cyan]# one-time ONNX Runtime[/]");
+                AnsiConsole.MarkupLine("     mloop encoder install dinov2-small [cyan]# one-time image encoder[/]");
+                AnsiConsole.MarkupLine("  4. mloop train  [cyan]# Auto-detects datasets/normal/[/]");
+            }
+            else if (isObjectDetection)
             {
                 AnsiConsole.MarkupLine("  2. Edit datasets/coco/annotations.json  [cyan]# COCO format; add images + bounding boxes[/]");
                 AnsiConsole.MarkupLine("  3. mloop runtime install torch  [cyan]# one-time TorchSharp runtime[/]");
@@ -297,7 +310,7 @@ public static class InitCommand
             }
             AnsiConsole.WriteLine();
             AnsiConsole.MarkupLine("[grey]Folder structure:[/]");
-            foreach (var (path, what) in FolderStructure(modelName, isObjectDetection, isDirectoryBased))
+            foreach (var (path, what) in FolderStructure(modelName, isObjectDetection, isDirectoryBased, IsImageAnomaly(task)))
             {
                 AnsiConsole.MarkupLine($"  {Markup.Escape(path)}[cyan]# {Markup.Escape(what)}[/]");
             }
@@ -386,6 +399,20 @@ public static class InitCommand
                 "  mloop runtime install torch    # one-time TorchSharp runtime\n" +
                 "  mloop train --task object-detection\n\n" +
                 "Supported conventional file names: annotations.json, _annotations.coco.json (Roboflow).\n");
+        }
+        else if (IsImageAnomaly(task))
+        {
+            var normalPath = fileSystem.CombinePath(datasetsPath, "normal");
+            await fileSystem.CreateDirectoryAsync(normalPath);
+            await WriteIfAbsentAsync(fileSystem, projectPath, kept,
+                fileSystem.CombinePath(normalPath, "README.txt"),
+                "Pictures of normal items (subfolders are fine). No label: every picture here is taken as normal,\n" +
+                "so keep defective ones out of this folder.\n\n" +
+                "Then run:\n" +
+                "  mloop runtime install onnxruntime    # one-time ONNX Runtime (the encoder runs on it)\n" +
+                "  mloop encoder install dinov2-small   # one-time image encoder\n" +
+                "  mloop train datasets/normal --task image-anomaly\n\n" +
+                "Supported extensions: .jpg .jpeg .png .bmp .gif\n");
         }
         else if (DataLoaderFactory.IsDirectoryBased(task))
         {
@@ -745,11 +772,13 @@ data:
     /// written for was one character out to begin with.
     /// </remarks>
     internal static (string Path, string What)[] FolderStructure(
-        string modelName, bool isObjectDetection, bool isDirectoryBased)
+        string modelName, bool isObjectDetection, bool isDirectoryBased, bool isImageAnomaly = false)
     {
         (string Path, string What)[] folders =
         [
-            isObjectDetection
+            isImageAnomaly
+                ? ($"{ProjectLayout.DatasetsDirectory}/normal/", "Pictures of normal items")
+                : isObjectDetection
                 ? ($"{ProjectLayout.DatasetsDirectory}/coco/", "COCO annotations.json + images")
                 : isDirectoryBased
                     ? ($"{ProjectLayout.DatasetsDirectory}/images/<class>/", "Training images (folder = label)")
@@ -761,6 +790,9 @@ data:
         var column = folders.Max(f => f.Path.Length) + 1;
         return [.. folders.Select(f => (f.Path.PadRight(column), f.What))];
     }
+
+    private static bool IsImageAnomaly(string task) =>
+        string.Equals(MLoop.Core.Models.TaskTypes.Canonical(task), "image-anomaly", StringComparison.Ordinal);
 
     // The rule itself lives in MLoop.Core.Storage.ModelName — a model name is a directory name, so
     // Ops and the API need the same answer and cannot reach into the CLI.

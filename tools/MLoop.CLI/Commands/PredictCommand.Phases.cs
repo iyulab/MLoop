@@ -217,6 +217,11 @@ public static partial class PredictCommand
                         $"No images found under {resolvedDataFile} (looked for {ImageDirectoryLoader.SupportedExtensionList}, in subfolders too)."));
                     return null;
                 }
+                if (MLoop.Core.Data.PictureFiles.Unreadable(images) is { } unreadable)
+                {
+                    ErrorConsole.Error(Markup.Escape(unreadable), MLoop.Core.Data.PictureFiles.UnreadableHint);
+                    return null;
+                }
                 ValueLine.Write("[green]>[/] Images: ", $"{images.Count:N0} under {Path.GetFileName(Path.TrimEndingDirectorySeparator(resolvedDataFile))}");
                 resolvedDataFile = ImageDirectoryLoader.WriteImageTable(images);
             }

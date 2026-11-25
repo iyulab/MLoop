@@ -44,7 +44,7 @@ public static class RuntimeCommand
             table.AddColumn("Name");
             table.AddColumn("Status");
             table.AddColumn("Size");
-            table.AddColumn("Tasks");
+            table.AddColumn("Used by");
 
             // Collect statuses once so the human table and --json consume the same data, rather
             // than computing GetStatus twice.
@@ -71,7 +71,7 @@ public static class RuntimeCommand
                     runtime.DisplayName,
                     statusText,
                     sizeText,
-                    string.Join(", ", runtime.RequiredByTasks));
+                    string.Join(", ", runtime.UsedBy));
             }
 
             AnsiConsole.Write(table);
