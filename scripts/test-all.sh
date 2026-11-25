@@ -11,9 +11,16 @@
 # under CPU load no trial completes — a failure that describes the machine, not the code. One project
 # per `dotnet test` also keeps the results of the others when one dies, and says which one it was.
 # The projects are found, not listed, so a new test project cannot be left out.
+#
+# A zero exit code is not enough to count a project as passed: a run has been seen to end with exit 0 and no summary at
+# all. Each project must also print a summary with at least one test. The summary line is localized, so the CLI language
+# is pinned to English for the run.
 
 set -u
 cd "$(dirname "$0")/.."
+export DOTNET_CLI_UI_LANGUAGE=en
+LOG=$(mktemp)
+trap 'rm -f "$LOG"' EXIT
 
 FILTER=""
 COVERAGE=()
@@ -28,8 +35,12 @@ done
 FAILED=()
 for project in tests/*/*.Tests.csproj; do
     echo "=== $project"
-    if ! dotnet test "$project" --configuration Release --nologo ${FILTER:+--filter "$FILTER"} "${COVERAGE[@]+"${COVERAGE[@]}"}"; then
+    dotnet test "$project" --configuration Release --nologo ${FILTER:+--filter "$FILTER"} "${COVERAGE[@]+"${COVERAGE[@]}"}" 2>&1 | tee "$LOG"
+    status=${PIPESTATUS[0]}
+    if [ "$status" -ne 0 ]; then
         FAILED+=("$project")
+    elif ! sed $'s/\x1b\\[[0-9;]*m//g' "$LOG" | grep -qE '^[[:space:]]*total: [1-9][0-9]*'; then
+        FAILED+=("$project (exit 0, but no test summary)")
     fi
 done
 
