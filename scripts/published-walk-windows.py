@@ -14,10 +14,8 @@ pushed; the machine gets one work folder and the tool, and `down` removes both.
 or the release binary). The truth (the noise-free series, the spike rows, ...) stays on this machine under the work directory and is
 never copied over: the reader sees tables, whoever checks the answers compares them with the truth.
 
-The machine is reached by command execution only: a remote endpoint that takes `POST <url>/api/v1/execute` with a JSON body
-`{"command", "timeout_secs"}` and a bearer key, running the command in cmd.exe. Its address and key are read from the file named by
-MLOOP_WALK_WINDOWS_ENV (lines `<name>_url=...` and `<name>_key=...`); neither is printed or stored anywhere else. `exec --ps` runs the
-command in Windows PowerShell with the command text carried as an encoded script, so Korean paths and quotes arrive as typed.
+The machine is reached by command execution only (walk_remote.py says how, and where its address and key are read from). `exec --ps`
+runs the command in Windows PowerShell with the command text carried as an encoded script, so Korean paths and quotes arrive as typed.
 
 The reader's own folders: `data` (the tables), `docs` (the README and guides), `work` (where a project is made), and with `--ko-folder` a
 folder with a Korean name that holds the CP949 spreadsheet tables, and `with space` (a folder whose name has a space, for the standalone
@@ -31,11 +29,8 @@ import io
 import json
 import os
 import shutil
-import ssl
 import subprocess
 import sys
-import tempfile
-import urllib.request
 import zipfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -44,59 +39,8 @@ WORK = os.path.join(os.path.expanduser("~"), ".cache", "mloop-published-walk-win
 KO_FOLDER = "자료"
 KO_RENAMES = {"regression-ko-train.csv": "주택가격-학습.csv", "regression-ko-new.csv": "주택가격-예측.csv"}
 ROOT = "%USERPROFILE%\\mloop-walk"
-
-
-def endpoint(machine):
-    path = os.environ.get("MLOOP_WALK_WINDOWS_ENV")
-    if not path:
-        sys.exit("MLOOP_WALK_WINDOWS_ENV names the file with <name>_url and <name>_key lines; it is not set")
-    values = {}
-    for line in open(path, encoding="utf-8"):
-        line = line.strip()
-        if "=" in line and not line.startswith("#"):
-            k, v = line.split("=", 1)
-            values[k.strip()] = v.strip()
-    try:
-        return values[machine + "_url"].rstrip("/"), values[machine + "_key"]
-    except KeyError:
-        sys.exit("no %s_url / %s_key in the endpoint file" % (machine, machine))
-
-
-def execute(machine, command, timeout=120):
-    url, key = endpoint(machine)
-    ctx = ssl.create_default_context()
-    ctx.check_hostname = False  # the endpoint serves a self-signed certificate
-    ctx.verify_mode = ssl.CERT_NONE
-    body = json.dumps({"command": command, "timeout_secs": min(timeout, 300)}).encode("utf-8")
-    request = urllib.request.Request(url + "/api/v1/execute", data=body,
-                                     headers={"Authorization": "Bearer " + key, "Content-Type": "application/json"})
-    with urllib.request.urlopen(request, context=ctx, timeout=timeout + 30) as response:
-        return json.loads(response.read().decode("utf-8", "replace"))
-
-
-def powershell(script):
-    """A cmd.exe command line that runs `script` in Windows PowerShell; the text travels as an encoded (UTF-16) script."""
-    script = "$ProgressPreference = 'SilentlyContinue'; $ErrorActionPreference = 'Stop'; " + script
-    encoded = base64.b64encode(script.encode("utf-16-le")).decode("ascii")
-    return "powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -EncodedCommand " + encoded
-
-
-def show(result):
-    sys.stdout.write(result.get("stdout") or "")
-    if result.get("stderr"):
-        sys.stderr.write(result["stderr"])
-    if result.get("timed_out"):
-        sys.stderr.write("[timed out]\n")
-    sys.stdout.flush()
-    return 0 if result.get("exit_code") == 0 else (result.get("exit_code") or 1)
-
-
-# cmd.exe skips the rest of a line when an `if` in it is false: never chain a command after an `if`.
-def must(machine, command, what, timeout=120):
-    result = execute(machine, command, timeout)
-    if result.get("exit_code") != 0:
-        sys.exit("%s failed (exit %s): %s" % (what, result.get("exit_code"), (result.get("output") or "")[:600]))
-    return result
+sys.path.insert(0, HERE)
+from walk_remote import execute, must, powershell, show  # noqa: E402
 
 
 def up(args):

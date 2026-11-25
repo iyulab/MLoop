@@ -8,13 +8,20 @@
 #   published-walk.sh up --published <version> [--platform ...] the same, with no packed tool: the reader installs the real
 #                                                               <version> from nuget.org (plain `dotnet tool install --global mloop`);
 #                                                               the README and guides are those of the tag v<version>
+#   published-walk.sh exec [--timeout <s>] -- '<bash command>'  run a command in the container, from /root/work, and wait for it
+#   published-walk.sh fetch <container path> <local directory>  copy a file or folder out of the container (to look at pictures)
 #   published-walk.sh down                                      remove the container and the work directory
 #
+# With `--machine <name>` (on `up`, `exec`, `fetch` and `down`) the container runs in the Docker of another machine - a Windows
+# machine reached by command execution, which gives a native Linux x64 container where this one would have to emulate it. The
+# machine's address and key are read from the file MLOOP_WALK_WINDOWS_ENV names (walk_remote.py).
+#
+# Pictures are generated too (/data/pictures — walk-pictures.py says what is in it; what it knows is in "$WORK/truth/pictures.json").
 # Series, ranking and recommendation tables are generated too. What the generator knows (the noise-free series, the spike rows,
 # each ranking query's best row, the ratings behind the recommendation pairs) is written to "$WORK/truth/" on the host and is NOT
 # mounted into the container: the reader sees tables, whoever checks the answers compares them with the truth.
 #
-# After `up`, the reader runs commands with:   docker exec mloop-walk bash -lc '<command>'
+# After `up`, the reader runs commands with:   published-walk.sh exec -- '<command>'
 # The feed is at /feed (install with --add-source /feed), the tables are in /data, the README (as packed) and the guides it links
 # to are in /docs, and the home directory is empty.
 #
@@ -30,27 +37,49 @@ NAME="${MLOOP_WALK_CONTAINER:-mloop-walk}"
 WORK="${HOME}/.cache/mloop-published-walk"
 PLATFORM="linux/arm64"
 PUBLISHED=""
+MACHINE=""
+TIMEOUT=3600
 IMAGE="mcr.microsoft.com/dotnet/sdk:10.0"
 
 cmd="${1:-up}"; shift || true
+REST=()
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --platform) PLATFORM="$2"; shift 2 ;;
     --published) PUBLISHED="$2"; shift 2 ;;
-    *) echo "unknown option: $1" >&2; exit 2 ;;
+    --machine) MACHINE="$2"; shift 2 ;;
+    --timeout) TIMEOUT="$2"; shift 2 ;;
+    --) shift; REST+=("$@"); break ;;
+    -*) echo "unknown option: $1" >&2; exit 2 ;;
+    *) REST+=("$1"); shift ;;
   esac
 done
+remote() { python3 -I "$HERE/published-walk-remote.py" "$@" --machine "$MACHINE" --container "$NAME"; }
 
 down() { docker rm -f "$NAME" >/dev/null 2>&1 || true; }
 
-generate_tables() { python3 "$HERE/walk-tables.py" "$1" "$2"; }
+generate_tables() { python3 -I "$HERE/walk-tables.py" "$1" "$2"; python3 -I "$HERE/walk-pictures.py" "$1/pictures" "$2"; }
 
 case "$cmd" in
   down)
-    down; rm -rf "$WORK"; echo "removed $NAME and $WORK" ;;
+    if [[ -n "$MACHINE" ]]; then remote down; else down; fi
+    rm -rf "$WORK"; echo "removed $NAME and $WORK" ;;
+
+  exec)
+    [[ ${#REST[@]} -gt 0 ]] || { echo "exec needs a command after --" >&2; exit 2; }
+    if [[ -n "$MACHINE" ]]; then
+      python3 -I "$HERE/published-walk-remote.py" exec --machine "$MACHINE" --container "$NAME" --timeout "$TIMEOUT" -- "${REST[@]}"
+    else
+      docker exec -w /root/work "$NAME" bash -lc "${REST[*]}"
+    fi ;;
+
+  fetch)
+    [[ ${#REST[@]} -eq 2 ]] || { echo "fetch needs <container path> <local directory>" >&2; exit 2; }
+    if [[ -n "$MACHINE" ]]; then remote fetch "${REST[0]}" "${REST[1]}"
+    else mkdir -p "${REST[1]}"; docker cp "$NAME:${REST[0]}" "${REST[1]}"; fi ;;
 
   up)
-    down; rm -rf "$WORK"; mkdir -p "$WORK/feed" "$WORK/data"
+    [[ -n "$MACHINE" ]] || down; rm -rf "$WORK"; mkdir -p "$WORK/feed" "$WORK/data"
     if [[ -n "$PUBLISHED" ]]; then
       # The real thing: nothing is packed and the feed stays empty, so a plain `dotnet tool install --global mloop` reads nuget.org.
       VERSION="$PUBLISHED"
@@ -73,14 +102,20 @@ case "$cmd" in
       cp docs/*.md "$WORK/docs/"
     fi
     echo "$VERSION" > "$WORK/VERSION"
+    if [[ -n "$MACHINE" ]]; then
+      echo "== container (native linux/amd64 on another machine)"
+      remote up --work "$WORK" --image "$IMAGE"
+      echo "ready: published-walk.sh exec --machine <name> -- '<command>'   (feed /feed, tables and pictures /data, docs /docs, version $VERSION)"
+      exit 0
+    fi
     echo "== container ($PLATFORM)"
     docker run -d --name "$NAME" --platform "$PLATFORM" \
       -v "$WORK/feed:/feed:ro" -v "$WORK/data:/data:ro" -v "$WORK/docs:/docs:ro" -e DOTNET_CLI_TELEMETRY_OPTOUT=1 -e DOTNET_NOLOGO=1 \
       "$IMAGE" sleep infinity >/dev/null
     # Left as a user would find it: the SDK image does not put the global tool directory on the PATH (the README says how).
     docker exec "$NAME" mkdir -p /root/work
-    echo "ready: docker exec $NAME bash -lc '<command>'   (feed /feed, tables /data, docs /docs, version $VERSION)"
+    echo "ready: published-walk.sh exec -- '<command>'   (feed /feed, tables and pictures /data, docs /docs, version $VERSION)"
     ;;
 
-  *) echo "usage: $0 up|down" >&2; exit 2 ;;
+  *) echo "usage: $0 up|exec|fetch|down" >&2; exit 2 ;;
 esac
