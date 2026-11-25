@@ -52,7 +52,7 @@ internal static class ImageAnomalyCli
         if (images.Count == 0)
         {
             ErrorConsole.Error($"No images found in {Path.GetRelativePath(projectRoot, path)}.",
-                $"An image-anomaly model scores image files ({ImageAnomalyTrainer.ExtensionList}).");
+                $"Put pictures to score in it ({ImageAnomalyTrainer.ExtensionList}), or name a picture or another folder: mloop predict <image-or-folder>");
             return 1;
         }
 

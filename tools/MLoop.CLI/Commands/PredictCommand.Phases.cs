@@ -213,8 +213,8 @@ public static partial class PredictCommand
                 var images = ImageDirectoryLoader.ListImages(resolvedDataFile);
                 if (images.Count == 0)
                 {
-                    ErrorConsole.Error(Markup.Escape(
-                        $"No images found under {resolvedDataFile} (looked for {ImageDirectoryLoader.SupportedExtensionList}, in subfolders too)."));
+                    ErrorConsole.Error(Markup.Escape($"No images found under {resolvedDataFile} (looked in subfolders too)."),
+                        $"Put pictures in it ({ImageDirectoryLoader.SupportedExtensionList}), or name another folder: mloop predict <folder>");
                     return null;
                 }
                 if (MLoop.Core.Data.PictureFiles.Unreadable(images) is { } unreadable)

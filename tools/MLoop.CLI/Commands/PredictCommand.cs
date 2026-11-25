@@ -980,7 +980,7 @@ public static partial class PredictCommand
         {
             ErrorConsole.Error(
                 $"No images found in {Path.GetRelativePath(projectRoot, resolvedDataDir)}.",
-                $"Object detection predicts over image files ({ImageDirectoryLoader.SupportedExtensionList}).");
+                $"Put pictures in it ({ImageDirectoryLoader.SupportedExtensionList}), or name a picture or another folder: mloop predict <image-or-folder>");
             return 1;
         }
 
