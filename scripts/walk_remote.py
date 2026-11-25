@@ -12,6 +12,7 @@ import os
 import re
 import ssl
 import sys
+import tarfile
 import time
 import urllib.error
 import urllib.parse
@@ -132,6 +133,17 @@ def upload(machine, local, remote):
             time.sleep(5 * failures)
             offset = json.loads(_open(machine, "GET", "/api/v1/fs/uploads/%s" % upload_id))["offset"]
     _open(machine, "POST", "/api/v1/fs/uploads/%s/complete" % upload_id, b"")
+
+
+def unpack(archive, target):
+    """`archive` into `target`, refusing members that would land outside it where this Python can (3.12, and late 3.9-3.11)."""
+    if hasattr(tarfile, "data_filter"):
+        archive.extractall(target, filter="data")
+        return
+    for member in archive.getmembers():
+        if member.islnk() or member.issym() or os.path.isabs(member.name) or ".." in member.name.replace("\\", "/").split("/"):
+            sys.exit("the archive holds a member that would land outside the target folder: " + member.name)
+    archive.extractall(target)
 
 
 def download(machine, remote, local):

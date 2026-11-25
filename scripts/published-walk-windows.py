@@ -50,7 +50,7 @@ KO_RENAMES = {"regression-ko-train.csv": "주택가격-학습.csv", "regression-
 PICTURE_FOLDER = "사진 자료"  # a space and Korean letters, as a reader's own picture folder may well have
 ROOT = "%USERPROFILE%\\mloop-walk"
 sys.path.insert(0, HERE)
-from walk_remote import download, execute, home, must, powershell, show, upload  # noqa: E402
+from walk_remote import download, execute, home, must, powershell, show, unpack, upload  # noqa: E402
 
 SAVED_PROFILE = "mloop-walk-saved-profile"
 
@@ -171,15 +171,19 @@ def fetch(args):
     m = args.machine
     root = home(m) + "\\mloop-walk"
     bundle_name = "fetch-%s.tar.gz" % uuid.uuid4().hex[:8]
-    pack = "$r = Join-Path $env:USERPROFILE 'mloop-walk'; $s = Get-Item -LiteralPath (Join-Path $r '%s'); " \
-           "tar -czf (Join-Path $r '%s') -C $s.PSParentPath.Replace('Microsoft.PowerShell.Core\\FileSystem::','') $s.Name" % (args.source.replace("'", "''"), bundle_name)
+    # tar.exe reads its arguments in the console's code page, which loses Korean letters: PowerShell, which does not, first
+    # copies what was asked for into a folder with a plain name.
+    stage = bundle_name.replace(".tar.gz", "")
+    pack = "$r = Join-Path $env:USERPROFILE 'mloop-walk'; $d = Join-Path $r '%s'; New-Item -ItemType Directory $d | Out-Null; " \
+           "Copy-Item -LiteralPath (Join-Path $r '%s') -Destination $d -Recurse; tar -czf (Join-Path $r '%s') -C $d .; " \
+           "Remove-Item -Recurse -Force $d" % (stage, args.source.replace("'", "''"), bundle_name)
     must(m, powershell(pack), "packing " + args.source, 300)
     os.makedirs(args.target, exist_ok=True)
     with tempfile.TemporaryDirectory() as scratch:
         local = os.path.join(scratch, bundle_name)
         download(m, root + "\\" + bundle_name, local)
         with tarfile.open(local) as tar:
-            tar.extractall(args.target, filter="data")
+            unpack(tar, args.target)
     execute(m, 'del /q "%s\\%s"' % (root, bundle_name), 60)
     print("fetched %s into %s" % (args.source, args.target))
 

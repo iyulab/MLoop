@@ -23,11 +23,17 @@ import time
 import uuid
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from walk_remote import download, execute, home, must, run_in_background, upload  # noqa: E402
+from walk_remote import download, execute, home, must, run_in_background, unpack, upload  # noqa: E402
 
 
 def folder(machine):
     return home(machine) + "\\mloop-walk-linux"
+
+
+def docker_marker(machine):
+    """The file that says the walk started Docker Desktop - outside the work folder, which every `up` makes anew, so that a
+    second `up` (or one retried after a failure) does not forget what `down` has to put back."""
+    return home(machine) + "\\mloop-walk-linux-started-docker.txt"
 
 
 def up(args):
@@ -35,7 +41,7 @@ def up(args):
     root = folder(m)
     must(m, 'rmdir /s /q "%s" 2>nul & mkdir "%s"' % (root, root), "making the work folder")
     if execute(m, "docker version >nul 2>&1", 60).get("exit_code") != 0:
-        must(m, 'echo yes> "%s\\started-docker.txt"' % root, "noting that the walk starts Docker")
+        must(m, 'echo yes> "%s"' % docker_marker(m), "noting that the walk starts Docker")
         run_in_background(m, "docker desktop start", root + "\\docker-start.log", "starting Docker Desktop", 600)
     if execute(m, "docker image inspect %s >nul 2>&1" % args.image, 60).get("exit_code") != 0:
         run_in_background(m, "docker pull %s" % args.image, root + "\\pull.log", "pulling the SDK image", 1800)
@@ -94,18 +100,18 @@ def fetch(args):
         bundle = os.path.join(scratch, "out.tar.gz")
         download(m, root + "\\out.tar.gz", bundle)
         with tarfile.open(bundle) as tar:
-            tar.extractall(args.target, filter="data")
+            unpack(tar, args.target)
     print("fetched %s into %s" % (args.source, args.target))
 
 
 def down(args):
     m, name = args.machine, args.container
     root = folder(m)
-    started = "yes" in execute(m, 'type "%s\\started-docker.txt" 2>nul' % root, 60).get("stdout", "")
+    started = "yes" in execute(m, 'type "%s" 2>nul' % docker_marker(m), 60).get("stdout", "")
     execute(m, "docker rm -f %s >nul 2>&1" % name, 120)
     if started:
         run_in_background(m, "docker desktop stop", home(m) + "\\mloop-walk-docker-stop.log", "stopping Docker Desktop", 600)
-        execute(m, 'del /q "%USERPROFILE%\\mloop-walk-docker-stop.log" "%USERPROFILE%\\mloop-walk-docker-stop.log.exit" 2>nul', 60)
+        execute(m, 'del /q "%%USERPROFILE%%\\mloop-walk-docker-stop.log" "%%USERPROFILE%%\\mloop-walk-docker-stop.log.exit" "%s" 2>nul' % docker_marker(m), 60)
     execute(m, 'rmdir /s /q "%s"' % root, 120)
     print("removed the walk container and its folder%s" % ("; stopped Docker Desktop, which the walk had started" if started else ""))
 
