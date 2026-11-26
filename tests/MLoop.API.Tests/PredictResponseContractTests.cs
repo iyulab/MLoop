@@ -528,4 +528,45 @@ public class PredictResponseContractTests : IClassFixture<TestWebApplicationFact
         var body = await response.Content.ReadAsStringAsync();
         body.Should().Contain("object-detection").And.Contain("images");
     }
+
+    // The threshold may travel beside the pictures in a multipart form, as it does in a JSON body: read, and a value that
+    // cannot select a box refused, never dropped.
+    [Theory]
+    [InlineData("banana")]
+    [InlineData("0")]
+    [InlineData("1.5")]
+    public async Task A_multipart_scoreThreshold_that_cannot_select_a_box_is_refused(string value)
+    {
+        var modelName = SeedObjectDetectionProductionModel();
+        using var form = new MultipartFormDataContent
+        {
+            { new ByteArrayContent(Convert.FromBase64String(Pattern)), "images", "pattern.png" },
+            { new StringContent(value), "scoreThreshold" },
+        };
+
+        var response = await _client.PostAsync($"/predict?name={modelName}", form);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadAsStringAsync()).Should().Contain("scoreThreshold").And.Contain(value);
+    }
+
+    [Theory]
+    [InlineData(null, "0.3", 0.3)]
+    [InlineData("0.7", "0.3", 0.7)]
+    [InlineData(null, null, 0.5)]
+    public void A_multipart_scoreThreshold_is_used_and_the_query_wins(string? query, string? field, double expected)
+    {
+        var context = new Microsoft.AspNetCore.Http.DefaultHttpContext();
+        context.Request.ContentType = "multipart/form-data; boundary=x";
+        context.Request.Form = new Microsoft.AspNetCore.Http.FormCollection(field is null
+            ? []
+            : new() { ["scoreThreshold"] = field });
+        if (query is not null)
+            context.Request.QueryString = new($"?scoreThreshold={query}");
+
+        var (threshold, error) = ObjectDetectionPredictions.ReadScoreThreshold(context.Request, default);
+
+        error.Should().BeNull();
+        threshold.Should().Be(expected);
+    }
 }

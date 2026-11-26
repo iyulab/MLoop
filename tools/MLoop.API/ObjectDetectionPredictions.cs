@@ -22,13 +22,15 @@ public sealed record ImageDetections(string ImageSha256, IReadOnlyList<DetectedO
 public static class ObjectDetectionPredictions
 {
     /// <summary>
-    /// The confidence a box needs to be reported, from <c>?scoreThreshold=</c> or the JSON body's <c>scoreThreshold</c> (the query
-    /// wins); <see cref="DetectionScoreThreshold.Default"/> when neither is given. A value that cannot select a box is refused with
+    /// The confidence a box needs to be reported, from <c>?scoreThreshold=</c>, or the <c>scoreThreshold</c> field of the JSON
+    /// body or the multipart form (the query wins); <see cref="DetectionScoreThreshold.Default"/> when none is given. A value that cannot select a box is refused with
     /// what was wrong, not ignored.
     /// </summary>
     public static (double Threshold, string? Error) ReadScoreThreshold(HttpRequest request, System.Text.Json.JsonElement body)
     {
-        string? raw = request.Query["scoreThreshold"].FirstOrDefault();
+        // The form was read with the images, so this is what that read kept.
+        string? raw = request.Query["scoreThreshold"].FirstOrDefault()
+            ?? (request.HasFormContentType ? request.Form["scoreThreshold"].FirstOrDefault() : null);
         if (raw is null && body.ValueKind == System.Text.Json.JsonValueKind.Object && body.TryGetProperty("scoreThreshold", out var field))
             raw = field.ValueKind == System.Text.Json.JsonValueKind.Number ? field.GetRawText() : field.ToString();
         if (raw is null)
