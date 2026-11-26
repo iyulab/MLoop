@@ -385,8 +385,8 @@ public static class TrainingInput
 
     /// <summary>
     /// Why the directory found for a directory-based task cannot be trained on — not the layout the task reads, no picture, a
-    /// class folder with none, a picture that cannot be read, annotations naming a picture that is not there or a box outside its
-    /// picture — or <c>null</c> when
+    /// class folder with none, a picture that cannot be read, annotations that are not readable COCO JSON or name a picture that
+    /// is not there or a box outside its picture — or <c>null</c> when
     /// it can. Asked before the run is queued, by <c>mloop train</c> and <c>POST /train</c> alike: a wrong folder is a refusal
     /// at the door, not a job that fails seconds later after taking its place in the queue, or a model trained on part of what
     /// was meant. The loaders state the rules; this asks them.
@@ -400,9 +400,7 @@ public static class TrainingInput
             if (MLoop.Core.Data.CocoDataLoader.AnnotationFileRefusal(directory) is { } noAnnotations)
                 return new Refusal(noAnnotations, DirectoryDatasetNotFound(task).Hint);
             return MLoop.Core.Data.CocoDataLoader.ContentProblems(directory) is { } found
-                ? new Refusal($"'{found.AnnotationFile}' cannot be trained on as it is: {found.Problems}",
-                    "Add each missing picture, replace each that cannot be opened (or remove its entry from the annotations file), and " +
-                    "correct each box so that it lies inside its picture ([x, y, width, height] in pixels); then train again.")
+                ? new Refusal($"'{found.AnnotationFile}' cannot be trained on as it is: {found.Problems}", found.Fix)
                 : null;
         }
 

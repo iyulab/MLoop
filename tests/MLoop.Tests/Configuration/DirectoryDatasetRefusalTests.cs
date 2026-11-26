@@ -101,6 +101,21 @@ public sealed class DirectoryDatasetRefusalTests : IDisposable
     }
 
     [Fact]
+    public void AnAnnotationsFileCutShortIsRefusedByNameAndLine()
+    {
+        var root = Dir("coco-cut");
+        File.WriteAllText(Path.Combine(root, "annotations.json"), "{\"images\": [\n{\"id\": 1, \"file_name\": \"a.png\"},\n{\"id\": 2,");
+
+        var refusal = TrainingInput.DirectoryDatasetRefusal("object-detection", root)!;
+
+        Assert.Contains("annotations.json", refusal.Message, StringComparison.Ordinal);
+        Assert.Contains("cannot be read as COCO JSON (line 3).", refusal.Message, StringComparison.Ordinal);
+        // The parser's own words are not the user's.
+        Assert.DoesNotContain("BytePositionInLine", refusal.Message, StringComparison.Ordinal);
+        Assert.Contains("export", refusal.Hint!, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void AYoloFolderIsNotAskedForACocoFile()
     {
         var root = Dir("yolo");

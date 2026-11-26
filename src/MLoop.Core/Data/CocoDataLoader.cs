@@ -106,11 +106,11 @@ public sealed class CocoDataLoader : DataProviderBase
     }
 
     /// <summary>
-    /// Why the annotations of <paramref name="path"/> should not be trained on as they are — a picture they name is not there or
-    /// cannot be opened, or a box has no area or reaches outside its picture — or <c>null</c> when they name only pictures that
-    /// are there and boxes inside them. Asked before a training run, which on a CPU can take hours: a warning above it is not
+    /// Why the annotations of <paramref name="path"/> should not be trained on as they are — the file cannot be read as COCO
+    /// JSON, a picture it names is not there or cannot be opened, or a box has no area or reaches outside its picture — or
+    /// <c>null</c> when it names only pictures that are there and boxes inside them. Asked before a training run, which on a CPU can take hours: a warning above it is not
     /// read, and a detector learns a wrong box as readily as a right one. Evaluation reads such a set as before, skipping what
-    /// it cannot use with a warning. A file that does not parse, or holds no images, is reported when the run reads it.
+    /// it cannot use with a warning. A file that holds no images or no annotations is reported when the run reads it.
     /// </summary>
     public static ContentProblem? ContentProblems(string path)
     {
@@ -119,10 +119,24 @@ public sealed class CocoDataLoader : DataProviderBase
         try
         {
             (annotationFile, imageRoot) = ResolveAnnotationFile(path);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidOperationException)
+        {
+            return null; // AnnotationFileRefusal says why there is no file to read
+        }
+
+        try
+        {
             using var stream = File.OpenRead(annotationFile);
             doc = JsonSerializer.Deserialize<CocoDocument>(stream, JsonOptions);
         }
-        catch (Exception ex) when (ex is JsonException or IOException or InvalidOperationException)
+        catch (JsonException ex)
+        {
+            var at = ex.LineNumber is { } line ? string.Create(System.Globalization.CultureInfo.InvariantCulture, $" (line {line + 1})") : "";
+            return new ContentProblem(annotationFile, $"it cannot be read as COCO JSON{at}.",
+                "Correct the file at that line, or export the annotations again as COCO JSON (images, annotations, categories); then train again.");
+        }
+        catch (IOException)
         {
             return null;
         }
@@ -178,7 +192,11 @@ public sealed class CocoDataLoader : DataProviderBase
         if (outside.Count > 0)
             parts.Add($"{Count(outside.Count, "box is empty or reaches", "boxes are empty or reach")} outside its picture: {Some(outside)}");
 
-        return parts.Count == 0 ? null : new ContentProblem(annotationFile, string.Join("; ", parts) + ".");
+        return parts.Count == 0
+            ? null
+            : new ContentProblem(annotationFile, string.Join("; ", parts) + ".",
+                "Add each missing picture, replace each that cannot be opened (or remove its entry from the annotations file), and " +
+                "correct each box so that it lies inside its picture ([x, y, width, height] in pixels); then train again.");
 
         static string Count(int count, string one, string many) => $"{count} {(count == 1 ? one : many)}";
         static string Some(List<string> items) =>
@@ -188,8 +206,8 @@ public sealed class CocoDataLoader : DataProviderBase
     // A box a pixel over its picture's edge is how some tools round one; it is trained on as it is.
     private const float BoxTolerance = 1.5f;
 
-    /// <summary>What <see cref="ContentProblems"/> found in an annotations file.</summary>
-    public sealed record ContentProblem(string AnnotationFile, string Problems);
+    /// <summary>What <see cref="ContentProblems"/> found in an annotations file, and what to do about it.</summary>
+    public sealed record ContentProblem(string AnnotationFile, string Problems, string Fix);
 
     /// <summary>
     /// Resolves the annotations JSON file and the directory image paths are relative to.
