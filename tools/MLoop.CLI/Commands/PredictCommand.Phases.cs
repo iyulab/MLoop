@@ -217,11 +217,6 @@ public static partial class PredictCommand
                         $"Put pictures in it ({ImageDirectoryLoader.SupportedExtensionList}), or name another folder: mloop predict <folder>");
                     return null;
                 }
-                if (MLoop.Core.Data.PictureFiles.Unreadable(images) is { } unreadable)
-                {
-                    ErrorConsole.Error(Markup.Escape(unreadable), MLoop.Core.Data.PictureFiles.UnreadableHint);
-                    return null;
-                }
                 ValueLine.Write("[green]>[/] Images: ", $"{images.Count:N0} under {Path.GetFileName(Path.TrimEndingDirectorySeparator(resolvedDataFile))}");
                 resolvedDataFile = ImageDirectoryLoader.WriteImageTable(images);
             }
@@ -273,6 +268,16 @@ public static partial class PredictCommand
         }
 
         return resolvedOutputPath;
+    }
+
+    /// <summary>The refusal naming the pictures an image table lists that cannot be read, or <c>null</c> when all can (or the
+    /// table has no picture column, which the schema check reports).</summary>
+    internal static async Task<string?> UnreadableListedPicturesAsync(string table)
+    {
+        var rows = await new MLoop.Core.Data.CsvHelperImpl().ReadAsync(table);
+        return rows.Count > 0 && rows[0].ContainsKey(ImageDirectoryLoader.ImagePathColumn)
+            ? MLoop.Core.Data.PictureFiles.Unreadable(rows.Select(row => row[ImageDirectoryLoader.ImagePathColumn]))
+            : null;
     }
 
     /// <summary>

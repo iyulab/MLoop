@@ -240,21 +240,12 @@ public static partial class PredictCommand
                 return await PredictForecastingAsync(resolvedModelPath, forecastOutputPath, experimentId);
             }
 
-            // DL tasks (image-classification, object-detection, NLP) need their native runtime
-            // loaded before any Model.Load deserializes native parameters. Guard at the CLI boundary
-            // so every downstream load (schema validation, PredictionEngine, PredictionService) is
-            // covered with one call where the task type is known. No-op for tabular tasks.
-            if (taskType != null)
+            // A deep-learning task needs its native runtime. Whether it is there is asked here; it is loaded later, once the
+            // input has been read — some libraries write to the console as they load, and a refusal's screen is the refusal alone.
+            if (MLoop.Core.Runtime.RuntimeManager.ObstacleFor(taskType) is { } obstacle)
             {
-                try
-                {
-                    MLoop.Core.Runtime.RuntimeManager.EnsureRuntimeForTask(taskType);
-                }
-                catch (InvalidOperationException ex)
-                {
-                    ErrorConsole.Error($"{ex.Message}");
-                    return 1;
-                }
+                ErrorConsole.Error($"{obstacle.Message} {obstacle.Hint}");
+                return 1;
             }
 
             // Object detection predicts over images (a folder of them, one image, or a COCO/YOLO dataset's
@@ -305,6 +296,19 @@ public static partial class PredictCommand
             if (preparedRows is null)
                 return 1;
             resolvedDataFile = preparedRows;
+
+            // A classifier's loader reads a picture it cannot open as nothing and still answers, so the pictures the table
+            // names — one the user wrote, or the one built from a folder — are read first.
+            if (TaskTypes.Canonical(taskType) == "image-classification"
+                && await UnreadableListedPicturesAsync(resolvedDataFile) is { } unreadablePictures)
+            {
+                ErrorConsole.Error(Markup.Escape(unreadablePictures), MLoop.Core.Data.PictureFiles.UnreadableHint);
+                return 1;
+            }
+
+            // Every model load from here on deserializes native parameters. No-op for tasks with no native runtime.
+            if (taskType != null)
+                MLoop.Core.Runtime.RuntimeManager.EnsureRuntimeForTask(taskType);
 
             // pre-predict hooks see the table this run is about to score, and a refusal means nothing is scored.
             if (await BatchCommandHooks.RefusalAsync(MLoop.Extensibility.Hooks.HookType.PrePredict, projectRoot, resolvedModelName,
@@ -929,8 +933,8 @@ public static partial class PredictCommand
     /// <summary>
     /// Predicts object detections over images and writes them as JSON — labels, scores, and boxes.
     /// The input is pictures alone: a folder of them (any depth — a COCO or YOLO dataset's images
-    /// included, its annotations unread), one image, or a COCO annotations file's folder. The native
-    /// runtime is already loaded by the EnsureRuntimeForTask guard before this method is reached.
+    /// included, its annotations unread), one image, or a COCO annotations file's folder. The pictures are
+    /// read first; loading the model then loads the native runtime.
     /// </summary>
     private static async Task<int> PredictObjectDetectionAsync(
         string projectRoot,
