@@ -385,7 +385,8 @@ public static class TrainingInput
 
     /// <summary>
     /// Why the directory found for a directory-based task cannot be trained on — not the layout the task reads, no picture, a
-    /// class folder with none, annotations naming a picture that is not there or a box outside its picture — or <c>null</c> when
+    /// class folder with none, a picture that cannot be read, annotations naming a picture that is not there or a box outside its
+    /// picture — or <c>null</c> when
     /// it can. Asked before the run is queued, by <c>mloop train</c> and <c>POST /train</c> alike: a wrong folder is a refusal
     /// at the door, not a job that fails seconds later after taking its place in the queue, or a model trained on part of what
     /// was meant. The loaders state the rules; this asks them.
@@ -400,8 +401,8 @@ public static class TrainingInput
                 return new Refusal(noAnnotations, DirectoryDatasetNotFound(task).Hint);
             return MLoop.Core.Data.CocoDataLoader.ContentProblems(directory) is { } found
                 ? new Refusal($"'{found.AnnotationFile}' cannot be trained on as it is: {found.Problems}",
-                    "Add each missing picture or remove its entry from the annotations file, and correct each box so that it lies " +
-                    "inside its picture ([x, y, width, height] in pixels); then train again.")
+                    "Add each missing picture, replace each that cannot be opened (or remove its entry from the annotations file), and " +
+                    "correct each box so that it lies inside its picture ([x, y, width, height] in pixels); then train again.")
                 : null;
         }
 
@@ -410,10 +411,16 @@ public static class TrainingInput
                 ? new Refusal(wrong.Message, wrong.Hint)
                 : null;
 
-        if (IsImageAnomaly(task) && MLoop.Core.ImageAnomaly.ImageAnomalyTrainer.ListImages(directory).Count == 0)
-            return new Refusal(
-                $"No pictures in '{directory}' ({MLoop.Core.ImageAnomaly.ImageAnomalyTrainer.ExtensionList}).",
-                "Put pictures of normal items in it, or name another folder: mloop train <folder> --task image-anomaly");
+        if (IsImageAnomaly(task))
+        {
+            var normal = MLoop.Core.ImageAnomaly.ImageAnomalyTrainer.ListImages(directory);
+            if (normal.Count == 0)
+                return new Refusal(
+                    $"No pictures in '{directory}' ({MLoop.Core.ImageAnomaly.ImageAnomalyTrainer.ExtensionList}).",
+                    "Put pictures of normal items in it, or name another folder: mloop train <folder> --task image-anomaly");
+            if (MLoop.Core.Data.PictureFiles.Unreadable(normal) is { } unreadable)
+                return new Refusal(unreadable, MLoop.Core.Data.PictureFiles.UnreadableHint);
+        }
 
         return null;
     }

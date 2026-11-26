@@ -181,9 +181,9 @@ public sealed class ImageDirectoryLoader : DataProviderBase
         if (string.IsNullOrWhiteSpace(directory) || !Directory.Exists(directory))
             return counts;
 
-        foreach (var classDir in Directory.EnumerateDirectories(directory))
+        foreach (var classDir in ClassFolders(directory))
         {
-            var images = Directory.EnumerateFiles(classDir).Count(IsSupportedImage);
+            var images = PicturesIn(classDir).Count;
             if (images > 0)
                 counts[Path.GetFileName(classDir)] = images;
         }
@@ -233,7 +233,7 @@ public sealed class ImageDirectoryLoader : DataProviderBase
     /// before they queue the run.
     /// </summary>
     public static string? NoClassFoldersMessage(string directory)
-        => Directory.Exists(directory) && Directory.GetDirectories(directory).Length == 0
+        => Directory.Exists(directory) && ClassFolders(directory).Count == 0
             ? $"No class subfolders found in '{directory}'. " +
               "Image classification requires one subfolder per class label " +
               "(folder name = label), each containing image files."
@@ -241,9 +241,10 @@ public sealed class ImageDirectoryLoader : DataProviderBase
 
     /// <summary>
     /// Why a classifier cannot be trained on <paramref name="directory"/>, and what to change, or <c>null</c> when it can: no
-    /// class folders, a class folder with no picture (a class the model would silently never answer), or pictures in one class
-    /// only. Asked before a training run; reading a folder to evaluate on it is not asked this — a labelled test folder may
-    /// well hold one class. Folders whose name starts with <c>.</c> or <c>__</c> are tools' own and are not classes.
+    /// class folders, a class folder with no picture (a class the model would silently never answer), pictures in one class
+    /// only, or a picture that cannot be read (a trainer reads it as nothing and says nothing: a class of such files gives a
+    /// model that never answers it). Asked before a training run; reading a folder to evaluate on it is not asked this — a
+    /// labelled test folder may well hold one class.
     /// </summary>
     public static (string Message, string Hint)? TrainingRefusal(string directory)
     {
@@ -253,13 +254,9 @@ public sealed class ImageDirectoryLoader : DataProviderBase
         if (NoClassFoldersMessage(directory) is { } noClasses)
             return (noClasses, LayoutHint);
 
-        var folders = Directory.GetDirectories(directory)
-            .Where(d => Path.GetFileName(d) is var name && !name.StartsWith('.') && !name.StartsWith("__", StringComparison.Ordinal))
-            .OrderBy(d => d, StringComparer.Ordinal)
-            .Select(d => (Name: Path.GetFileName(d), Pictures: Directory.EnumerateFiles(d).Count(IsSupportedImage)))
-            .ToList();
-        var empty = folders.Where(f => f.Pictures == 0).Select(f => f.Name).ToList();
-        var filled = folders.Where(f => f.Pictures > 0).Select(f => f.Name).ToList();
+        var folders = ClassFolders(directory).Select(d => (Name: Path.GetFileName(d), Pictures: PicturesIn(d))).ToList();
+        var empty = folders.Where(f => f.Pictures.Count == 0).Select(f => f.Name).ToList();
+        var filled = folders.Where(f => f.Pictures.Count > 0).Select(f => f.Name).ToList();
 
         if (filled.Count == 0)
             return ($"No class folder in '{directory}' holds a picture ({SupportedExtensionList}).", LayoutHint);
@@ -271,8 +268,23 @@ public sealed class ImageDirectoryLoader : DataProviderBase
         if (filled.Count < 2)
             return ($"Image classification needs at least two classes, but '{directory}' has one class folder: {filled[0]}.",
                     $"Add a folder of pictures for each other class beside {filled[0]}/.");
+        if (PictureFiles.Unreadable(folders.SelectMany(f => f.Pictures)) is { } unreadable)
+            return (unreadable, PictureFiles.UnreadableHint);
         return null;
     }
+
+    /// <summary>
+    /// The folders of <paramref name="directory"/> that are classes, ordered by name: every one but a tool's own — a name
+    /// starting with <c>.</c> or <c>__</c> (a notebook's checkpoints, an archive's metadata).
+    /// </summary>
+    private static List<string> ClassFolders(string directory) =>
+        [.. Directory.GetDirectories(directory)
+            .Where(d => Path.GetFileName(d) is var name && !name.StartsWith('.') && !name.StartsWith("__", StringComparison.Ordinal))
+            .OrderBy(d => d, StringComparer.Ordinal)];
+
+    /// <summary>The pictures a class folder holds — the ones training reads, so the ones checked before it.</summary>
+    private static List<string> PicturesIn(string classFolder) =>
+        [.. Directory.EnumerateFiles(classFolder).Where(IsSupportedImage).OrderBy(f => f, StringComparer.Ordinal)];
 
     /// <summary>
     /// Enumerates class subfolders and their images, validating the layout and
@@ -281,10 +293,6 @@ public sealed class ImageDirectoryLoader : DataProviderBase
     /// </summary>
     private List<ImageSample> ScanDirectory(string directory)
     {
-        var classDirs = Directory.GetDirectories(directory)
-            .OrderBy(d => d, StringComparer.Ordinal)
-            .ToList();
-
         if (NoClassFoldersMessage(directory) is { } noClasses)
             throw new InvalidOperationException(noClasses);
 
@@ -292,13 +300,10 @@ public sealed class ImageDirectoryLoader : DataProviderBase
         var classCounts = new Dictionary<string, int>(StringComparer.Ordinal);
         var emptyClasses = new List<string>();
 
-        foreach (var classDir in classDirs)
+        foreach (var classDir in ClassFolders(directory))
         {
             var label = Path.GetFileName(classDir);
-            var images = Directory.EnumerateFiles(classDir)
-                .Where(IsSupportedImage)
-                .OrderBy(f => f, StringComparer.Ordinal)
-                .ToList();
+            var images = PicturesIn(classDir);
 
             if (images.Count == 0)
             {

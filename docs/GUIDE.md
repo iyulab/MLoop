@@ -472,7 +472,9 @@ Notes:
 - Supported extensions: `.jpg .jpeg .png .bmp .gif`. Other files (e.g. `meta.json`) are ignored.
 - Training stops before it starts when a class folder holds no picture (the model would never answer that class) or
   only one class has pictures. Folders whose name starts with `.` or `__` are not classes.
-- `mloop predict` and `mloop evaluate` read every picture first and stop on one that cannot be read, naming it.
+- `mloop train`, `mloop predict` and `mloop evaluate` read every picture first and stop on one that cannot be read, naming
+  it. Training does so for image classification and image anomaly before it starts; for object detection it checks that each
+  picture the annotations name is there and opens.
 - The trainer uses TensorFlow transfer learning, so the `tf` runtime is required. Without it, training
   stops with a clear message pointing to `mloop runtime install tf`.
 - CSV-only steps (encoding conversion, sampling, balancing, multi-line flattening) are skipped for image

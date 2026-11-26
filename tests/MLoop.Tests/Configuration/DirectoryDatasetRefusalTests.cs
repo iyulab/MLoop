@@ -134,6 +134,68 @@ public sealed class DirectoryDatasetRefusalTests : IDisposable
         Assert.EndsWith("normal", TrainingInput.ResolveDirectoryDataset("image-anomaly", null, null, project), StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void APictureThatCannotBeReadIsRefusedByName()
+    {
+        var root = Dir("one-broken");
+        Pictures(root, "circle", 2);
+        Pictures(root, "square", 2);
+        File.WriteAllText(Path.Combine(root, "square", "zz-broken.png"), "not a picture");
+
+        var refusal = TrainingInput.DirectoryDatasetRefusal("image-classification", root)!;
+
+        Assert.StartsWith("A picture cannot be read: ", refusal.Message, StringComparison.Ordinal);
+        Assert.Contains("zz-broken.png", refusal.Message, StringComparison.Ordinal);
+        Assert.Equal(MLoop.Core.Data.PictureFiles.UnreadableHint, refusal.Hint);
+    }
+
+    [Fact]
+    public void AClassWithNoReadablePictureIsRefused()
+    {
+        // A trainer reads such a file as nothing: the run would end in a promoted model that never answers that class.
+        var root = Dir("unreadable-class");
+        Pictures(root, "circle", 2);
+        Pictures(root, "square", 2);
+        var triangle = Directory.CreateDirectory(Path.Combine(root, "triangle")).FullName;
+        for (var i = 0; i < 7; i++)
+            File.WriteAllText(Path.Combine(triangle, $"{i}.png"), "not a picture");
+
+        var refusal = TrainingInput.DirectoryDatasetRefusal("image-classification", root)!;
+
+        Assert.StartsWith("7 pictures cannot be read: ", refusal.Message, StringComparison.Ordinal);
+        Assert.EndsWith("; and 2 more.", refusal.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AToolFolderIsNeitherCheckedNorTrainedOn()
+    {
+        var root = Dir("tool-folders");
+        Pictures(root, "circle", 2);
+        Pictures(root, "square", 2);
+        Pictures(root, ".thumbnails", 3);
+        Pictures(root, "__MACOSX", 1);
+        File.WriteAllText(Path.Combine(root, "__MACOSX", "._0.png"), "resource fork");
+
+        Assert.Null(TrainingInput.DirectoryDatasetRefusal("image-classification", root));
+        Assert.Equal(["circle", "square"], MLoop.Core.Data.ImageDirectoryLoader.CountImagesPerClass(root).Keys);
+        var loaded = new MLoop.Core.Data.ImageDirectoryLoader(new Microsoft.ML.MLContext(seed: 1)).LoadData(root);
+        Assert.Equal(4, Microsoft.ML.Data.ColumnCursorExtensions.GetColumn<string>(loaded, MLoop.Core.Data.ImageDirectoryLoader.ImagePathColumn).Count());
+    }
+
+    [Fact]
+    public void AnImageAnomalyPictureThatCannotBeReadIsRefusedByName()
+    {
+        var root = Dir("normal-broken");
+        File.WriteAllBytes(Path.Combine(root, "a.png"), Png(8, 8));
+        Directory.CreateDirectory(Path.Combine(root, "more"));
+        File.WriteAllText(Path.Combine(root, "more", "zz-broken.png"), "not a picture");
+
+        var refusal = TrainingInput.DirectoryDatasetRefusal("image-anomaly", root)!;
+
+        Assert.Contains("zz-broken.png", refusal.Message, StringComparison.Ordinal);
+        Assert.Equal(MLoop.Core.Data.PictureFiles.UnreadableHint, refusal.Hint);
+    }
+
     private static void Pictures(string root, string name, int count)
     {
         var folder = Path.Combine(root, name);

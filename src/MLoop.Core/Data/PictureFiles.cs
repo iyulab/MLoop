@@ -3,7 +3,7 @@ using MLoop.Core.Embedding;
 namespace MLoop.Core.Data;
 
 /// <summary>
-/// Whether the picture files a command is about to score can be read. A trainer's own loader reads a file it cannot decode as
+/// Whether the picture files a command is about to train on or score can be read. A trainer's own loader reads a file it cannot decode as
 /// nothing at all — image classification answered such a file with a class and zero probabilities, and object detection failed in
 /// the middle of the run without saying which file it was — so the files are read first, and one that cannot be is named.
 /// </summary>
