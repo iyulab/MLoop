@@ -275,8 +275,9 @@ public static class InitCommand
             }
             var isObjectDetection = task.Equals("object-detection", StringComparison.OrdinalIgnoreCase);
             // A task whose runtime has no build here is said now, not after the pictures are in place.
-            if (MLoop.Core.Runtime.RuntimeManager.ObstacleFor(task) is { } obstacle
-                && !MLoop.Core.Runtime.RuntimeRegistry.GetRequiredByTask(task)!.NuGetPackages.ContainsKey(MLoop.Core.Runtime.PlatformDetector.GetRuntimeIdentifier()))
+            var noRuntimeHere = MLoop.Core.Runtime.RuntimeRegistry.GetRequiredByTask(task) is { } needed
+                && !needed.NuGetPackages.ContainsKey(MLoop.Core.Runtime.PlatformDetector.GetRuntimeIdentifier());
+            if (noRuntimeHere && MLoop.Core.Runtime.RuntimeManager.ObstacleFor(task) is { } obstacle)
             {
                 WarningConsole.Warn(Markup.Escape($"{obstacle.Message} {obstacle.Hint}"));
             }
@@ -296,8 +297,16 @@ public static class InitCommand
             else if (isDirectoryBased)
             {
                 AnsiConsole.MarkupLine("  2. Place images under datasets/images/<class>/  [cyan]# folder name = label[/]");
-                AnsiConsole.MarkupLine("  3. mloop runtime install tf  [cyan]# one-time TensorFlow CPU runtime (~182MB)[/]");
-                AnsiConsole.MarkupLine("  4. mloop train  [cyan]# Auto-detects datasets/images/[/]");
+                // No install line for a runtime that has no build here: the command could only refuse.
+                if (noRuntimeHere)
+                {
+                    AnsiConsole.MarkupLine("  3. Train on one of the platforms named above  [cyan]# mloop runtime install tf, then mloop train[/]");
+                }
+                else
+                {
+                    AnsiConsole.MarkupLine("  3. mloop runtime install tf  [cyan]# one-time TensorFlow CPU runtime (~182MB)[/]");
+                    AnsiConsole.MarkupLine("  4. mloop train  [cyan]# Auto-detects datasets/images/[/]");
+                }
             }
             else
             {
