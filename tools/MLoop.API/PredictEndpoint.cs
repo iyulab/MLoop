@@ -182,28 +182,30 @@ public static class PredictEndpoint
                         ForecastRequestNotes.Of(input)));
                 }
 
+                // A model that reads pictures answers pictures sent by their contents only. A row would name its input column,
+                // and for these models that is a file path: the server would open whatever file the caller names.
+                var pictureTask = MLoop.Core.Models.TaskTypes.Canonical(taskType);
+                if (images is null && MLoop.Core.Data.DataLoaderFactory.IsDirectoryBased(pictureTask))
+                    return Results.BadRequest(new ErrorResponse($"'{modelName}' is an {pictureTask} model: send images by content — {{\"images\": [base64…]}} or a multipart form."));
+
                 // Object detection answers each image with a list of boxes, not one row's value: its own branch,
-                // with no input schema or rows. Images come by content, as image classification takes them.
-                if (MLoop.Core.Models.TaskTypes.Canonical(taskType) == "object-detection")
+                // with no input schema or rows.
+                if (pictureTask == "object-detection")
                 {
-                    if (images is null)
-                        return Results.BadRequest(new ErrorResponse($"'{modelName}' is an object-detection model: send images by content — {{\"images\": [base64…]}} or a multipart form."));
                     var (scoreThreshold, thresholdError) = ObjectDetectionPredictions.ReadScoreThreshold(request, input);
                     if (thresholdError is not null)
                         return Results.BadRequest(new ErrorResponse(thresholdError));
                     return await ObjectDetectionPredictions.RespondAsync(
-                        images, imageFiles, modelName, answeringId, modelPath, mlContext, modelCache, experimentStore,
+                        images!, imageFiles, modelName, answeringId, modelPath, mlContext, modelCache, experimentStore,
                         predictionLogger, configuration, logger, stopwatch, ct, scoreThreshold);
                 }
 
                 // Image anomaly answers each image with a score and a grid of patch distances against the bank beside the model:
                 // no input schema or rows either.
-                if (MLoop.Core.Models.TaskTypes.Canonical(taskType) == "image-anomaly")
+                if (pictureTask == "image-anomaly")
                 {
-                    if (images is null)
-                        return Results.BadRequest(new ErrorResponse($"'{modelName}' is an image-anomaly model: send images by content — {{\"images\": [base64…]}} or a multipart form."));
                     return await ImageAnomalyPredictions.RespondAsync(
-                        images, modelName, answeringId, modelPath, embedderPool, logger, stopwatch, ct);
+                        images!, modelName, answeringId, modelPath, embedderPool, logger, stopwatch, ct);
                 }
 
                 // Load experiment data to get InputSchema
