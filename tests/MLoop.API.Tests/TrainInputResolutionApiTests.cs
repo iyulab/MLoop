@@ -28,8 +28,9 @@ public class TrainInputResolutionApiTests : IClassFixture<TestWebApplicationFact
         return path;
     }
 
-    // A class folder as training takes one: with a picture in it (the door reads the names, the job reads the pictures).
-    private void ClassFolder(params string[] parts) => File.WriteAllBytes(Path.Combine(Dir(parts), "0.png"), [1]);
+    // A class folder as training takes one: with a picture in it that opens (1×1).
+    private void ClassFolder(params string[] parts) => File.WriteAllBytes(Path.Combine(Dir(parts), "0.png"), Convert.FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="));
 
     private static async Task<string> BodyOf(HttpResponseMessage response) => await response.Content.ReadAsStringAsync();
 

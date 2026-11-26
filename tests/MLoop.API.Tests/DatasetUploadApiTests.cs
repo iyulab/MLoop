@@ -31,7 +31,9 @@ public class DatasetUploadApiTests : IClassFixture<TestWebApplicationFactory>
 
     private static byte[] Csv() => Encoding.UTF8.GetBytes("x,y\n" + string.Join('\n', Enumerable.Range(0, 40).Select(i => $"{i},{i * 2}")) + "\n");
 
-    private static readonly byte[] Png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+    // A picture that opens (1×1): an image dataset named for a task is checked as training checks it.
+    private static readonly byte[] Png = Convert.FromBase64String(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==");
 
     /// <summary>A zip with the named entries (name → bytes); <paramref name="configure"/> adjusts an entry after it is made.</summary>
     private static byte[] Zip(Dictionary<string, byte[]> entries, Action<ZipArchiveEntry>? configure = null)

@@ -51,7 +51,8 @@ public class TrainIntakeApiTests : IClassFixture<TestWebApplicationFactory>
     {
         var images = Path.Combine(_factory.TestProjectRoot, "datasets", "imgs");
         foreach (var label in new[] { "a", "b" })
-            File.WriteAllBytes(Path.Combine(Directory.CreateDirectory(Path.Combine(images, label)).FullName, "0.png"), [1]);
+            File.WriteAllBytes(Path.Combine(Directory.CreateDirectory(Path.Combine(images, label)).FullName, "0.png"), Convert.FromBase64String(
+                "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="));
 
         var response = await _client.PostAsJsonAsync("/train",
             new { dataFile = images, labelColumn = "", task = "image-classification", promote = false });
