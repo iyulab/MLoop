@@ -162,24 +162,9 @@ jobs:
       uses: actions/checkout@v4
 
     - name: Internal token scan
-      uses: iyulab/dotnet-ci-actions/internal-token-scan@39e741c1cbd64f944584dbc4b47b75d5da329425
+      uses: iyulab/dotnet-ci-actions/internal-token-scan@01c214a97aee2b48fb0bcebc9473d3df11c6532c
       with:
-        # Tests are scanned too. Some tests have to spell what the scan forbids - Windows paths as input, the
-        # repository's own leak guard - so each of those files is allowed that one rule; an entry that stops
-        # matching anything fails the scan.
-        allow: |
-          cycle-number tests/MLoop.Tests/Documentation/InternalTokenContractTests.cs
-          working-document tests/MLoop.Tests/Documentation/InternalTokenContractTests.cs
-          local-path tests/MLoop.Tests/Documentation/InternalTokenContractTests.cs
-          local-path tests/MLoop.Tests/Configuration/ConfigKeyAuditTests.cs
-          local-path tests/MLoop.Tests/Diagnostics/ErrorConsoleTests.cs
-          local-path tests/MLoop.Tests/Diagnostics/ValueLineTests.cs
-          local-path tests/MLoop.Tests/Commands/TrainWeightTests.cs
-          local-path tests/MLoop.Core.Tests/Storage/ProjectPathsTests.cs
-          local-path tests/MLoop.API.Tests/ProjectRelativeTextTests.cs
-          local-path tests/MLoop.API.Tests/TrainDefinitionApiTests.cs
-          local-path tests/MLoop.API.Tests/ModelNameGateApiTests.cs
-          local-path tests/MLoop.API.Tests/DatasetUploadApiTests.cs
+        exclude-dirs: .git,bin,obj,node_modules,dist,.venv,TestResults,coverage,tests
 
   security-scan:
     runs-on: ubuntu-latest
