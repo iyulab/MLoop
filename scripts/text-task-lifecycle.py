@@ -28,7 +28,7 @@ Local only: it needs the libtorch runtime (`mloop runtime install torch`). Each 
 limit does not shorten it): about 6 to 11 minutes a model, two models a task (three with --job). Tasks are independent, so start
 one process per task to walk them side by side. Exit status is 1 when a check fails. A JSON summary is written to <work>/<task>/summary.json.
 """
-import argparse, csv, importlib.util, itertools, json, os, random, shlex, shutil, signal, subprocess, sys, tempfile, time
+import argparse, csv, importlib.util, itertools, json, os, random, re, shlex, shutil, signal, subprocess, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 _spec = importlib.util.spec_from_file_location('lifecycle_check', os.path.join(HERE, 'lifecycle-check.py'))
@@ -112,6 +112,9 @@ def first_json(text):
     return json.loads(text[min(starts):]) if starts else None
 
 
+ANSI = re.compile(r'\x1b\[[0-9;]*[A-Za-z]')
+
+
 class Walk:
     def __init__(self, task, mloop, work):
         self.task, self.mloop, self.work = task, mloop, work
@@ -121,7 +124,8 @@ class Walk:
 
     def cli(self, *args):
         p = subprocess.run(self.mloop + list(args), cwd=self.proj if os.path.isdir(self.proj) else self.work, capture_output=True, text=True)
-        return p.returncode, p.stdout, p.stderr
+        # A CI runner is taken for a terminal that colours, even through a pipe: a coloured number splits the sentence a step reads.
+        return p.returncode, ANSI.sub('', p.stdout), ANSI.sub('', p.stderr)
 
     def json(self, *args):
         rc, out, err = self.cli(*args)
