@@ -69,6 +69,47 @@ public sealed class PictureOverlayTests : IDisposable
         Assert.Equal(Grey, drawn.GetPixel(140, 110)); // and so is the rest
     }
 
+    // Two boxes over almost the same pixels (a detector naming one object two ways), and one at the very top edge: each
+    // label must still read in the saved copy, so no label may cover another or leave the picture.
+    [Theory]
+    [InlineData(40, 40)]
+    [InlineData(0, 0)]
+    public void EveryLabelStaysReadable_WhenBoxesCoincide(int left, int top)
+    {
+        var source = Picture("a.png", 220, 160);
+        var target = Path.Combine(_root, "out", "a.png");
+        DrawnBox[] boxes =
+        [
+            new("red", 0.52f, left + 1, top + 1, left + 71, top + 61),
+            new("blue", 0.90f, left, top, left + 70, top + 60),
+            new("green", 0.31f, left, top + 1, left + 70, top + 60),
+        ];
+
+        PictureOverlay.SaveBoxes(source, boxes, target);
+
+        var places = PictureOverlay.LabelPlaces(boxes, 220, 160, 1);
+        using var drawn = SKBitmap.Decode(target);
+        for (var i = 0; i < boxes.Length; i++)
+        {
+            var (caption, place) = places[i];
+            Assert.Equal($"{boxes[i].Label} {boxes[i].Score.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}", caption);
+            Assert.True(place.Left >= 0 && place.Top >= 0 && place.Right <= 220 && place.Bottom <= 160, $"'{caption}' leaves the picture: {place}");
+            foreach (var (otherCaption, other) in places.Skip(i + 1))
+                Assert.False(place.IntersectsWith(other), $"'{caption}' and '{otherCaption}' overlap");
+
+            // In the saved copy the label's place holds exactly that label: nothing was drawn over it.
+            using var alone = new SKBitmap((int)place.Width, (int)place.Height);
+            using (var canvas = new SKCanvas(alone))
+            {
+                canvas.Clear(new SKColor(17, 17, 17));
+                BitmapFont.Draw(canvas, caption, 0, 0, 1);
+            }
+            for (var y = 0; y < alone.Height; y++)
+                for (var x = 0; x < alone.Width; x++)
+                    Assert.Equal(alone.GetPixel(x, y), drawn.GetPixel((int)place.Left + x, (int)place.Top + y));
+        }
+    }
+
     [Fact]
     public void AHeatMapTintsOnlyWhatIsBeyondNormal_AndOutlinesTheStrongestPatch()
     {

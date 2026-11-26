@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **`mloop predict <pictures> --save-images <folder>` writes a copy of each picture with what was found drawn on it** — an object detector's boxes with their labels and scores, or an image-anomaly model's distances as a heat map over the part of the picture the encoder read, tinted where they pass where the held-out normal pictures ended, the farthest patch outlined and the score written. A picture within normal stays clear. The originals are not changed, and a folder inside the one being read is refused. Drawn with SkiaSharp, already a dependency; ASCII labels use a built-in font, so a Linux install with no fonts draws them too (`MLoop.Core.Data.PictureOverlay`).
+- **`mloop predict <pictures> --save-images <folder>` writes a copy of each picture with what was found drawn on it** — an object detector's boxes with their labels and scores, or an image-anomaly model's distances as a heat map over the part of the picture the encoder read, tinted where they pass where the held-out normal pictures ended, the farthest patch outlined and the score written. A picture within normal stays clear. The originals are not changed, and a folder inside the one being read is refused. Drawn with SkiaSharp, already a dependency; ASCII labels use a built-in font, so a Linux install with no fonts draws them too (`MLoop.Core.Data.PictureOverlay`). Labels are placed so that none covers another, even when two boxes lie on the same object.
 
 ### Fixed
 

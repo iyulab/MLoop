@@ -72,13 +72,11 @@ public static class PictureOverlay
         using (var canvas = new SKCanvas(bitmap))
         {
             var unit = Unit(bitmap);
+            // Every outline before any label, so that no box's line runs through another box's name.
             foreach (var box in boxes)
-            {
-                var rect = new SKRect(box.X0, box.Y0, box.X1, box.Y1);
-                Outline(canvas, rect, unit);
-                var caption = string.Create(CultureInfo.InvariantCulture, $"{box.Label} {box.Score:0.00}");
-                Tag(canvas, bitmap, caption, rect.Left, rect.Top, unit);
-            }
+                Outline(canvas, new SKRect(box.X0, box.Y0, box.X1, box.Y1), unit);
+            foreach (var (caption, place) in LabelPlaces(boxes, bitmap.Width, bitmap.Height, unit))
+                Tag(canvas, caption, place, unit);
         }
 
         Save(bitmap, target);
@@ -130,7 +128,8 @@ public static class PictureOverlay
             var caption = normalEnd is { } end
                 ? string.Create(CultureInfo.InvariantCulture, $"{score:0.000} (normal to {end:0.000})")
                 : string.Create(CultureInfo.InvariantCulture, $"{score:0.000}");
-            Tag(canvas, bitmap, caption, 0, 0, unit);
+            var (width, height, _) = Lettering(caption, unit);
+            Tag(canvas, caption, Place(new SKRect(0, 0, 0, 0), width, height, unit, bitmap.Width, bitmap.Height, []), unit);
         }
 
         Save(bitmap, target);
@@ -169,15 +168,77 @@ public static class PictureOverlay
         canvas.DrawRect(rect, dark);
     }
 
-    /// <summary>Light text on a dark tag above the point (<paramref name="x"/>, <paramref name="y"/>), or below it at the top edge.</summary>
-    private static void Tag(SKCanvas canvas, SKBitmap bitmap, string text, float x, float y, int unit)
+    /// <summary>
+    /// Where each box's caption goes, in the order of <paramref name="boxes"/>. The surer box chooses first; a caption never
+    /// covers one placed before it while there is room, because two boxes over one object are what a reader most needs to
+    /// tell apart.
+    /// </summary>
+    internal static IReadOnlyList<(string Caption, SKRect Place)> LabelPlaces(
+        IReadOnlyList<DrawnBox> boxes, int imageWidth, int imageHeight, int unit)
     {
-        var (width, height, draw) = Lettering(text, unit);
-        var left = Math.Clamp(x - unit, 0, Math.Max(0, bitmap.Width - width));
-        var top = y - height - unit >= 0 ? y - height - unit : Math.Min(y + unit, Math.Max(0, bitmap.Height - height));
+        var places = new (string Caption, SKRect Place)[boxes.Count];
+        var taken = new List<SKRect>(boxes.Count);
+        foreach (var i in Enumerable.Range(0, boxes.Count).OrderByDescending(i => boxes[i].Score))
+        {
+            var box = boxes[i];
+            var caption = string.Create(CultureInfo.InvariantCulture, $"{box.Label} {box.Score:0.00}");
+            var (width, height, _) = Lettering(caption, unit);
+            var place = Place(new SKRect(box.X0, box.Y0, box.X1, box.Y1), width, height, unit, imageWidth, imageHeight, taken);
+            taken.Add(place);
+            places[i] = (caption, place);
+        }
+
+        return places;
+    }
+
+    // Above the box's left corner; failing that inside its top, below it, the same by its right corner, then further off a
+    // caption's height at a time. With no free place at all, the one that covers least.
+    private static SKRect Place(SKRect box, float width, float height, int unit, int imageWidth, int imageHeight,
+        IReadOnlyList<SKRect> taken)
+    {
+        var above = box.Top - height - unit;
+        IEnumerable<(float X, float Y)> Candidates()
+        {
+            foreach (var x in new[] { box.Left - unit, box.Right + unit - width })
+            {
+                if (above >= 0)
+                    yield return (x, above);
+                yield return (x, box.Top + unit);
+                yield return (x, box.Bottom + unit);
+            }
+
+            for (var k = 1; k * height < imageHeight; k++)
+            {
+                yield return (box.Left - unit, above - k * height);
+                yield return (box.Left - unit, box.Top + unit + k * height);
+            }
+        }
+
+        var best = default(SKRect);
+        var least = float.MaxValue;
+        foreach (var (x, y) in Candidates())
+        {
+            var at = SKRect.Create(
+                MathF.Floor(Math.Clamp(x, 0, Math.Max(0, imageWidth - width))),
+                MathF.Floor(Math.Clamp(y, 0, Math.Max(0, imageHeight - height))), width, height);
+            var covered = taken.Sum(other =>
+                Math.Max(0, Math.Min(at.Right, other.Right) - Math.Max(at.Left, other.Left))
+                * Math.Max(0, Math.Min(at.Bottom, other.Bottom) - Math.Max(at.Top, other.Top)));
+            if (covered <= 0)
+                return at;
+            if (covered < least)
+                (best, least) = (at, covered);
+        }
+
+        return best;
+    }
+
+    /// <summary>Light text on a dark tag filling <paramref name="place"/>.</summary>
+    private static void Tag(SKCanvas canvas, string text, SKRect place, int unit)
+    {
         using var back = new SKPaint { Color = Ink, Style = SKPaintStyle.Fill };
-        canvas.DrawRect(SKRect.Create(left, top, width, height), back);
-        draw(canvas, left, top);
+        canvas.DrawRect(place, back);
+        Lettering(text, unit).Draw(canvas, place.Left, place.Top);
     }
 
     // Letters are drawn from a built-in 5 x 7 font: the imaging library finds no fonts at all on a bare Linux install. A label
