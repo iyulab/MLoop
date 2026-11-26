@@ -462,7 +462,8 @@ Notes:
 - The TensorFlow runtime image classification needs exists for Windows and Linux x64 only — its package carries no
   macOS library. `mloop runtime list` says which runtimes this machine can install.
 - A served image model takes the images themselves: `POST /predict` with `{"images": ["<base64>", …]}` or files as
-  multipart form data, as `POST /embed` does.
+  multipart form data, as `POST /embed` does. A JSON row naming a picture file is refused: the server opens no path a
+  request names.
 - `mloop info <folder>` counts the images in each class folder before you train.
 - Training first runs every image through a pretrained network once — most of the time on a CPU —
   then trains for at most 200 epochs, stopping early once accuracy stops improving. The progress bar

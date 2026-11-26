@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Security
+
+- **`POST /predict` answers an image-classification model only for pictures sent by their contents.** A JSON row naming a picture (`ImagePath`) had the server open whatever file it named, with any token the server accepts. Such a request is now refused with 400, as object detection and image anomaly already refused it. Send the picture instead: base64 under `images`, or a file in a multipart form.
+
 ## [0.53.0] - 2026-11-23
 
 ### Added
